@@ -1,0 +1,41 @@
+# Legacy PHP App
+npfs-main/
+
+# Scratch & test files
+test_auth.py
+test_db.py
+token.txt
+scripts/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Backend Python Ignores
+**/__pycache__/
+*.pyc
+backend/venv/
+backend/.venv/
+backend/env/
+backend/.env
+backend/storage/
+
+# Frontend Node Ignores
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
