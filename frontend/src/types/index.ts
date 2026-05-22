@@ -26,6 +26,10 @@ export interface User {
 export interface PurchaseCategory {
   id: number;
   title: string;
+  min_amount?: number;
+  max_amount?: number;
+  is_active?: boolean;
+  procurement_id?: number;
 }
 
 export interface ProcurementMethod {

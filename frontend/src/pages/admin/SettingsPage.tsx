@@ -42,9 +42,23 @@ export const SettingsPage: React.FC = () => {
   ).sort((a: any, b: any) => a.step_order - b.step_order);
 
   React.useEffect(() => {
-    if (categories.length > 0 && selectedCat === null) setSelectedCat(categories[0].id);
-    if (procs.length > 0 && selectedProc === null) setSelectedProc(procs[0].id);
-  }, [categories, procs]);
+    if (procs.length > 0 && selectedProc === null) {
+      setSelectedProc(procs[0].id);
+    }
+  }, [procs, selectedProc]);
+
+  React.useEffect(() => {
+    if (selectedProc !== null && categories.length > 0) {
+      const matchingCats = categories.filter((c: any) => c.procurement_id === selectedProc);
+      if (matchingCats.length > 0) {
+        if (selectedCat === null || !matchingCats.some((c: any) => c.id === selectedCat)) {
+          setSelectedCat(matchingCats[0].id);
+        }
+      } else {
+        setSelectedCat(null);
+      }
+    }
+  }, [selectedProc, categories, selectedCat]);
 
   // Workflow mutations
   const createWfMutation = useMutation({
@@ -226,6 +240,9 @@ export const SettingsPage: React.FC = () => {
     data.min_amount = parseFloat(data.min_amount) || 0.0;
     data.max_amount = parseFloat(data.max_amount) || 0.0;
     data.is_active = data.is_active === 'true';
+    if (data.procurement_id) {
+      data.procurement_id = parseInt(data.procurement_id, 10);
+    }
 
     saveCatMutation.mutate(data);
   };
@@ -285,7 +302,7 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Category</label>
                 <div className="flex flex-wrap gap-2">
-                  {categories.map((c: any) => (
+                  {categories.filter((c: any) => c.procurement_id === selectedProc).map((c: any) => (
                     <button key={c.id} onClick={() => setSelectedCat(c.id)} className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${selectedCat === c.id ? 'bg-[#1a3a6b] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       {c.title}
                     </button>
@@ -406,6 +423,7 @@ export const SettingsPage: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
                     <th className="px-6 py-3 font-bold">Category Title</th>
+                    <th className="px-6 py-3 font-bold">Procurement Method</th>
                     <th className="px-6 py-3 font-bold">Min Bound</th>
                     <th className="px-6 py-3 font-bold">Max Bound</th>
                     <th className="px-6 py-3 font-bold">Status</th>
@@ -413,40 +431,44 @@ export const SettingsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {categories.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 font-bold text-slate-800">{c.title}</td>
-                      <td className="px-6 py-4 font-semibold text-slate-600">{formatCurrency(c.min_amount)}</td>
-                      <td className="px-6 py-4 font-semibold text-slate-600">
-                        {c.max_amount >= 99999999 ? 'No Limit' : formatCurrency(c.max_amount)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {c.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 flex gap-2">
-                        <button 
-                          onClick={() => { setEditingCat(c); setIsCatModalOpen(true); }} 
-                          className="p-1 text-slate-400 hover:text-blue-600"
-                          title="Edit"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (confirm(`Are you sure you want to delete category "${c.title}"? This will delete all workflow steps linked to this category.`)) {
-                              deleteCatMutation.mutate(c.id);
-                            }
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-600"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {categories.map((c: any) => {
+                    const procName = procs.find((p: any) => p.id === c.procurement_id)?.name || 'Unknown';
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4 font-bold text-slate-800">{c.title}</td>
+                        <td className="px-6 py-4 font-semibold text-slate-600">{procName}</td>
+                        <td className="px-6 py-4 font-semibold text-slate-600">{formatCurrency(c.min_amount)}</td>
+                        <td className="px-6 py-4 font-semibold text-slate-600">
+                          {c.max_amount >= 99999999 ? 'No Limit' : formatCurrency(c.max_amount)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {c.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 flex gap-2">
+                          <button 
+                            onClick={() => { setEditingCat(c); setIsCatModalOpen(true); }} 
+                            className="p-1 text-slate-400 hover:text-blue-600"
+                            title="Edit"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to delete category "${c.title}"? This will delete all workflow steps linked to this category.`)) {
+                                deleteCatMutation.mutate(c.id);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-rose-600"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -650,6 +672,21 @@ export const SettingsPage: React.FC = () => {
               <h2 className="text-lg font-bold">{editingCat ? 'Edit Purchase Category' : 'Create Purchase Category'}</h2>
             </div>
             <form onSubmit={handleCatSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Procurement Method</label>
+                <select 
+                  name="procurement_id" 
+                  required 
+                  defaultValue={editingCat?.procurement_id ?? selectedProc ?? ''} 
+                  className="input-field w-full"
+                >
+                  {procs.map((p: any) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Category Title</label>
                 <input 

@@ -99,12 +99,20 @@ async def _persist_pr(
 
     cat_result = await db.execute(
         select(PurchaseCategory).where(
-            and_(PurchaseCategory.min_amount <= total_amount, PurchaseCategory.max_amount >= total_amount)
+            and_(
+                PurchaseCategory.procurement_id == payload.mop,
+                PurchaseCategory.min_amount <= total_amount,
+                PurchaseCategory.max_amount >= total_amount,
+                PurchaseCategory.is_active == True,
+            )
         )
     )
     category = cat_result.scalar_one_or_none()
     if not category:
-        raise HTTPException(status_code=400, detail="No purchase category matches this total amount")
+        raise HTTPException(
+            status_code=400,
+            detail="No active purchase category matches this total amount for the selected procurement method"
+        )
 
     now = datetime.utcnow()
     fy_result = await db.execute(

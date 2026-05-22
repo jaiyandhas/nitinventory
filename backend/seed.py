@@ -41,9 +41,31 @@ async def seed():
     async with SessionLocal() as db:
         print("🌱 Seeding IRIS (demo: CSE only, password=password)...")
 
-        # ─── Department (CSE only) ─────────────────────────────────────────────
-        cse = Department(name="Computer Science and Engineering", short_code="CSE")
-        db.add(cse)
+        # ─── Departments (All standard NIT Trichy departments) ──────────────────────────────────
+        departments_spec = [
+            ("Computer Science and Engineering", "CSE"),
+            ("Electronics and Communication Engineering", "ECE"),
+            ("Electrical and Electronics Engineering", "EEE"),
+            ("Mechanical Engineering", "MECH"),
+            ("Civil Engineering", "CIVIL"),
+            ("Metallurgical and Materials Engineering", "MME"),
+            ("Instrumentation and Control Engineering", "ICE"),
+            ("Chemical Engineering", "CHEM"),
+            ("Production Engineering", "PROD"),
+            ("Chemistry", "CHY"),
+            ("Physics", "PHY"),
+            ("Mathematics", "MATH"),
+            ("Computer Applications", "CA"),
+            ("Management Studies", "DOMS"),
+            ("Architecture", "ARCH"),
+            ("Humanities and Social Sciences", "HSS")
+        ]
+        cse = None
+        for name, code in departments_spec:
+            dept = Department(name=name, short_code=code)
+            db.add(dept)
+            if code == "CSE":
+                cse = dept
         await db.flush()
 
         # ─── Roles ───────────────────────────────────────────────────────────
@@ -111,29 +133,6 @@ async def seed():
         db.add(fy)
         await db.flush()
 
-        # ─── Purchase categories (amounts in rupees) ─────────────────────────
-        cat1 = PurchaseCategory(
-            title="Upto Rs. 1,00,000 (Direct Purchase)",
-            min_amount=1,
-            max_amount=100_000,
-            is_active=True,
-        )
-        cat2 = PurchaseCategory(
-            title="Rs. 1,00,001 to Rs. 10,00,000",
-            min_amount=100_001,
-            max_amount=1_000_000,
-            is_active=True,
-        )
-        cat3 = PurchaseCategory(
-            title="Rs. 10,00,001 to Rs. 30,00,000",
-            min_amount=1_000_001,
-            max_amount=3_000_000,
-            is_active=True,
-        )
-        db.add_all([cat1, cat2, cat3])
-        await db.flush()
-        categories = {"cat1": cat1, "cat2": cat2, "cat3": cat3}
-
         # ─── Procurement methods ───────────────────────────────────────────
         procs = [
             ProcurementManager(name="GeM", description="Government e-Marketplace"),
@@ -144,6 +143,35 @@ async def seed():
         for p in procs:
             db.add(p)
         await db.flush()
+
+        # ─── Purchase categories (amounts in rupees, configured per procurement method) ─────────
+        categories = {}
+        for proc in procs:
+            cat1 = PurchaseCategory(
+                title=f"{proc.name}: Upto Rs. 1,00,000",
+                min_amount=1,
+                max_amount=100_000,
+                is_active=True,
+                procurement_id=proc.id
+            )
+            cat2 = PurchaseCategory(
+                title=f"{proc.name}: Rs. 1,00,001 to Rs. 10,00,000",
+                min_amount=100_001,
+                max_amount=1_000_000,
+                is_active=True,
+                procurement_id=proc.id
+            )
+            cat3 = PurchaseCategory(
+                title=f"{proc.name}: Rs. 10,00,001 to Rs. 30,00,000",
+                min_amount=1_000_001,
+                max_amount=3_000_000,
+                is_active=True,
+                procurement_id=proc.id
+            )
+            db.add_all([cat1, cat2, cat3])
+            await db.flush()
+            categories[proc.id] = {"cat1": cat1, "cat2": cat2, "cat3": cat3}
+
 
         # ─── Phases ──────────────────────────────────────────────────────────
         phase_rows = [

@@ -741,8 +741,12 @@ async def list_phases(db: AsyncSession = Depends(get_db), _=AdminDep):
 
 
 @router.get("/categories")
-async def list_categories(db: AsyncSession = Depends(get_db), _=AdminDep):
-    result = await db.execute(select(PurchaseCategory).order_by(PurchaseCategory.min_amount))
+async def list_categories(procurement_id: Optional[int] = None, db: AsyncSession = Depends(get_db), _=AdminDep):
+    stmt = select(PurchaseCategory)
+    if procurement_id is not None:
+        stmt = stmt.where(PurchaseCategory.procurement_id == procurement_id)
+    stmt = stmt.order_by(PurchaseCategory.procurement_id, PurchaseCategory.min_amount)
+    result = await db.execute(stmt)
     return [
         {
             "id": c.id,
@@ -750,6 +754,7 @@ async def list_categories(db: AsyncSession = Depends(get_db), _=AdminDep):
             "min_amount": c.min_amount,
             "max_amount": c.max_amount,
             "is_active": c.is_active,
+            "procurement_id": c.procurement_id,
         }
         for c in result.scalars()
     ]
@@ -761,7 +766,8 @@ async def create_category(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         title=body["title"],
         min_amount=float(body["min_amount"]),
         max_amount=float(body["max_amount"]),
-        is_active=body.get("is_active", True)
+        is_active=body.get("is_active", True),
+        procurement_id=int(body["procurement_id"])
     )
     db.add(c)
     await db.commit()
@@ -782,6 +788,8 @@ async def update_category(cat_id: int, body: dict, db: AsyncSession = Depends(ge
         c.max_amount = float(body["max_amount"])
     if "is_active" in body:
         c.is_active = bool(body["is_active"])
+    if "procurement_id" in body:
+        c.procurement_id = int(body["procurement_id"])
     await db.commit()
     return {"message": "Category updated"}
 
@@ -939,14 +947,16 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
             dept_code = str(row[dept_idx]).strip().upper()
             file_no = str(row[file_no_idx]).strip()
             procurement = str(row[proc_idx]).strip()
-            amount_str = str(row[amount_idx]).strip().replace(",", "")
+            amount_str = str(row[amount_idx]).strip()
 
             if not dept_code or not file_no or not procurement or not amount_str:
                 errors.append(f"Row {row_num}: Missing required field values")
                 continue
 
+            import re
+            amount_str_cleaned = re.sub(r'[^\d.]', '', amount_str)
             try:
-                amount = float(amount_str)
+                amount = float(amount_str_cleaned)
             except ValueError:
                 errors.append(f"Row {row_num}: Invalid amount value '{amount_str}'")
                 continue
@@ -961,8 +971,9 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
                 )
                 dept = dept_res.scalar_one_or_none()
                 if not dept:
-                    errors.append(f"Row {row_num}: Department '{dept_code}' not found")
-                    continue
+                    dept = Department(name=dept_code, short_code=dept_code)
+                    db.add(dept)
+                    await db.flush()
                 depts_cache[dept_key] = dept.id
             dept_id = depts_cache[dept_key]
 
@@ -977,8 +988,10 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
             bm = bm_res.scalar_one_or_none()
 
             if bm:
-                bm.total_cost += amount
-                bm.unit_cost = bm.total_cost / bm.quantity if bm.quantity > 0 else bm.total_cost
+                bm.total_cost = amount
+                bm.unit_cost = amount
+                bm.item_name = procurement
+                bm.quantity = 1
             else:
                 bm = BudgetMaster(
                     department_id=dept_id,
