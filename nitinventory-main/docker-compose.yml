@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  iris-db:
+    image: postgres:16-alpine
+    container_name: iris-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: iris
+      POSTGRES_PASSWORD: iris_secret
+      POSTGRES_DB: iris
+    ports:
+      - "5432:5432"
+    volumes:
+      - iris_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iris -d iris"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  iris-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: iris-backend
+    restart: unless-stopped
+    depends_on:
+      iris-db:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://iris:iris_secret@iris-db:5432/iris
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/storage:/app/storage
+      - ./backend/app:/app/app
+      - ./backend/seed.py:/app/seed.py
+    command: >
+      bash -c "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  iris-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: iris-frontend
+    restart: unless-stopped
+    depends_on:
+      - iris-backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+    environment:
+      VITE_API_URL: http://localhost:8000
+
+volumes:
+  iris_pgdata:

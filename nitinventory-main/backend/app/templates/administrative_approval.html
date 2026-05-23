@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Administrative Approval - PR #{{ pr.id }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 18mm 15mm 20mm 15mm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: Arial, sans-serif;
+                font-size: 8pt;
+                color: #555;
+            }
+        }
+        body {
+            font-family: Arial, sans-serif;
+            color: #333;
+            line-height: 1.4;
+            background-color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+        .header-container {
+            text-align: center;
+            border-bottom: 2px double #1a3a6b;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .logo-text {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #1a3a6b;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .subtitle {
+            font-size: 10pt;
+            color: #444;
+            margin: 4px 0 0 0;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .system-tag {
+            font-size: 9pt;
+            font-weight: bold;
+            color: #555;
+            margin-top: 4px;
+        }
+        .doc-title {
+            font-size: 13pt;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #1a3a6b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-decoration: underline;
+        }
+        .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #1a3a6b;
+            border-bottom: 1.5px solid #1a3a6b;
+            padding-bottom: 3px;
+            margin-top: 22px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 9pt;
+        }
+        table.details-table th, table.details-table td {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            text-align: left;
+            vertical-align: top;
+        }
+        table.details-table th {
+            background-color: #f5f8fa;
+            font-weight: bold;
+            color: #1a3a6b;
+            width: 25%;
+        }
+        table.details-table td {
+            width: 25%;
+        }
+        table.data-table th, table.data-table td {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            text-align: left;
+            vertical-align: middle;
+        }
+        table.data-table th {
+            background-color: #1a3a6b;
+            color: #fff;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 8.5pt;
+        }
+        table.data-table tr:nth-child(even) td {
+            background-color: #fafbfc;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .bold {
+            font-weight: bold;
+        }
+        .footer-note {
+            margin-top: 35px;
+            font-size: 7.5pt;
+            color: #666;
+            text-align: center;
+            border-top: 1px solid #ddd;
+            padding-top: 8px;
+        }
+        .signature-container {
+            margin-top: 40px;
+            page-break-inside: avoid;
+        }
+        .sig-box {
+            width: 40%;
+            text-align: center;
+            font-size: 9pt;
+        }
+        .sig-line {
+            border-top: 1px solid #333;
+            margin-top: 40px;
+            padding-top: 4px;
+            font-weight: bold;
+            color: #1a3a6b;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <div class="logo-text">National Institute of Technology Tiruchirappalli</div>
+        <div class="subtitle">Tiruchirappalli - 620015, Tamil Nadu, India</div>
+        <div class="system-tag">IRIS — Institutional Resource & Inventory System</div>
+    </div>
+
+    <div class="doc-title">Administrative Approval & Procurement Report</div>
+
+    <div class="section-title">Purchase Request General Details</div>
+    <table class="details-table">
+        <tr>
+            <th>Purchase Request ID</th>
+            <td>#{{ pr.id }}</td>
+            <th>ICR Number</th>
+            <td class="bold">{{ pr.icr_number or 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>Initiator Name</th>
+            <td>{{ pr.initiator.name if pr.initiator else 'N/A' }}</td>
+            <th>Department</th>
+            <td>{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
+        </tr>
+        <tr>
+            <th>Estimated Amount</th>
+            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount) if pr.amount is not none else "0.00" }} Lakhs</td>
+            <th>Procurement Method</th>
+            <td>{{ pr.procurement.name if pr.procurement else 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>Purchase Category</th>
+            <td>{{ pr.purchase_category.title if pr.purchase_category else 'N/A' }}</td>
+            <th>Purchase Type</th>
+            <td class="bold" style="text-transform: uppercase;">{{ pr.purchase_type or 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>EMD Requirement</th>
+            <td>₹{{ "%.2f"|format(pr.emd) if pr.emd is not none else "0.00" }}</td>
+            <th>Performance Security</th>
+            <td>₹{{ "%.2f"|format(pr.performance_security) if pr.performance_security is not none else "0.00" }}</td>
+        </tr>
+        <tr>
+            <th>Delivery Mode / Location</th>
+            <td>{{ pr.delivery_mode or 'N/A' }} / {{ pr.delivery_location or 'N/A' }}</td>
+            <th>Current Status</th>
+            <td class="bold" style="color: #1a3a6b;">{{ pr.current_status.upper() }}</td>
+        </tr>
+        <tr>
+            <th>Southern Region Service Centre</th>
+            <td>{{ 'YES' if pr.is_service_center_in_south else 'NO' }}{% if pr.is_service_center_in_south and pr.service_center_south_desc %} - {{ pr.service_center_south_desc }}{% endif %}</td>
+            <th>Training Required</th>
+            <td>
+                {% if pr.is_training_required %}
+                    YES
+                    {% if pr.training_type %} (Type: {{ pr.training_type }}){% endif %}
+                    {% if pr.training_vendor %} (Vendor: {{ pr.training_vendor }}){% endif %}
+                {% else %}
+                    NO
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Splitting Justifications</th>
+            <td colspan="3">
+                {% if pr.is_item_split or pr.is_quantity_split %}
+                    {% if pr.is_item_split %}<strong>Item Split:</strong> {{ pr.item_split_justification or 'Yes' }}<br/>{% endif %}
+                    {% if pr.is_quantity_split %}<strong>Quantity Split:</strong> {{ pr.quantity_split_details or 'Yes' }}{% endif %}
+                {% else %}
+                    No Splitting Required
+                {% endif %}
+            </td>
+        </tr>
+        {% if pr.exemption %}
+        <tr>
+            <th>Proprietary / Exemption Details</th>
+            <td colspan="3">{{ pr.exemption_remarks or 'N/A' }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <th>Basis of Estimate</th>
+            <td colspan="3">{{ pr.basis_of_estimate_details or 'N/A' }}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">Items Requested</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 8%">S.No</th>
+                <th style="width: 67%">Item Description</th>
+                <th style="width: 25%" class="text-right">Estimated Cost (Lakhs)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in pr.items %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>
+                    <div class="bold" style="font-size: 9.5pt; color: #1a3a6b;">{{ item.item_description }}</div>
+                    <div style="margin-top: 5px; font-size: 8pt; color: #444; line-height: 1.3;">
+                        <span style="font-weight: bold;">Requirement:</span> {{ item.requirement_type or 'N/A' }} &nbsp;|&nbsp;
+                        <span style="font-weight: bold;">GST/Charges:</span> {{ item.charges or '0' }}% &nbsp;|&nbsp;
+                        <span style="font-weight: bold;">Warranty:</span> {{ item.warranty or 'N/A' }} Months &nbsp;|&nbsp;
+                        <span style="font-weight: bold;">Delivery Period:</span> {{ item.delivery_period or 'N/A' }} Weeks &nbsp;|&nbsp;
+                        <span style="font-weight: bold;">Installation:</span> {{ 'Required' if item.installation_required else 'Not Required' }}
+                    </div>
+                    <div style="margin-top: 3px; font-size: 8pt; color: #444; line-height: 1.3;">
+                        <span style="font-weight: bold;">Site Readiness:</span> {{ 'Ready' if item.site_readiness else 'Not Ready (' ~ (item.site_readiness_remarks or 'No remarks') ~ ')' }} &nbsp;|&nbsp;
+                        <span style="font-weight: bold;">Departmental Availability:</span> {{ 'Available (' ~ (item.present_stock or '0') ~ ' in stock, Ref: ' ~ (item.previous_file_no_reference or 'N/A') ~ ')' if item.availability == 'Yes' else 'Not Available' }}
+                    </div>
+                    {% if item.availability == 'Yes' and item.justification_for_procurement %}
+                    <div style="margin-top: 3px; font-size: 8pt; color: #666; font-style: italic;">
+                        Justification for Procurement: "{{ item.justification_for_procurement }}"
+                    </div>
+                    {% endif %}
+                    {% if item.tech_specs_text %}
+                    <div style="margin-top: 5px; font-size: 8pt; color: #333; background-color: #fcfcfc; border: 1px solid #eee; padding: 4px; font-family: monospace; white-space: pre-wrap;">{{ item.tech_specs_text }}</div>
+                    {% endif %}
+                    {% if item.gem_link %}
+                    <div style="margin-top: 3px; font-size: 8pt; color: #1a3a6b;">
+                        <span style="font-weight: bold;">GeM Link/Details:</span> <a href="{{ item.gem_link }}" style="color: #1a3a6b; text-decoration: underline;">{{ item.gem_link }}</a>
+                    </div>
+                    {% endif %}
+                </td>
+                <td class="text-right">₹{{ "%.2f"|format(item.estimated_total) if item.estimated_total is not none else "0.00" }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="bold" style="background-color: #f5f8fa !important;">
+                <td colspan="2" class="text-right">Grand Total:</td>
+                <td class="text-right" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount) if pr.amount is not none else "0.00" }} Lakhs</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if pr.tender_reference_number %}
+    <div class="section-title">Tendering Information</div>
+    <table class="details-table">
+        <tr>
+            <th>Tender Ref Number</th>
+            <td class="bold">{{ pr.tender_reference_number }}</td>
+            <th>Date of Tender</th>
+            <td>{{ pr.date_of_tender if pr.date_of_tender else 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>Tech Bid Opening</th>
+            <td>{{ pr.date_of_tech_bid_opening if pr.date_of_tech_bid_opening else 'N/A' }}</td>
+            <th>Financial Bid Opening</th>
+            <td>{{ pr.date_of_financial_bid_opening if pr.date_of_financial_bid_opening else 'N/A' }}</td>
+        </tr>
+        {% if pr.vendor_list_link %}
+        <tr>
+            <th>Vendor Link Document</th>
+            <td colspan="3"><a href="{{ pr.vendor_list_link }}" style="color: #1a3a6b; text-decoration: underline;">{{ pr.vendor_list_link }}</a></td>
+        </tr>
+        {% endif %}
+    </table>
+    {% endif %}
+
+    {% if pr.commercial_evaluations %}
+    <div class="section-title">Commercial Bidders List</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 10%">S.No</th>
+                <th style="width: 50%">Vendor Name</th>
+                <th style="width: 40%">Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ce in pr.commercial_evaluations %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="bold">{{ ce.vendor_name }}</td>
+                <td>{{ ce.remarks or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if pr.technical_evaluations %}
+    <div class="section-title">Technical Evaluation Status</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 10%">S.No</th>
+                <th style="width: 50%">Vendor Name</th>
+                <th style="width: 20%">Tech Qualification</th>
+                <th style="width: 20%">Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for te in pr.technical_evaluations %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="bold">{{ te.vendor_name }}</td>
+                <td class="bold" style="color: {{ 'green' if te.is_qualified else 'red' }};">
+                    {{ 'QUALIFIED' if te.is_qualified else 'DISQUALIFIED' }}
+                </td>
+                <td>{{ te.remarks or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if pr.financial_evaluations %}
+    <div class="section-title">Financial Bids & Rankings</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 8%">S.No</th>
+                <th style="width: 40%">Vendor Name</th>
+                <th style="width: 22%">Quoted Amount</th>
+                <th style="width: 12%">Rank</th>
+                <th style="width: 18%">Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for fe in pr.financial_evaluations %}
+            {% set is_l1 = fe.ranking == 'L1' %}
+            {% set is_l2 = fe.ranking == 'L2' %}
+            <tr style="{{ 'background-color: #e6f4ea;' if is_l1 else 'background-color: #fffde6;' if is_l2 else '' }}">
+                <td>{{ loop.index }}</td>
+                <td class="bold">
+                    {{ fe.vendor_name }}
+                    {% if is_l1 %} <span style="color: green; font-size: 8pt;">(L1 - Preferred)</span>{% endif %}
+                    {% if fe.is_awarded %} <span style="color: #1a3a6b; font-weight: bold; font-size: 8.5pt;">[★ AWARDED/SELECTED]</span>{% endif %}
+                </td>
+                <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(fe.quoted_amount) if fe.quoted_amount is not none else "0.00" }} Lakhs</td>
+                <td class="bold" style="color: {{ 'green' if is_l1 else 'orange' if is_l2 else 'black' }}">{{ fe.ranking }}</td>
+                <td>{{ fe.remarks or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if pr.faculty1 or pr.faculty2 %}
+    <div class="section-title">Purchase Committee</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 25%">Role</th>
+                <th style="width: 30%">Name</th>
+                <th style="width: 25%">Designation / Department</th>
+                <th style="width: 20%">Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="bold">Purchase Initiator</td>
+                <td>{{ pr.initiator.name if pr.initiator else 'N/A' }}</td>
+                <td>{{ pr.initiator.designation or 'Faculty' }} / {{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'N/A' }}</td>
+                <td>
+                    {% if pr.initiator and pr.initiator.signature_path %}
+                    <img src="file://{{ storage_dir }}/{{ pr.initiator.signature_path }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% if pr.faculty1 %}
+            <tr>
+                <td class="bold">Committee Member 1 (Faculty)</td>
+                <td>{{ pr.faculty1.name }}</td>
+                <td>{{ pr.faculty1.designation or 'Faculty' }} / {{ pr.faculty1.department.name if pr.faculty1.department else 'N/A' }}</td>
+                <td>
+                    {% if pr.faculty1.signature_path %}
+                    <img src="file://{{ storage_dir }}/{{ pr.faculty1.signature_path }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            {% if pr.faculty2 %}
+            <tr>
+                <td class="bold">Committee Member 2 (Faculty)</td>
+                <td>{{ pr.faculty2.name }}</td>
+                <td>{{ pr.faculty2.designation or 'Faculty' }} / {{ pr.faculty2.department.name if pr.faculty2.department else 'N/A' }}</td>
+                <td>
+                    {% if pr.faculty2.signature_path %}
+                    <img src="file://{{ storage_dir }}/{{ pr.faculty2.signature_path }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="section-title">Approval and Action Log</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 6%">S.No</th>
+                <th style="width: 20%">Acted By</th>
+                <th style="width: 18%">Action / Status</th>
+                <th style="width: 25%">Remarks / Comments</th>
+                <th style="width: 16%">Signature</th>
+                <th style="width: 15%">Date & Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in history_serialized %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="bold">{{ h.actor_name }}</td>
+                <td>{{ h.status }}</td>
+                <td style="font-style: italic;">{{ h.remarks or '-' }}</td>
+                <td>
+                    {% if h.signature_url %}
+                    <img src="{{ h.signature_url }}" style="max-height: 25px; max-width: 90px; object-fit: contain;" />
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>{{ h.acted_at_str }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if pr.documents %}
+    <div class="section-title">Attached Documents (Annexures)</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 8%">S.No</th>
+                <th style="width: 32%">Document Type</th>
+                <th style="width: 60%">File Name / Link</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for doc in pr.documents %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="bold">
+                    {% if doc.doc_key == 'quotation_file' %}
+                        Basis of Estimate (Quotation)
+                    {% elif 'tech_spec' in doc.doc_key %}
+                        Technical Specification
+                    {% elif 'gem_nac' in doc.doc_key %}
+                        GeM Non-Availability Certificate (NAC)
+                    {% elif doc.doc_key == 'draft_tender_document' %}
+                        Draft Tender Document
+                    {% elif doc.doc_key == 'tender_document' %}
+                        Tender Document
+                    {% else %}
+                        {{ doc.doc_key }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if doc.doc_value.get('path') %}
+                    <a href="{{ base_url }}/storage/{{ doc.doc_value.get('path') }}" style="color: #1a3a6b; text-decoration: underline; font-weight: bold;">
+                        {{ doc.doc_value.get('original_name') or 'Uploaded Document' }}
+                    </a>
+                    {% else %}
+                    {{ doc.doc_value.get('original_name') or 'Uploaded Document' }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="signature-container">
+        <div class="sig-box" style="float: left;">
+            {% if pr.initiator and pr.initiator.signature_path %}
+            <div style="height: 40px; margin-bottom: 5px; text-align: center;">
+                <img src="file://{{ storage_dir }}/{{ pr.initiator.signature_path }}" style="max-height: 40px; max-width: 120px; object-fit: contain;" />
+            </div>
+            {% else %}
+            <div style="height: 40px; margin-bottom: 5px;"></div>
+            {% endif %}
+            <div class="sig-line">Initiator Signature</div>
+            <div style="font-size: 8pt; color: #555; margin-top: 3px;">Date: ______________</div>
+        </div>
+        <div class="sig-box" style="float: right;">
+            <div style="height: 40px; margin-bottom: 5px;"></div>
+            <div class="sig-line">Sanctioning Authority</div>
+            <div style="font-size: 8pt; color: #555; margin-top: 3px;">Date: ______________</div>
+        </div>
+        <div style="clear: both;"></div>
+    </div>
+
+    <div class="footer-note">
+        This document is system-generated by IRIS on behalf of NIT Tiruchirappalli.
+    </div>
+
+</body>
+</html>
