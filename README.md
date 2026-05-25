@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# NITT-INVENTORY-MANAGEMENT-SYSTEM
-=======
 # IRIS — Institutional Resource & Inventory System
 **NIT Tiruchirappalli** | v1.0
 
@@ -85,4 +82,5 @@ iris/
 │       └── context/ AuthContext
 └── docker-compose.yml
 ```
->>>>>>> 113d8a0a357564bbb34edb97f208643dd94d19ab
+
+
