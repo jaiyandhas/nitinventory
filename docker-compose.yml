@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  nitinventory-db:
+  db:
     image: postgres:16-alpine
     container_name: nitinventory-db
     restart: unless-stopped
@@ -14,10 +14,10 @@ services:
     volumes:
       - nitinventory_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nitinventory -d nitinventory"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U nitinventory"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   nitinventory-backend:
     build:
@@ -26,12 +26,12 @@ services:
     container_name: nitinventory-backend
     restart: unless-stopped
     depends_on:
-      nitinventory-db:
+      db:
         condition: service_healthy
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory
+      DATABASE_URL: postgresql+asyncpg://nitinventory:nitinventory_secret@db:5432/nitinventory
     ports:
       - "8000:8000"
     volumes:

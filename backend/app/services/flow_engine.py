@@ -20,22 +20,26 @@ from app.models.user import User, RoleManager
 
 class FlowEngineService:
     def __init__(self, db: AsyncSession, background_tasks: Optional[BackgroundTasks] = None):
+        """Initialize the FlowEngineService with database session and background tasks."""
         self.db = db
         self.background_tasks = background_tasks
 
     async def _get_first_phase(self) -> PhaseManager:
+        """Fetch the first active phase ordered by phase order."""
         result = await self.db.execute(
             select(PhaseManager).order_by(PhaseManager.phase_order).limit(1)
         )
         return result.scalar_one()
 
     async def _get_current_flow(self, pr: PurchaseRequest) -> Optional[PurchaseRequestFlow]:
+        """Fetch the current workflow state flow record for a purchase request."""
         result = await self.db.execute(
             select(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
         )
         return result.scalar_one_or_none()
 
     def _wf_filters(self, pr: PurchaseRequest, phase_id: int, **extra):
+        """Generate filtering clauses for matching a workflow hierarchy step schema."""
         clauses = [
             WorkFlowHierarchy.category_id == pr.category_id,
             WorkFlowHierarchy.procurement_id == pr.procurement_id,
@@ -50,6 +54,7 @@ class FlowEngineService:
     async def _get_step_def(
         self, pr: PurchaseRequest, phase_id: int, step_order: int
     ) -> Optional[WorkFlowHierarchy]:
+        """Load specific workflow step definition mapping matching parameters."""
         result = await self.db.execute(
             select(WorkFlowHierarchy).where(
                 self._wf_filters(pr, phase_id, step_order=step_order)
@@ -58,9 +63,11 @@ class FlowEngineService:
         return result.scalar_one_or_none()
 
     async def _get_first_step(self, pr: PurchaseRequest, phase: PhaseManager) -> Optional[WorkFlowHierarchy]:
+        """Helper to get the initial step (order = 1) of a given phase."""
         return await self._get_step_def(pr, phase.id, 1)
 
     async def _get_next_step_in_phase(self, pr: PurchaseRequest, phase: PhaseManager, current_step: int) -> Optional[int]:
+        """Retrieve the sequence step order index for the next step within the active phase."""
         result = await self.db.execute(
             select(WorkFlowHierarchy.step_order).where(
                 and_(
@@ -89,6 +96,7 @@ class FlowEngineService:
         return None
 
     async def _add_history(self, pr: PurchaseRequest, user: User, status: str, remarks: Optional[str] = None):
+        """Append an entry tracking history actions into the purchase request timeline."""
         history = PurchaseRequestHistory(
             purchase_request_id=pr.id,
             current_approver_id=user.id,
@@ -97,8 +105,9 @@ class FlowEngineService:
             acted_at=datetime.utcnow(),
         )
         self.db.add(history)
-        
+
     async def _validate_role(self, pr: PurchaseRequest, user: User, flow: PurchaseRequestFlow):
+        """Validate if the given user is authorized to act on the current workflow step of the PR."""
         if not user.is_approved:
             raise ValueError("Your account is pending administrator approval.")
         # Admin can do anything
@@ -242,6 +251,7 @@ class FlowEngineService:
 
     async def advance(self, pr: PurchaseRequest, acted_by: User, remarks: Optional[str] = None,
                       status: Optional[str] = None, db_flush: bool = True) -> PurchaseRequest:
+        """Advance the purchase request to the next workflow step or phase, sending email notifications and updating status."""
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
@@ -352,6 +362,7 @@ class FlowEngineService:
         return pr
 
     async def get_next_approvers_emails(self, pr: PurchaseRequest, group_key: str) -> list[str]:
+        """Fetch the email addresses of users belonging to the expected workflow group_key for notifications."""
         if group_key == "faculty":
             await self.db.refresh(pr, ["initiator"])
             return [pr.initiator.email] if pr.initiator and pr.initiator.email else []
@@ -381,6 +392,7 @@ class FlowEngineService:
             return list(result.scalars().all())
 
     async def reject(self, pr: PurchaseRequest, rejected_by: User, reason: str) -> bool:
+        """Reject the purchase request, unlocking its budget and notifying the initiator."""
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow to reject for PR #{pr.id}")
@@ -408,6 +420,7 @@ class FlowEngineService:
         return True
 
     async def send_back(self, pr: PurchaseRequest, acted_by: User, to_step: int, reason: str) -> None:
+        """Send the purchase request back to a previous workflow step within the current phase."""
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
@@ -431,6 +444,7 @@ class FlowEngineService:
             email_svc.notify_send_back(pr.id, pr.icr_number, acted_by.name, reason, pr.initiator.email)
 
     async def get_send_back_candidates(self, pr: PurchaseRequest) -> list:
+        """Get the list of prior workflow steps in the current phase that this purchase request can be sent back to."""
         flow = await self._get_current_flow(pr)
         if not flow:
             return []

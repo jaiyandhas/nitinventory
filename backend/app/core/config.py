@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    DATABASE_URL: str = "postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory"
+    DATABASE_URL: str = "postgresql+asyncpg://nitinventory:nitinventory_secret@db:5432/nitinventory"
     SECRET_KEY: str = "change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     SMTP_HOST: str = ""

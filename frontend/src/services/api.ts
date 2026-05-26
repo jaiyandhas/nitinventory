@@ -13,6 +13,9 @@ api.interceptors.response.use(
     // /auth/me is used to probe login state — never redirect from it.
     const url = error.config?.url || '';
     if (error.response?.status === 401 && !url.includes('/auth/me') && !url.includes('/auth/login')) {
+      if (window.location.pathname && window.location.pathname !== '/login') {
+        sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search);
+      }
       window.location.href = '/login';
     }
     return Promise.reject(error);

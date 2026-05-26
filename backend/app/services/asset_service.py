@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from app.models.asset import Asset, AssetMovement, AssetLog, DisposalStatus
 from app.models.inventory import DeliveryItem, DeptAssetLog
@@ -12,16 +12,21 @@ from app.services.qr_service import QrService
 
 class AssetService:
     def __init__(self, db: AsyncSession):
+        """Initialize AssetService with db session and QR service."""
         self.db = db
         self.qr_svc = QrService()
 
-    async def _next_tag_sequence(self, dept_code: str, year_suffix: str) -> int:
-        result = await self.db.execute(
-            select(func.count(Asset.id)).where(
-                Asset.asset_tag.like(f"NIT-{dept_code}-{year_suffix}-%")
-            )
+    async def _get_tag_sequences(self, dept_code: str, count: int) -> list[int]:
+        """Dynamically create a database sequence for a department if not exists, and fetch a batch of next sequence numbers."""
+        if count <= 0:
+            return []
+        clean_dept = "".join(c for c in dept_code.lower() if c.isalnum())
+        await self.db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS asset_seq_{clean_dept} START 1;"))
+        res = await self.db.execute(
+            text(f"SELECT nextval('asset_seq_{clean_dept}') FROM generate_series(1, :qty);"),
+            {"qty": count}
         )
-        return (result.scalar() or 0) + 1
+        return [r[0] for r in res.all()]
 
     async def create_assets_from_grn(self, delivery_item: DeliveryItem, dept_log: DeptAssetLog) -> list[Asset]:
         """Auto-create assets after GRN verification. One asset per serial number."""
@@ -39,8 +44,11 @@ class AssetService:
         quantity = dept_log.quantity
         assets = []
 
+        # Pre-generate ALL sequence numbers in a single DB trip to avoid in-loop sequence queries
+        seq_values = await self._get_tag_sequences(dept_code, quantity)
+
         for i in range(quantity):
-            seq = await self._next_tag_sequence(dept_code, year_suffix)
+            seq = seq_values[i]
             asset_tag = f"NIT-{dept_code}-{year_suffix}-{seq:03d}"
             serial = serial_numbers[i] if i < len(serial_numbers) else None
 
@@ -109,8 +117,9 @@ class AssetService:
         else:
             year_suffix = str(datetime.utcnow().date().year)[-2:]
             
-        # Auto-generate next asset tag sequence for this year
-        seq = await self._next_tag_sequence(dept_code, year_suffix)
+        # Auto-generate next asset tag sequence using Postgres sequence (atomic & race-free)
+        seq_list = await self._get_tag_sequences(dept_code, 1)
+        seq = seq_list[0]
         asset_tag = f"NIT-{dept_code}-{year_suffix}-{seq:03d}"
         
         # Check if asset_tag is unique (should be since sequence works, but safe check)
@@ -171,6 +180,7 @@ class AssetService:
         return asset
 
     async def update_condition(self, asset_id: int, new_condition: str, user: User) -> Asset:
+        """Update the condition profile of a registered asset and log it."""
         result = await self.db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one()
         old_condition = asset.condition
@@ -187,6 +197,7 @@ class AssetService:
         return asset
 
     async def move_asset(self, asset_id: int, to_building: str, to_room: str, user: User, reason: Optional[str]) -> Asset:
+        """Log movements of assets between buildings and rooms."""
         result = await self.db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one()
         movement = AssetMovement(
@@ -213,6 +224,7 @@ class AssetService:
         return asset
 
     async def flag_disposal(self, asset_id: int, user: User) -> Asset:
+        """Flag an asset as ready/pending for institutional disposal."""
         result = await self.db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one()
         asset.disposal_status = DisposalStatus.PENDING_DISPOSAL
@@ -228,6 +240,7 @@ class AssetService:
         return asset
 
     async def confirm_disposal(self, asset_id: int, admin_user: User) -> Asset:
+        """Confirm final disposal of an asset and flag status as disposed."""
         result = await self.db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one()
         asset.disposal_status = DisposalStatus.DISPOSED
@@ -259,6 +272,7 @@ class AssetService:
         await self.db.flush()
 
     async def import_assets_csv(self, file_content: str, user: User) -> dict:
+        """Import a batch of assets from a CSV file atomically with complete rollback support."""
         import csv
         import io
         from fastapi import HTTPException
