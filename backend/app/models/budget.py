@@ -31,6 +31,7 @@ class PurchaseCategory(Base):
     max_amount: Mapped[float] = mapped_column(Float, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     procurement_id: Mapped[int] = mapped_column(ForeignKey("procurement_managers.id", ondelete="CASCADE"), nullable=False)
+    requirement_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     procurement: Mapped["ProcurementManager"] = relationship("ProcurementManager")

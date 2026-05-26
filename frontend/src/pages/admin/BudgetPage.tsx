@@ -58,6 +58,23 @@ export const BudgetPage: React.FC = () => {
     }
   });
 
+  const clearBudgetsMutation = useMutation({
+    mutationFn: () => adminApi.clearBudgets(),
+    onSuccess: (res: any) => {
+      toast.success(res.data?.message || 'Unlinked budgets cleared successfully!');
+      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to clear budgets');
+    }
+  });
+
+  const handleClearBudgets = () => {
+    if (window.confirm("Are you sure you want to clear all unlinked budget entries? This action cannot be undone.")) {
+      clearBudgetsMutation.mutate();
+    }
+  };
+
   const filteredBudgets = budgets.filter((b: any) => {
     if (deptFilter !== 'all' && b.department_id !== parseInt(deptFilter)) return false;
     if (fyFilter !== 'all' && b.financial_year_id !== parseInt(fyFilter)) return false;
@@ -97,7 +114,14 @@ export const BudgetPage: React.FC = () => {
           <p className="page-subtitle">Manage department budgets and allocations</p>
         </div>
         {isWriteAllowed && (
-          <div className="flex gap-3">
+          <div className="flex gap-3 text-sm">
+            <button
+              onClick={handleClearBudgets}
+              disabled={clearBudgetsMutation.isPending}
+              className="btn-secondary flex items-center gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all px-4 py-2 font-semibold"
+            >
+              Clear All Budgets
+            </button>
             <button
               onClick={() => {
                 setCsvFile(null);
@@ -139,15 +163,17 @@ export const BudgetPage: React.FC = () => {
               <th>Department</th>
               <th>Item Name</th>
               <th>Total Cost</th>
+              <th>Locked (PRs)</th>
+              <th>Spent (POs)</th>
               <th>Available</th>
               {isWriteAllowed && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {loadingBudgets ? (
-              <tr><td colSpan={isWriteAllowed ? 6 : 5} className="text-center py-8">Loading...</td></tr>
+              <tr><td colSpan={isWriteAllowed ? 8 : 7} className="text-center py-8">Loading...</td></tr>
             ) : filteredBudgets.length === 0 ? (
-              <tr><td colSpan={isWriteAllowed ? 6 : 5} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
+              <tr><td colSpan={isWriteAllowed ? 8 : 7} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
             ) : (
               filteredBudgets.map((b: any) => (
                 <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
@@ -155,6 +181,8 @@ export const BudgetPage: React.FC = () => {
                   <td>{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</td>
                   <td>{b.item_name}</td>
                   <td>{formatCurrency(b.total_cost)}</td>
+                  <td className="text-amber-600 font-medium">{formatCurrency(b.locked_amount)}</td>
+                  <td className="text-slate-600 font-medium">{formatCurrency(b.deducted_amount)}</td>
                   <td className="font-semibold text-green-600">{formatCurrency(b.available_amount)}</td>
                   {isWriteAllowed && (
                     <td>
@@ -181,7 +209,7 @@ export const BudgetPage: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
                   <select name="department_id" defaultValue={editingBudget?.department_id} required className="input-field w-full">
-                    {depts.map((d: any) => <option key={d.id} value={d.id}>{d.short_code}</option>)}
+                    {depts.map((d: any) => <option key={d.id} value={d.id}>{d.short_code} - {d.name}</option>)}
                   </select>
                 </div>
                 <div>

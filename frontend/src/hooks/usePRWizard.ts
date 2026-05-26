@@ -83,7 +83,7 @@ export function usePRWizard() {
   );
 
   const validateItems = useCallback(
-    (procurementName: string): string | null => {
+    (procurementName: string, budgetFiles: BudgetFile[]): string | null => {
       const isGem = isGemProcurement(procurementName);
       for (const fileId of selection.selectedFileIds) {
         const item = items[fileId];
@@ -92,6 +92,17 @@ export function usePRWizard() {
           ...item,
           _procurement_is_gem: isGem,
         };
+        const qty = Number(item.quantity);
+        if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
+          return `Quantity for all items must be a valid positive integer`;
+        }
+        const file = budgetFiles.find((f) => f.id === fileId);
+        if (file && file.unit_cost > 0) {
+          const maxQty = Math.floor(file.available_amount / file.unit_cost);
+          if (qty > maxQty) {
+            return `Requested quantity for "${file.item_name}" (${qty}) exceeds the maximum available quantity (${maxQty}) based on available budget`;
+          }
+        }
         if (!item.charges.trim()) return `Enter GST & charges for all items`;
         if (!item.requirement_type) return `Select nature of requirement for all items`;
         if (!item.warranty.trim()) return `Enter warranty for all items`;

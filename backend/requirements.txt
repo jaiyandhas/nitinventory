@@ -13,6 +13,7 @@ python-multipart==0.0.12
 aiofiles==24.1.0
 qrcode[pil]==8.0
 WeasyPrint==62.3
+pydyf<0.11.0
 Pillow==10.4.0
 slowapi==0.1.9
 httpx==0.27.2

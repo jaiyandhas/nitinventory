@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class PRItemCreate(BaseModel):
     budget_file_id: int
+    quantity: int = Field(default=1, ge=1)
     charges: Optional[float] = None
     requirement_type: str
     warranty: Optional[float] = None

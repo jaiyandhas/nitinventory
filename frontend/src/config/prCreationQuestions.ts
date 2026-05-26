@@ -1,5 +1,5 @@
 /**
- * Purchase Request creation field map — aligned with NPFS initiator/2_purchase_form.php.
+ * Purchase Request creation field map.
  * Used by the PR wizard for rendering, validation, and API payload assembly.
  */
 

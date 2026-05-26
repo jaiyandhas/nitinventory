@@ -92,54 +92,54 @@ class EmailService:
                 asyncio.run(send_and_log_email(to, subject, body))
 
     def notify_next_approver(self, pr_id: int, icr_number: Optional[str], group_key: str, to_email: str) -> None:
-        subject = f"[IRIS] Action Required: PR {icr_number or f'#{pr_id}'} Pending Approval"
+        subject = f"[NIT Inventory] Action Required: PR {icr_number or f'#{pr_id}'} Pending Approval"
         body = f"""
-        <h2>IRIS — Institutional Resource & Inventory System</h2>
+        <h2>NIT Inventory — Institutional Resource & Inventory System</h2>
         <p>Purchase Request <strong>{icr_number or f'#{pr_id}'}</strong> has advanced to your group (<strong>{group_key}</strong>) and requires your review.</p>
-        <p>Please login to the <a href="{settings.FRONTEND_URL}/pr/{pr_id}">IRIS Portal</a> to act on this request.</p>
-        <hr><small>NIT Tiruchirappalli — IRIS System</small>
+        <p>Please login to the <a href="{settings.FRONTEND_URL}/pr/{pr_id}">NIT Inventory Portal</a> to act on this request.</p>
+        <hr><small>NIT Tiruchirappalli — NIT Inventory System</small>
         """
         self._queue_email(to_email, subject, body)
 
     def notify_rejection(self, pr_id: int, icr_number: Optional[str], rejected_by_name: str, reason: str, to_email: str) -> None:
-        subject = f"[IRIS] PR {icr_number or f'#{pr_id}'} Rejected"
+        subject = f"[NIT Inventory] PR {icr_number or f'#{pr_id}'} Rejected"
         body = f"""
-        <h2>IRIS — PR Rejected</h2>
+        <h2>NIT Inventory — PR Rejected</h2>
         <p>Your Purchase Request <strong>{icr_number or f'#{pr_id}'}</strong> has been rejected.</p>
         <p><strong>Rejected by:</strong> {rejected_by_name}</p>
         <p><strong>Remarks/Reason:</strong> {reason}</p>
-        <p>Please login to <a href="{settings.FRONTEND_URL}/pr/{pr_id}">IRIS</a> to view details.</p>
-        <hr><small>NIT Tiruchirappalli — IRIS System</small>
+        <p>Please login to <a href="{settings.FRONTEND_URL}/pr/{pr_id}">NIT Inventory</a> to view details.</p>
+        <hr><small>NIT Tiruchirappalli — NIT Inventory System</small>
         """
         self._queue_email(to_email, subject, body)
 
     def notify_send_back(self, pr_id: int, icr_number: Optional[str], sent_back_by_name: str, reason: str, to_email: str) -> None:
-        subject = f"[IRIS] PR {icr_number or f'#{pr_id}'} Sent Back"
+        subject = f"[NIT Inventory] PR {icr_number or f'#{pr_id}'} Sent Back"
         body = f"""
-        <h2>IRIS — PR Sent Back</h2>
+        <h2>NIT Inventory — PR Sent Back</h2>
         <p>Your Purchase Request <strong>{icr_number or f'#{pr_id}'}</strong> has been sent back for corrections.</p>
         <p><strong>Sent back by:</strong> {sent_back_by_name}</p>
         <p><strong>Remarks:</strong> {reason}</p>
-        <p>Please login to <a href="{settings.FRONTEND_URL}/pr/{pr_id}">IRIS</a> to make necessary changes.</p>
-        <hr><small>NIT Tiruchirappalli — IRIS System</small>
+        <p>Please login to <a href="{settings.FRONTEND_URL}/pr/{pr_id}">NIT Inventory</a> to make necessary changes.</p>
+        <hr><small>NIT Tiruchirappalli — NIT Inventory System</small>
         """
         self._queue_email(to_email, subject, body)
 
     def notify_discrepancy(self, delivery_item_id: int, to_email: str) -> None:
-        subject = "[IRIS] Quantity Discrepancy Detected — Action Required"
+        subject = "[NIT Inventory] Quantity Discrepancy Detected — Action Required"
         body = f"""
-        <h2>IRIS — Discrepancy Alert</h2>
+        <h2>NIT Inventory — Discrepancy Alert</h2>
         <p>A quantity discrepancy has been detected for Delivery Item #{delivery_item_id}.</p>
         <p>Payment has been <strong>blocked</strong> until resolved.</p>
-        <p>Please login to <a href="{settings.FRONTEND_URL}/inventory/discrepancies">IRIS</a> to resolve.</p>
+        <p>Please login to <a href="{settings.FRONTEND_URL}/inventory/discrepancies">NIT Inventory</a> to resolve.</p>
         """
         self._queue_email(to_email, subject, body)
 
     def notify_assets_created(self, asset_tags: list, to_email: str) -> None:
         tags_html = "".join(f"<li>{tag}</li>" for tag in asset_tags)
-        subject = f"[IRIS] {len(asset_tags)} Asset(s) Created"
+        subject = f"[NIT Inventory] {len(asset_tags)} Asset(s) Created"
         body = f"""
-        <h2>IRIS — Assets Created</h2>
+        <h2>NIT Inventory — Assets Created</h2>
         <p>The following assets have been registered:</p>
         <ul>{tags_html}</ul>
         <p>Payment notification has been triggered.</p>

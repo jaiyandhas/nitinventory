@@ -41,7 +41,7 @@ export const prApi = {
   create: (data: object) => api.post('/pr/', data),
   createWithFiles: (formData: FormData) =>
     api.post('/pr/', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  advance: (id: number, remarks?: string, status?: string, faculty1_id?: number, faculty2_id?: number) => api.post(`/pr/${id}/advance`, { remarks, status, faculty1_id, faculty2_id }),
+  advance: (id: number, remarks?: string, status?: string, faculty1_id?: number, faculty2_id?: number, faculty3_id?: number) => api.post(`/pr/${id}/advance`, { remarks, status, faculty1_id, faculty2_id, faculty3_id }),
   reject: (id: number, reason: string) => api.post(`/pr/${id}/reject`, { reason }),
   sendBack: (id: number, to_step: number, reason: string) => api.post(`/pr/${id}/send-back`, { to_step, reason }),
   assignDa: (id: number, da_id: number) => api.post(`/pr/${id}/assign-da`, { da_id }),
@@ -91,6 +91,10 @@ export const inventoryApi = {
 export const assetsApi = {
   list: () => api.get('/assets/'),
   get: (id: number) => api.get(`/assets/${id}`),
+  create: (data: object) => api.post('/assets/', data),
+  importCsv: (formData: FormData) =>
+    api.post('/assets/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  delete: (id: number) => api.delete(`/assets/${id}`),
   publicProfile: (tag: string) => api.get(`/assets/qr/${tag}`),
   updateCondition: (id: number, condition: string) => api.patch(`/assets/${id}/condition`, { condition }),
   move: (id: number, to_building: string, to_room: string, reason?: string) =>
@@ -136,4 +140,5 @@ export const adminApi = {
   rejectUser: (id: number) => api.post(`/admin/users/${id}/reject`),
   importBudget: (formData: FormData) =>
     api.post('/admin/budget/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  clearBudgets: () => api.delete('/admin/budget/clear'),
 };

@@ -2,6 +2,7 @@ import type { RequirementType } from '../config/prCreationQuestions';
 
 export interface PRItemFormState {
   budget_file_id: number;
+  quantity: string;
   charges: string;
   requirement_type: RequirementType | '';
   warranty: string;
@@ -59,6 +60,7 @@ export interface PRWizardSelection {
 export function createEmptyItemState(budgetFileId: number): PRItemFormState {
   return {
     budget_file_id: budgetFileId,
+    quantity: '1',
     charges: '',
     requirement_type: '',
     warranty: '',

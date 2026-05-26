@@ -5,7 +5,7 @@ Workflow definitions match NIT Tiruchirappalli procurement policy (3 categories 
 import asyncio
 from datetime import date
 
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.core.config import settings
@@ -32,14 +32,23 @@ DEMO_PASSWORD = get_password_hash("password")
 
 async def create_tables():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # We do not drop tables in production/development to persist user changes
+        # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    print("✓ Database tables created")
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);"))
+    print("✓ Database tables verified/created")
 
 
 async def seed():
     async with SessionLocal() as db:
-        print("🌱 Seeding IRIS (demo: CSE only, password=password)...")
+        # Check if the database has already been seeded
+        check_user = await db.execute(select(User).where(User.email == "admin@nitt.edu"))
+        if check_user.scalar_one_or_none():
+            print("✓ Database already seeded. Skipping seeding to preserve data.")
+            return
+
+        print("🌱 Seeding NIT Inventory (demo: CSE only, password=password)...")
 
         # ─── Departments (All standard NIT Trichy departments) ──────────────────────────────────
         departments_spec = [
@@ -208,6 +217,16 @@ async def seed():
                 50_000,
             ),
             (
+                "NITT/CSE/2026-27/001-B",
+                "Office Stationery Kit",
+                "OPEX",
+                "consumables",
+                "CSE-CON-001-B",
+                30_000,
+                1,
+                30_000,
+            ),
+            (
                 "NITT/CSE/2026-27/002",
                 "Department Workstation",
                 "CAPEX",
@@ -249,7 +268,7 @@ async def seed():
         # ─── Settings ────────────────────────────────────────────────────────
         for key, val in [
             ("institution_name", "National Institute of Technology, Tiruchirappalli"),
-            ("system_name", "IRIS"),
+            ("system_name", "NIT Inventory"),
             ("institution_short", "NIT Tiruchirappalli"),
         ]:
             db.add(Settings(key_name=key, value=val))

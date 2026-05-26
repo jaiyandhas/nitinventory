@@ -7,12 +7,22 @@
         @page {
             size: A4;
             margin: 18mm 15mm 20mm 15mm;
+            background-image: url("file://{{ storage_dir }}/NITLOGO_watermark.png");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 450px;
             @bottom-right {
                 content: "Page " counter(page) " of " counter(pages);
                 font-family: Arial, sans-serif;
                 font-size: 8pt;
                 color: #555;
             }
+        }
+        tr {
+            page-break-inside: avoid;
+        }
+        thead {
+            display: table-header-group;
         }
         body {
             font-family: Arial, sans-serif;
@@ -141,11 +151,18 @@
 </head>
 <body>
 
-    <div class="header-container">
-        <div class="logo-text">National Institute of Technology Tiruchirappalli</div>
-        <div class="subtitle">Tiruchirappalli - 620015, Tamil Nadu, India</div>
-        <div class="system-tag">IRIS — Institutional Resource & Inventory System</div>
-    </div>
+    <table style="width: 100%; margin-bottom: 20px; border-bottom: 2px double #1a3a6b; padding-bottom: 10px; border-collapse: collapse;">
+        <tr>
+            <td style="width: 55px; padding: 0; border: none; vertical-align: middle;">
+                <img src="file://{{ storage_dir }}/NITLOGO.png" style="height: 50px; width: 50px; object-fit: contain;" />
+            </td>
+            <td style="text-align: left; padding: 0 0 0 12px; border: none; vertical-align: middle;">
+                <div style="font-size: 14pt; font-weight: bold; color: #1a3a6b; text-transform: uppercase; letter-spacing: 0.5px; margin: 0; line-height: 1.2;">National Institute of Technology Tiruchirappalli</div>
+                <div style="font-size: 9pt; color: #444; margin: 2px 0 0 0; font-weight: bold; text-transform: uppercase; line-height: 1.2;">Tiruchirappalli - 620015, Tamil Nadu, India</div>
+                <div style="font-size: 8pt; font-weight: bold; color: #555; margin-top: 2px; line-height: 1.2;">NIT Inventory — Institutional Resource & Inventory System</div>
+            </td>
+        </tr>
+    </table>
 
     <div class="doc-title">Administrative Approval & Procurement Report</div>
 
@@ -165,7 +182,7 @@
         </tr>
         <tr>
             <th>Estimated Amount</th>
-            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount) if pr.amount is not none else "0.00" }} Lakhs</td>
+            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount / 100000.0) if pr.amount is not none else "0.00" }} Lakhs</td>
             <th>Procurement Method</th>
             <td>{{ pr.procurement.name if pr.procurement else 'N/A' }}</td>
         </tr>
@@ -177,9 +194,9 @@
         </tr>
         <tr>
             <th>EMD Requirement</th>
-            <td>₹{{ "%.2f"|format(pr.emd) if pr.emd is not none else "0.00" }}</td>
+            <td>{{ "%.2f"|format(pr.emd) if pr.emd is not none else "0.00" }}%</td>
             <th>Performance Security</th>
-            <td>₹{{ "%.2f"|format(pr.performance_security) if pr.performance_security is not none else "0.00" }}</td>
+            <td>{{ "%.2f"|format(pr.performance_security) if pr.performance_security is not none else "0.00" }}%</td>
         </tr>
         <tr>
             <th>Delivery Mode / Location</th>
@@ -194,7 +211,8 @@
         <thead>
             <tr>
                 <th style="width: 8%">S.No</th>
-                <th style="width: 67%">Item Description</th>
+                <th style="width: 55%">Item Description</th>
+                <th style="width: 12%" class="text-right">Quantity</th>
                 <th style="width: 25%" class="text-right">Estimated Cost (Lakhs)</th>
             </tr>
         </thead>
@@ -203,15 +221,129 @@
             <tr>
                 <td>{{ loop.index }}</td>
                 <td>{{ item.item_description }}</td>
-                <td class="text-right">₹{{ "%.2f"|format(item.estimated_total) if item.estimated_total is not none else "0.00" }}</td>
+                <td class="text-right">{{ item.quantity or 1 }}</td>
+                <td class="text-right">₹{{ "%.2f"|format(item.estimated_total / 100000.0) if item.estimated_total is not none else "0.00" }}</td>
             </tr>
             {% endfor %}
             <tr class="bold" style="background-color: #f5f8fa !important;">
-                <td colspan="2" class="text-right">Grand Total:</td>
-                <td class="text-right" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount) if pr.amount is not none else "0.00" }} Lakhs</td>
+                <td colspan="3" class="text-right">Grand Total:</td>
+                <td class="text-right" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount / 100000.0) if pr.amount is not none else "0.00" }} Lakhs</td>
             </tr>
         </tbody>
     </table>
+
+    <div class="section-title">Compliance and Special Approvals</div>
+    <table class="details-table">
+        <tr>
+            <th>Basis of Estimate</th>
+            <td>{{ pr.basis_of_estimate_details or 'N/A' }}</td>
+            <th>Southern Region Service Centre</th>
+            <td>
+                {{ 'Yes' if pr.is_service_center_in_south else 'No' }}
+                {% if pr.is_service_center_in_south and pr.service_center_south_desc %}
+                    <br/><span style="font-size: 8pt; color: #555;">({{ pr.service_center_south_desc }})</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Quantity Split Purchase</th>
+            <td>
+                {{ 'Yes' if pr.is_quantity_split else 'No' }}
+                {% if pr.is_quantity_split and pr.quantity_split_details %}
+                    <br/><span style="font-size: 8pt; color: #555;">Reason: {{ pr.quantity_split_details }}</span>
+                {% endif %}
+            </td>
+            <th>Item Split Purchase</th>
+            <td>
+                {{ 'Yes' if pr.is_item_split else 'No' }}
+                {% if pr.is_item_split and pr.item_split_justification %}
+                    <br/><span style="font-size: 8pt; color: #555;">Reason: {{ pr.item_split_justification }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Proprietary Exemption / MSE</th>
+            <td>
+                {{ 'Yes' if pr.exemption else 'No' }}
+                {% if pr.exemption and pr.exemption_remarks %}
+                    <br/><span style="font-size: 8pt; color: #555;">Remarks: {{ pr.exemption_remarks }}</span>
+                {% endif %}
+            </td>
+            <th>Training Requirements</th>
+            <td>
+                {{ 'Yes' if pr.is_training_required else 'No' }}
+                {% if pr.is_training_required %}
+                    <br/><span style="font-size: 8.5pt; color: #333;">
+                        Type: {{ pr.training_type or 'N/A' }}<br/>
+                        Vendor: {{ pr.training_vendor or 'N/A' }}
+                    </span>
+                {% endif %}
+            </td>
+        </tr>
+    </table>
+
+    <div class="section-title">Item-wise Specifications & Procurement Details</div>
+    {% for item in pr.items %}
+    <div style="margin-bottom: 12px; page-break-inside: avoid;">
+        <div style="font-size: 9pt; font-weight: bold; color: #1a3a6b; background-color: #f5f8fa; padding: 4px 8px; border: 1px solid #ccc; border-bottom: none;">
+            Item {{ loop.index }}: {{ item.item_description }}
+        </div>
+        <table class="details-table" style="margin-bottom: 0;">
+            <tr>
+                <th>GST & Charges (%)</th>
+                <td>{{ "%.2f"|format(item.charges) if item.charges is not none else "0.00" }}%</td>
+                <th>Nature of Requirement</th>
+                <td>{{ item.requirement_type or 'N/A' }}</td>
+            </tr>
+            <tr>
+                <th>Warranty</th>
+                <td>{{ "%d"|format(item.warranty) if item.warranty is not none else "0" }} months</td>
+                <th>Delivery Period</th>
+                <td>{{ "%d"|format(item.delivery_period) if item.delivery_period is not none else "0" }} weeks</td>
+            </tr>
+            <tr>
+                <th>Installation Required</th>
+                <td>{{ 'Yes' if item.installation_required else 'No' }}</td>
+                <th>Site Readiness</th>
+                <td>
+                    {{ 'Yes' if item.site_readiness else 'No' }}
+                    {% if not item.site_readiness and item.site_readiness_remarks %}
+                        <br/><span style="font-size: 8pt; color: #555;">Remarks: {{ item.site_readiness_remarks }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Availability in GeM</th>
+                <td>
+                    {{ item.availability or 'N/A' }}
+                    {% if item.availability_remarks %}
+                        <br/><span style="font-size: 8pt; color: #555;">Remarks: {{ item.availability_remarks }}</span>
+                    {% endif %}
+                </td>
+                <th>Present Stock</th>
+                <td>{{ item.present_stock or 'N/A' }}</td>
+            </tr>
+            <tr>
+                <th>Previous Reference File</th>
+                <td>{{ item.previous_file_no_reference or 'N/A' }}</td>
+                <th>Justification</th>
+                <td>{{ item.justification_for_procurement or 'N/A' }}</td>
+            </tr>
+            {% if item.gem_link %}
+            <tr>
+                <th>GeM Product Link</th>
+                <td colspan="3"><a href="{{ item.gem_link }}" style="color: #1a3a6b; text-decoration: underline;">{{ item.gem_link }}</a></td>
+            </tr>
+            {% endif %}
+            {% if item.tech_specs_text %}
+            <tr>
+                <th>Technical Specifications</th>
+                <td colspan="3" style="font-family: monospace; white-space: pre-wrap; font-size: 8.5pt;">{{ item.tech_specs_text }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+    {% endfor %}
 
     {% if pr.tender_reference_number %}
     <div class="section-title">Tendering Information</div>
@@ -317,7 +449,7 @@
     </table>
     {% endif %}
 
-    {% if pr.faculty1 or pr.faculty2 %}
+    {% if pr.faculty1 or pr.faculty2 or pr.faculty3 %}
     <div class="section-title">Purchase Committee</div>
     <table class="data-table">
         <thead>
@@ -343,7 +475,7 @@
             </tr>
             {% if pr.faculty1 %}
             <tr>
-                <td class="bold">Committee Member 1 (Faculty)</td>
+                <td class="bold">Committee Member 1 (Dept Faculty)</td>
                 <td>{{ pr.faculty1.name }}</td>
                 <td>{{ pr.faculty1.designation or 'Faculty' }} / {{ pr.faculty1.department.name if pr.faculty1.department else 'N/A' }}</td>
                 <td>
@@ -357,12 +489,26 @@
             {% endif %}
             {% if pr.faculty2 %}
             <tr>
-                <td class="bold">Committee Member 2 (Faculty)</td>
+                <td class="bold">Committee Member 2 (Dept Faculty)</td>
                 <td>{{ pr.faculty2.name }}</td>
                 <td>{{ pr.faculty2.designation or 'Faculty' }} / {{ pr.faculty2.department.name if pr.faculty2.department else 'N/A' }}</td>
                 <td>
                     {% if pr.faculty2.signature_path %}
                     <img src="file://{{ storage_dir }}/{{ pr.faculty2.signature_path }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            {% if pr.faculty3 %}
+            <tr>
+                <td class="bold">Committee Member 3 (Director Nominee)</td>
+                <td>{{ pr.faculty3.name }}</td>
+                <td>{{ pr.faculty3.designation or 'Faculty' }} / {{ pr.faculty3.department.name if pr.faculty3.department else 'N/A' }}</td>
+                <td>
+                    {% if pr.faculty3.signature_path %}
+                    <img src="file://{{ storage_dir }}/{{ pr.faculty3.signature_path }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
                     {% else %}
                     -
                     {% endif %}
@@ -415,18 +561,30 @@
             <div style="height: 40px; margin-bottom: 5px;"></div>
             {% endif %}
             <div class="sig-line">Initiator Signature</div>
-            <div style="font-size: 8pt; color: #555; margin-top: 3px;">Date: ______________</div>
+            <div style="font-size: 8.5pt; color: #333; margin-top: 3px; font-weight: bold;">
+                Date: {{ pr_created_at_str }}
+            </div>
         </div>
         <div class="sig-box" style="float: right;">
+            {% if pr.aa_approved_at and pr.aa_approver and pr.aa_approver.signature_path %}
+            <div style="height: 40px; margin-bottom: 5px; text-align: center;">
+                <img src="file://{{ storage_dir }}/{{ pr.aa_approver.signature_path }}" style="max-height: 40px; max-width: 120px; object-fit: contain;" />
+            </div>
+            <div class="sig-line">Sanctioning Authority ({{ pr.aa_approver.name }})</div>
+            <div style="font-size: 8.5pt; color: #333; margin-top: 3px; font-weight: bold;">
+                Date: {{ pr_aa_approved_at_str }}
+            </div>
+            {% else %}
             <div style="height: 40px; margin-bottom: 5px;"></div>
             <div class="sig-line">Sanctioning Authority</div>
             <div style="font-size: 8pt; color: #555; margin-top: 3px;">Date: ______________</div>
+            {% endif %}
         </div>
         <div style="clear: both;"></div>
     </div>
 
     <div class="footer-note">
-        This document is system-generated by IRIS on behalf of NIT Tiruchirappalli.
+        This document is system-generated by NIT Inventory on behalf of NIT Tiruchirappalli.
     </div>
 
 </body>

@@ -34,7 +34,7 @@ export const LoginPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-6">
           <img src="/NITLOGO.png" alt="NIT Logo" className="w-20 h-20 object-contain mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-[#1a3a6b]">IRIS</h1>
+          <h1 className="text-3xl font-bold text-[#1a3a6b]">NIT Inventory</h1>
           <p className="text-sm text-slate-600 mt-1 font-medium">Institutional Resource & Inventory System</p>
           <p className="text-xs text-slate-500 mt-0.5">National Institute of Technology, Tiruchirappalli</p>
         </div>
@@ -101,7 +101,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <p className="text-center text-xs text-slate-500 mt-6">
-          © {new Date().getFullYear()} NIT Tiruchirappalli — IRIS v1.0
+          © {new Date().getFullYear()} NIT Tiruchirappalli — NIT Inventory v1.0
         </p>
       </div>
     </div>

@@ -28,7 +28,45 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
               <span className="ml-2 text-sm font-normal text-slate-500">({formatCurrency(file.total_cost)})</span>
             </h3>
 
+            {/* Budget Details Card */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Allocated Qty</span>
+                <span className="font-bold text-sm text-slate-800">{file.quantity}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Unit Cost</span>
+                <span className="font-bold text-sm text-slate-800">{formatCurrency(file.unit_cost)}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Available Budget</span>
+                <span className="font-bold text-sm text-emerald-700">{formatCurrency(file.available_amount)}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Max Purchase Qty</span>
+                <span className="font-bold text-sm text-blue-700">
+                  {Math.floor(file.available_amount / file.unit_cost)}
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="label">Quantity to Purchase *</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.floor(file.available_amount / file.unit_cost)}
+                  required
+                  className="input-field"
+                  value={item.quantity}
+                  onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
+                />
+                <span className="text-xs text-slate-500 mt-1 block font-medium">
+                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(item.quantity) || 1) * file.unit_cost)}</strong>
+                </span>
+              </div>
+
               <div>
                 <label className="label">GST &amp; Charges (%) *</label>
                 <input
@@ -93,8 +131,14 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
               ) : (
                 <div className="md:col-span-2">
                   <label className="label">GeM Non-Availability Certificate (PDF) *</label>
-                  <input type="file" accept="application/pdf" required className="input-field"
+                  <input type="file" accept="application/pdf" required={!item.gem_nac_file} className="input-field"
                     onChange={(e) => onUpdate(fid, { gem_nac_file: e.target.files?.[0] ?? null })} />
+                  {item.gem_nac_file && (
+                    <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+                      <span>📄 Selected:</span>
+                      <span className="font-semibold">{item.gem_nac_file.name}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -130,8 +174,14 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
 
             <div>
               <label className="label">Upload Tech Spec (PDF) *</label>
-              <input type="file" accept="application/pdf" required className="input-field"
+              <input type="file" accept="application/pdf" required={!item.tech_specs_file} className="input-field"
                 onChange={(e) => onUpdate(fid, { tech_specs_file: e.target.files?.[0] ?? null })} />
+              {item.tech_specs_file && (
+                <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+                  <span>📄 Selected:</span>
+                  <span className="font-semibold">{item.tech_specs_file.name}</span>
+                </div>
+              )}
             </div>
           </section>
         );

@@ -41,8 +41,8 @@
     @apply inline-flex items-center px-2 py-0.5 border text-xs font-semibold rounded-sm;
   }
   .nav-item {
-    @apply flex items-center gap-3 px-3 py-2 text-sm font-medium
-           text-slate-600 hover:text-[#1a3a6b] hover:bg-slate-200 transition-colors cursor-pointer;
+    @apply flex items-center px-4 py-2.5 text-base font-bold
+           text-slate-700 hover:text-[#1a3a6b] hover:bg-slate-200 transition-colors cursor-pointer;
   }
   .nav-item-active {
     @apply nav-item text-[#1a3a6b] bg-blue-50 border-r-4 border-[#1a3a6b];

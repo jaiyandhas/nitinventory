@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    DATABASE_URL: str = "postgresql+asyncpg://iris:iris_secret@iris-db:5432/iris"
+    DATABASE_URL: str = "postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory"
     SECRET_KEY: str = "change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     SMTP_HOST: str = ""
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_PASS: str = ""  # For backward compatibility
-    SMTP_FROM: str = "iris@nitt.edu"
+    SMTP_FROM: str = "nitinventory@nitt.edu"
     STORAGE_PATH: str = "/app/storage"
     FRONTEND_URL: str = "http://localhost:5173"
     ENVIRONMENT: str = "development"

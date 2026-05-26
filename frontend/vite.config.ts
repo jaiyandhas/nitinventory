@@ -7,8 +7,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': { target: 'http://iris-backend:8000', changeOrigin: true },
-      '/storage': { target: 'http://iris-backend:8000', changeOrigin: true },
+      '/api': { target: 'http://nitinventory-backend:8000', changeOrigin: true },
+      '/storage': { target: 'http://nitinventory-backend:8000', changeOrigin: true },
     },
   },
 })

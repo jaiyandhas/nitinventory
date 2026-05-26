@@ -65,10 +65,16 @@ export const StepCommonDetails: React.FC<Props> = ({
         <input
           type="file"
           accept="application/pdf"
-          required
+          required={!common.quotation_file}
           className="input-field"
           onChange={(e) => onUpdate({ quotation_file: e.target.files?.[0] ?? null })}
         />
+        {common.quotation_file && (
+          <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+            <span>📄 Selected:</span>
+            <span className="font-semibold">{common.quotation_file.name}</span>
+          </div>
+        )}
       </div>
 
       <div className="md:col-span-2">
@@ -121,7 +127,7 @@ export const StepCommonDetails: React.FC<Props> = ({
       </div>
     </div>
 
-    {/* Southern region service centre — NPFS: Yes opens justification */}
+    {/* Southern region service centre — Yes opens justification */}
     <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
       <h3 className="text-sm font-semibold text-[#1a3a6b]">Southern region service centre</h3>
       <YesNoSelect

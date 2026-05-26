@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Wallet, Package, Box, Settings,
   Users, ChevronLeft, ChevronRight, LogOut, Bell, Menu, X,
-  Truck, AlertTriangle, BarChart2
+  Truck, AlertTriangle, BarChart2, User
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Assets', icon: Box, href: '/assets', roles: ['hod', 'verifier_sp', 'admin'] },
   { label: 'Discrepancies', icon: AlertTriangle, href: '/inventory/discrepancies', roles: ['admin', 'verifier_sp', 'apex_approver'] },
   { label: 'Analytics', icon: BarChart2, href: '/analytics', roles: ['admin', 'apex_approver'] },
+  { label: 'My Profile', icon: User, href: '/profile' },
   { label: 'Users', icon: Users, href: '/admin/users', roles: ['admin'] },
   { label: 'Settings', icon: Settings, href: '/admin/settings', roles: ['admin'] },
 ];
@@ -46,13 +47,13 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     <aside
       className={`flex flex-col h-full sidebar-bg ${mobile ? 'w-72' : collapsed ? 'w-16' : 'w-64'} transition-all duration-300`}
     >
-      {/* Logo */}
+      {/* Branding */}
       <div className={`flex items-center gap-3 px-4 py-5 border-b border-slate-300 bg-white ${collapsed && !mobile ? 'justify-center' : ''}`}>
-        <img src="/NITLOGO.png" alt="NIT Logo" className="w-10 h-10 object-contain" />
+        <img src="/NITLOGO.png" alt="NIT Logo" className="w-12 h-12 object-contain flex-shrink-0" />
         {(!collapsed || mobile) && (
           <div>
-            <div className="text-base font-bold text-[#1a3a6b] tracking-tight">IRIS</div>
-            <div className="text-xs text-slate-600 font-medium">NIT Tiruchirappalli</div>
+            <div className="text-lg font-black text-[#1a3a6b] tracking-tight leading-none">NIT INVENTORY</div>
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1.5">NIT Tiruchirappalli</div>
           </div>
         )}
       </div>
@@ -69,8 +70,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
       {/* Nav items */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
-          const active = location.pathname.startsWith(item.href);
-          const Icon = item.icon;
+          const active = item.href === '/dashboard'
+            ? location.pathname === '/dashboard'
+            : location.pathname === item.href || location.pathname.startsWith(item.href + '/');
           return (
             <Link
               key={item.href}
@@ -79,22 +81,25 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               className={`${active ? 'nav-item-active' : 'nav-item'} ${collapsed && !mobile ? 'justify-center px-2' : ''}`}
               title={collapsed && !mobile ? item.label : undefined}
             >
-              <Icon size={18} className="flex-shrink-0" />
-              {(!collapsed || mobile) && <span>{item.label}</span>}
+              {(!collapsed || mobile) ? (
+                <span>{item.label}</span>
+              ) : (
+                <span className="text-xs font-black tracking-wider text-slate-800">{item.label.substring(0, 2).toUpperCase()}</span>
+              )}
             </Link>
           );
         })}
       </nav>
 
       {/* User footer */}
-      <div className={`border-t border-slate-300 p-3 bg-white ${collapsed && !mobile ? 'flex justify-center' : ''}`}>
+      <div className={`border-t border-slate-300 p-3 bg-white ${collapsed && !mobile ? 'flex flex-col items-center gap-2' : ''}`}>
         {!collapsed || mobile ? (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-100 border border-blue-200 flex items-center justify-center text-xs font-bold text-[#1a3a6b] flex-shrink-0">
+          <div className="flex items-center gap-3 w-full">
+            <Link to="/profile" className="w-8 h-8 bg-blue-100 border border-blue-200 flex items-center justify-center text-xs font-bold text-[#1a3a6b] flex-shrink-0 hover:bg-blue-200 transition-colors rounded-sm" title="My Profile Settings">
               {user?.name?.charAt(0).toUpperCase()}
-            </div>
+            </Link>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate">{user?.name}</div>
+              <Link to="/profile" className="text-xs font-bold text-slate-800 truncate hover:text-[#1a3a6b] hover:underline block">{user?.name}</Link>
               <div className="text-xs text-slate-500 truncate">{user?.email}</div>
             </div>
             <button onClick={handleLogout} className="text-slate-500 hover:text-red-600 transition-colors p-1" title="Logout">
@@ -102,9 +107,14 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             </button>
           </div>
         ) : (
-          <button onClick={handleLogout} className="text-slate-500 hover:text-red-600 transition-colors p-2" title="Logout">
-            <LogOut size={16} />
-          </button>
+          <div className="flex flex-col items-center gap-2">
+            <Link to="/profile" className="w-8 h-8 bg-blue-100 border border-blue-200 flex items-center justify-center text-xs font-bold text-[#1a3a6b] flex-shrink-0 hover:bg-blue-200 transition-colors rounded-sm" title="My Profile Settings">
+              {user?.name?.charAt(0).toUpperCase()}
+            </Link>
+            <button onClick={handleLogout} className="text-slate-500 hover:text-red-600 transition-colors p-2" title="Logout">
+              <LogOut size={16} />
+            </button>
+          </div>
         )}
       </div>
     </aside>

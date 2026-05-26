@@ -35,7 +35,8 @@ def pick_budget(session: requests.Session, min_cost: float, max_cost: float) -> 
     files = session.get(f"{BASE_URL}/api/budget/files").json()
     for f in files:
         if min_cost <= f["total_cost"] <= max_cost:
-            return f["id"]
+            if f.get("available_amount", 0) >= f.get("unit_cost", 0):
+                return f["id"]
     return None
 
 
@@ -158,10 +159,11 @@ def advance_loop(session: requests.Session, pr_id: int, label: str, max_steps: i
             fac_res = actor.get(f"{BASE_URL}/api/budget/department-faculty")
             if fac_res.status_code == 200:
                 facs = fac_res.json()
-                if len(facs) >= 2:
+                if len(facs) >= 3:
                     payload["faculty1_id"] = facs[0]["id"]
                     payload["faculty2_id"] = facs[1]["id"]
-                    print(f"  [{label}] HOD assigned nominees: {facs[0]['name']} (ID {facs[0]['id']}) and {facs[1]['name']} (ID {facs[1]['id']})")
+                    payload["faculty3_id"] = facs[2]["id"]
+                    print(f"  [{label}] HOD assigned nominees: {facs[0]['name']} (ID {facs[0]['id']}), {facs[1]['name']} (ID {facs[1]['id']}), and {facs[2]['name']} (ID {facs[2]['id']})")
                 else:
                     print(f"  [{label}] ERROR: insufficient faculty members for HOD committee: {facs}")
             else:

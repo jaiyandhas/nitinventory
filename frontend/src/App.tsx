@@ -16,6 +16,7 @@ import { UsersPage } from './pages/admin/UsersPage';
 import { DeliveryDetailPage } from './pages/DeliveryDetail';
 import { AssetDetailPage } from './pages/AssetDetail';
 import { AnalyticsPage } from './pages/Placeholders';
+import { ProfilePage } from './pages/ProfilePage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[] }> = ({ children, roles }) => {
   const { user, loading } = useAuth();
@@ -51,6 +52,7 @@ const App: React.FC = () => {
         <Route path="/pr" element={<ProtectedRoute><PRListPage /></ProtectedRoute>} />
         <Route path="/pr/create" element={<ProtectedRoute roles={['faculty', 'hod']}><NewPRPage /></ProtectedRoute>} />
         <Route path="/pr/:id" element={<ProtectedRoute><PRDetailPage /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 
         <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver']}><BudgetPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute roles={['admin', 'apex_approver']}><AnalyticsPage /></ProtectedRoute>} />

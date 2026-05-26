@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -36,6 +36,7 @@ async def list_users(db: AsyncSession = Depends(get_db), _=AdminDep):
             "role_id": u.role_id,
             "department_id": u.department_id,
             "is_active": u.is_active,
+            "is_approved": u.is_approved,
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
@@ -57,6 +58,7 @@ async def create_user(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep
         role_id=body.get("role_id"),
         department_id=body.get("department_id"),
         is_active=True,
+        is_approved=body.get("is_approved", True),
     )
     db.add(u)
     await db.commit()
@@ -281,6 +283,15 @@ async def update_user(user_id: int, body: dict, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=404, detail="User not found")
     if "name" in body:
         u.name = body["name"]
+    if "email" in body:
+        new_email = body["email"].lower()
+        if new_email != u.email:
+            existing = await db.execute(select(User).where(User.email == new_email))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail="Email already in use")
+            u.email = new_email
+    if "password" in body and body["password"]:
+        u.hashed_password = get_password_hash(body["password"])
     if "designation" in body:
         u.designation = body["designation"]
     if "role_id" in body:
@@ -289,6 +300,8 @@ async def update_user(user_id: int, body: dict, db: AsyncSession = Depends(get_d
         u.department_id = body["department_id"]
     if "is_active" in body:
         u.is_active = bool(body["is_active"])
+    if "is_approved" in body:
+        u.is_approved = bool(body["is_approved"])
     await db.commit()
     return {"message": "User updated"}
 
@@ -310,7 +323,7 @@ async def reset_password(user_id: int, body: dict, db: AsyncSession = Depends(ge
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/departments")
-async def list_departments(db: AsyncSession = Depends(get_db), _=AdminDep):
+async def list_departments(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
     result = await db.execute(select(Department).order_by(Department.short_code))
     return [{"id": d.id, "name": d.name, "short_code": d.short_code} for d in result.scalars()]
 
@@ -357,7 +370,7 @@ async def create_role(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/financial-years")
-async def list_financial_years(db: AsyncSession = Depends(get_db), _=AdminDep):
+async def list_financial_years(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
     result = await db.execute(select(FinancialYear).order_by(FinancialYear.start_date.desc()))
     return [{"id": fy.id, "label": fy.label, "start_date": fy.start_date.isoformat(), "end_date": fy.end_date.isoformat(), "is_active": fy.is_active} for fy in result.scalars()]
 
@@ -434,8 +447,8 @@ async def budget_summary(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
 @router.post("/budget")
 async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
     b = BudgetMaster(
-        department_id=body["department_id"],
-        financial_year_id=body["financial_year_id"],
+        department_id=int(body["department_id"]),
+        financial_year_id=int(body["financial_year_id"]),
         expenditure_category=body["expenditure_category"],
         item_name=body["item_name"],
         category=body["category"],
@@ -459,14 +472,38 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
     b.item_name = body.get("item_name", b.item_name)
-    b.department_id = body.get("department_id", b.department_id)
-    b.financial_year_id = body.get("financial_year_id", b.financial_year_id)
+    if "department_id" in body:
+        b.department_id = int(body["department_id"])
+    if "financial_year_id" in body:
+        b.financial_year_id = int(body["financial_year_id"])
     if "unit_cost" in body and "quantity" in body:
         b.unit_cost = float(body["unit_cost"])
         b.quantity = int(body["quantity"])
         b.total_cost = b.unit_cost * b.quantity
     await db.commit()
     return {"message": "Budget updated"}
+
+
+@router.delete("/budget/clear")
+async def clear_all_budgets(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+    """Deletes all budget master entries to start fresh. Skips any budgets linked to active PR items."""
+    from app.models.purchase_request import PurchaseRequestItem
+    from sqlalchemy import delete
+
+    # Get linked budget IDs
+    linked_res = await db.execute(select(PurchaseRequestItem.budget_file_id))
+    linked_ids = {row[0] for row in linked_res.fetchall() if row[0] is not None}
+
+    if linked_ids:
+        stmt = delete(BudgetMaster).where(BudgetMaster.id.not_in(linked_ids))
+        result = await db.execute(stmt)
+        await db.commit()
+        return {"message": f"Cleared {result.rowcount} unlinked budget files. (Some budget files are linked to active Purchase Requests and could not be deleted)"}
+    else:
+        stmt = delete(BudgetMaster)
+        result = await db.execute(stmt)
+        await db.commit()
+        return {"message": "All budget files cleared successfully."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -569,7 +606,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
     role_id = body.get("role_id")
     user_id = body.get("user_id")
     user_group = body.get("user_group")
-    user_type = body.get("user_type", "group")
+    user_type = body.get("user_type", "verifier")
 
     if user_type == "user" and user_id:
         user_res = await db.execute(select(User).where(User.id == user_id))
@@ -578,8 +615,13 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
             raise HTTPException(status_code=400, detail="User not found")
         role_id = None
         user_group = None
+    elif user_type in ["purchase_initiator", "da_assigner", "verifier_da", "tech_evaluation"]:
+        user_id = None
+        role_id = None
+        user_group = None
     else:
-        user_type = "group"
+        if user_type not in ["verifier", "approver"]:
+            user_type = "verifier"
         user_id = None
         if role_id:
             role_res = await db.execute(select(RoleManager).where(RoleManager.id == role_id))
@@ -615,6 +657,15 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         wf.step_order = body["step_order"]
     if "user_type" in body:
         wf.user_type = body["user_type"]
+        if wf.user_type in ["purchase_initiator", "da_assigner", "verifier_da", "tech_evaluation"]:
+            wf.user_id = None
+            wf.role_id = None
+            wf.user_group = None
+        elif wf.user_type == "user":
+            wf.role_id = None
+            wf.user_group = None
+        elif wf.user_type not in ["verifier", "approver"]:
+            pass
     if "user_id" in body:
         wf.user_id = body["user_id"]
         if wf.user_id:
@@ -629,14 +680,16 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
             if role_obj:
                 wf.user_group = role_obj.group_key
                 wf.user_id = None
-                wf.user_type = "group"
+                if wf.user_type not in ["verifier", "approver"]:
+                    wf.user_type = "verifier"
         else:
             wf.role_id = None
     elif "user_group" in body:
         wf.user_group = body["user_group"]
         wf.user_id = None
         wf.role_id = None
-        wf.user_type = "group"
+        if wf.user_type not in ["verifier", "approver"]:
+            wf.user_type = "verifier"
     if "is_enabled" in body:
         wf.is_enabled = bool(body["is_enabled"])
     await db.commit()
@@ -755,6 +808,7 @@ async def list_categories(procurement_id: Optional[int] = None, db: AsyncSession
             "max_amount": c.max_amount,
             "is_active": c.is_active,
             "procurement_id": c.procurement_id,
+            "requirement_type": c.requirement_type,
         }
         for c in result.scalars()
     ]
@@ -767,7 +821,8 @@ async def create_category(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         min_amount=float(body["min_amount"]),
         max_amount=float(body["max_amount"]),
         is_active=body.get("is_active", True),
-        procurement_id=int(body["procurement_id"])
+        procurement_id=int(body["procurement_id"]),
+        requirement_type=body.get("requirement_type") if body.get("requirement_type") else None
     )
     db.add(c)
     await db.commit()
@@ -790,6 +845,8 @@ async def update_category(cat_id: int, body: dict, db: AsyncSession = Depends(ge
         c.is_active = bool(body["is_active"])
     if "procurement_id" in body:
         c.procurement_id = int(body["procurement_id"])
+    if "requirement_type" in body:
+        c.requirement_type = body["requirement_type"] if body["requirement_type"] else None
     await db.commit()
     return {"message": "Category updated"}
 
@@ -889,9 +946,15 @@ async def download_budget_template(_=DeanOrAdminDep):
 
 
 @router.post("/budget/import")
-async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def import_budget_csv(
+    file: UploadFile,
+    financial_year_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    _=DeanOrAdminDep
+):
     import io
     import csv
+    import re
     from app.models.user import Department
     from app.models.budget import BudgetMaster, FinancialYear
     from sqlalchemy import select, and_
@@ -910,30 +973,65 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
     if not rows:
         raise HTTPException(status_code=400, detail="The CSV file is empty")
 
-    headers = [h.strip().lower() for h in rows[0]]
-    expected = ["department", "file no", "procurement", "budget amount (inr)"]
+    # Normalize headers
+    normalized_headers = [h.strip().lower().replace("_", " ") for h in rows[0]]
+
+    # Helper to find index of a column matching a list of possible substring/patterns
+    def find_idx(keywords, required=False):
+        for i, h in enumerate(normalized_headers):
+            if any(kw in h for kw in keywords):
+                return i
+        if required:
+            raise HTTPException(status_code=400, detail=f"Required column matching one of {keywords} not found in CSV headers: {rows[0]}")
+        return None
+
+    dept_idx = find_idx(["department", "dept"], required=True)
+    file_no_idx = find_idx(["file no", "file number", "file_no", "file"], required=True)
+    item_idx = find_idx(["item name", "item_name", "procurement", "item", "details", "description"], required=True)
     
-    for field in expected:
-        if not any(field in h for h in headers):
-            raise HTTPException(status_code=400, detail=f"Missing column matching '{field}' in headers: {rows[0]}")
+    unit_cost_idx = find_idx(["unit cost", "unit price", "rate", "cost"])
+    qty_idx = find_idx(["quantity", "qty"])
+    total_cost_idx = find_idx(["total cost", "budget amount", "total amount", "amount", "total"])
+    
+    exp_cat_idx = find_idx(["expenditure category", "expenditure type", "expenditure_category"])
+    cat_idx = find_idx(["purchase category", "category", "type"])
+    course_idx = find_idx(["course code", "course"])
+    fy_idx = find_idx(["financial year", "fy", "financial_year"])
 
-    dept_idx = next(i for i, h in enumerate(headers) if "department" in h)
-    file_no_idx = next(i for i, h in enumerate(headers) if "file no" in h)
-    proc_idx = next(i for i, h in enumerate(headers) if "procurement" in h)
-    amount_idx = next(i for i, h in enumerate(headers) if "budget amount" in h or "amount" in h)
-
-    now = datetime.utcnow()
-    fy_result = await db.execute(
-        select(FinancialYear).where(
-            and_(FinancialYear.start_date <= now.date(), FinancialYear.end_date >= now.date())
-        )
-    )
-    financial_year = fy_result.scalar_one_or_none()
-    if not financial_year:
-        fy_result = await db.execute(select(FinancialYear).where(FinancialYear.is_active == True).limit(1))
+    # Resolve financial year from form param if provided
+    financial_year = None
+    if financial_year_id is not None:
+        fy_result = await db.execute(select(FinancialYear).where(FinancialYear.id == financial_year_id))
         financial_year = fy_result.scalar_one_or_none()
+        if not financial_year:
+            raise HTTPException(status_code=400, detail=f"Financial year with ID {financial_year_id} not found")
+
+    # Fallback to active/default if not resolved yet
     if not financial_year:
-        raise HTTPException(status_code=400, detail="No active financial year configured in the system")
+        now = datetime.utcnow()
+        fy_result = await db.execute(
+            select(FinancialYear).where(
+                and_(FinancialYear.start_date <= now.date(), FinancialYear.end_date >= now.date())
+            )
+        )
+        financial_year = fy_result.scalar_one_or_none()
+        if not financial_year:
+            fy_result = await db.execute(select(FinancialYear).where(FinancialYear.is_active == True).limit(1))
+            financial_year = fy_result.scalar_one_or_none()
+        if not financial_year:
+            raise HTTPException(status_code=400, detail="No active financial year configured in the system")
+
+    def clean_float(val_str) -> float:
+        if not val_str:
+            return 0.0
+        cleaned = re.sub(r'[^\d.]', '', val_str)
+        return float(cleaned) if cleaned else 0.0
+
+    def clean_int(val_str) -> int:
+        if not val_str:
+            return 0
+        cleaned = re.sub(r'[^\d]', '', val_str)
+        return int(cleaned) if cleaned else 0
 
     success_count = 0
     errors = []
@@ -946,20 +1044,64 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
         try:
             dept_code = str(row[dept_idx]).strip().upper()
             file_no = str(row[file_no_idx]).strip()
-            procurement = str(row[proc_idx]).strip()
-            amount_str = str(row[amount_idx]).strip()
+            item_name = str(row[item_idx]).strip()
 
-            if not dept_code or not file_no or not procurement or not amount_str:
-                errors.append(f"Row {row_num}: Missing required field values")
+            if not dept_code or not file_no or not item_name:
+                errors.append(f"Row {row_num}: Missing required field values (Department, File No, Item Name)")
                 continue
 
-            import re
-            amount_str_cleaned = re.sub(r'[^\d.]', '', amount_str)
-            try:
-                amount = float(amount_str_cleaned)
-            except ValueError:
-                errors.append(f"Row {row_num}: Invalid amount value '{amount_str}'")
-                continue
+            # Determine financial year for this row
+            row_fy = financial_year
+            if fy_idx is not None and fy_idx < len(row) and row[fy_idx]:
+                fy_label = str(row[fy_idx]).strip()
+                if fy_label:
+                    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.label == fy_label))
+                    fy_obj = fy_res.scalar_one_or_none()
+                    if fy_obj:
+                        row_fy = fy_obj
+
+            # Parse amounts and quantities
+            unit_cost = 0.0
+            quantity = 1
+            total_cost = 0.0
+
+            has_unit_cost = unit_cost_idx is not None and unit_cost_idx < len(row) and row[unit_cost_idx]
+            has_qty = qty_idx is not None and qty_idx < len(row) and row[qty_idx]
+            has_total = total_cost_idx is not None and total_cost_idx < len(row) and row[total_cost_idx]
+
+            if has_unit_cost:
+                unit_cost = clean_float(str(row[unit_cost_idx]))
+            if has_qty:
+                quantity = clean_int(str(row[qty_idx]))
+                if quantity <= 0:
+                    quantity = 1
+            if has_total:
+                total_cost = clean_float(str(row[total_cost_idx]))
+
+            # Calculate missing values
+            if has_unit_cost and has_qty:
+                calculated_total = unit_cost * quantity
+                if not has_total or total_cost == 0.0:
+                    total_cost = calculated_total
+                elif unit_cost == 0.0 and total_cost > 0.0:
+                    unit_cost = total_cost / quantity
+            elif has_total:
+                if not has_unit_cost or unit_cost == 0.0:
+                    unit_cost = total_cost
+                if not has_qty:
+                    quantity = 1
+
+            exp_cat = "CAPEX"
+            if exp_cat_idx is not None and exp_cat_idx < len(row) and row[exp_cat_idx]:
+                exp_cat = str(row[exp_cat_idx]).strip()
+
+            cat = "equipment"
+            if cat_idx is not None and cat_idx < len(row) and row[cat_idx]:
+                cat = str(row[cat_idx]).strip()
+
+            course_code = "N/A"
+            if course_idx is not None and course_idx < len(row) and row[course_idx]:
+                course_code = str(row[course_idx]).strip()
 
             dept_key = dept_code.lower()
             if dept_key not in depts_cache:
@@ -988,21 +1130,28 @@ async def import_budget_csv(file: UploadFile, db: AsyncSession = Depends(get_db)
             bm = bm_res.scalar_one_or_none()
 
             if bm:
-                bm.total_cost = amount
-                bm.unit_cost = amount
-                bm.item_name = procurement
-                bm.quantity = 1
+                bm.total_cost = total_cost
+                bm.unit_cost = unit_cost
+                bm.item_name = item_name
+                bm.quantity = quantity
+                bm.financial_year_id = row_fy.id
+                if exp_cat_idx is not None:
+                    bm.expenditure_category = exp_cat
+                if cat_idx is not None:
+                    bm.category = cat
+                if course_idx is not None:
+                    bm.course_code = course_code
             else:
                 bm = BudgetMaster(
                     department_id=dept_id,
-                    financial_year_id=financial_year.id,
-                    expenditure_category="CAPEX",
-                    item_name=procurement,
-                    category="equipment",
-                    course_code="N/A",
-                    unit_cost=amount,
-                    quantity=1,
-                    total_cost=amount,
+                    financial_year_id=row_fy.id,
+                    expenditure_category=exp_cat,
+                    item_name=item_name,
+                    category=cat,
+                    course_code=course_code,
+                    unit_cost=unit_cost,
+                    quantity=quantity,
+                    total_cost=total_cost,
                     file_no=file_no,
                     is_revision=False,
                 )

@@ -25,6 +25,23 @@ class BudgetService:
                 bm.locked_amount += item.estimated_total
         await self.db.flush()
 
+    async def unlock_amount(self, pr: PurchaseRequest) -> None:
+        """Unlock budget when PR is cancelled."""
+        result = await self.db.execute(
+            select(PurchaseRequestItem).where(
+                PurchaseRequestItem.purchase_request_id == pr.id
+            )
+        )
+        items = result.scalars().all()
+        for item in items:
+            bm_result = await self.db.execute(
+                select(BudgetMaster).where(BudgetMaster.id == item.budget_file_id)
+            )
+            bm = bm_result.scalar_one_or_none()
+            if bm:
+                bm.locked_amount = max(0, bm.locked_amount - item.estimated_total)
+        await self.db.flush()
+
     async def deduct_amount(self, pr: PurchaseRequest) -> None:
         """Deduct budget on PO approval. Bug fix #1 (completes the fix)."""
         result = await self.db.execute(
@@ -39,7 +56,7 @@ class BudgetService:
             )
             bm = bm_result.scalar_one_or_none()
             if bm:
-                bm.locked_amount -= item.estimated_total
+                bm.locked_amount = max(0, bm.locked_amount - item.estimated_total)
                 bm.deducted_amount += item.estimated_total
         await self.db.flush()
 

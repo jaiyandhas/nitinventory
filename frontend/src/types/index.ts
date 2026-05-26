@@ -1,4 +1,4 @@
-// All TypeScript interfaces for IRIS
+// All TypeScript interfaces for NIT Inventory
 
 export interface Role {
   group_key: string;
@@ -21,6 +21,7 @@ export interface User {
   role: Role | null;
   role_id?: number;
   department: Department | null;
+  signature_path?: string | null;
 }
 
 export interface PurchaseCategory {
@@ -30,6 +31,7 @@ export interface PurchaseCategory {
   max_amount?: number;
   is_active?: boolean;
   procurement_id?: number;
+  requirement_type?: string;
 }
 
 export interface ProcurementMethod {
@@ -74,12 +76,14 @@ export interface PRFlow {
   expected_role_name?: string;
   expected_user_id?: number;
   expected_user_name?: string;
+  workflow_step_id?: number;
 }
 
 export interface PRItem {
   id: number;
   item_description: string;
   estimated_total: number;
+  quantity?: number;
 }
 
 export type PRStatus =
@@ -128,8 +132,12 @@ export interface PurchaseRequest {
   documents?: any[];
   faculty1_id?: number;
   faculty2_id?: number;
+  faculty3_id?: number;
+  aa_approver_id?: number;
   faculty1?: { id: number; name: string; email: string };
   faculty2?: { id: number; name: string; email: string };
+  faculty3?: { id: number; name: string; email: string };
+  aa_approver?: { id: number; name: string; email: string };
 }
 
 export interface DeliveryItem {
@@ -164,10 +172,13 @@ export interface Discrepancy {
 export interface Asset {
   id: number;
   asset_tag: string;
+  legacy_asset_tag?: string;
   name: string;
   category: string;
   condition: string;
   disposal_status: string;
+  department_id?: number;
+  fund_source?: string;
   building?: string;
   room?: string;
   custodian?: string;

@@ -119,34 +119,24 @@ class FlowEngineService:
                 raise ValueError(f"Action requires user {expected_name}, but user is {user.name}")
             return
 
-        if step.role_id:
-            await self.db.refresh(step, ["role"])
-
-        role_value = step.role.value if (step.role_id and step.role) else None
-        is_faculty = (role_value == "faculty") or (step.user_group == "faculty") or (step.user_type == "purchase_initiator")
-        is_initiator_acting_as_faculty = (is_faculty and pr.initiator_id == user.id)
-
-        # Check by role_id first
-        if step.role_id:
-            if user.role_id != step.role_id and not is_initiator_acting_as_faculty:
-                raise ValueError(f"Action requires role {step.role.name}, but user has {user.role.name if user.role else 'None'}")
-        else:
-            group = user.role.group_key if user.role else None
-            expected = step.user_group
-            if expected != group and not is_initiator_acting_as_faculty:
-                raise ValueError(f"Action requires role {expected}, but user has {group}")
-
-        is_hod = (role_value == "hod") or (step.user_group == "hod")
-        is_da = (role_value == "dealing_assistant") or (step.user_group == "verifier_da")
-
-        if is_faculty:
+        # Special functional tag validations
+        if step.user_type == "purchase_initiator":
             if pr.initiator_id != user.id:
-                raise ValueError("Only the initiator can perform this step")
-        elif is_hod:
-            await self.db.refresh(pr, ["initiator"])
-            if pr.initiator.department_id != user.department_id:
-                raise ValueError("Only the HOD of the initiator's department can perform this step")
-        elif is_da:
+                raise ValueError("Only the purchase initiator can perform this step")
+            return
+            
+        elif step.user_type == "da_assigner":
+            if step.role_id:
+                await self.db.refresh(step, ["role"])
+                if user.role_id != step.role_id:
+                    raise ValueError(f"Action requires role {step.role.name}")
+            else:
+                group = user.role.group_key if user.role else None
+                if group not in ["superintendent", "verifier_sp"]:
+                    raise ValueError("Only the Superintendent S&P can perform this step")
+            return
+            
+        elif step.user_type == "verifier_da":
             from app.models.purchase_request import PurchaseRequestAssignment, AssignmentStatus
             assignment_result = await self.db.execute(
                 select(PurchaseRequestAssignment).where(
@@ -167,8 +157,7 @@ class FlowEngineService:
                 any_assignment = any_assignment_result.scalar_one_or_none()
                 if any_assignment:
                     raise ValueError("User is not the assigned Dealing Assistant for this PR")
-                # No assignment at all — Direct Purchase flow skips Tendering/SP assignment step.
-                # Auto-assign this DA so they can process the PR.
+                # Auto-assign this DA
                 auto_assignment = PurchaseRequestAssignment(
                     purchase_request_id=pr.id,
                     assigned_by_id=user.id,
@@ -177,6 +166,38 @@ class FlowEngineService:
                 )
                 self.db.add(auto_assignment)
                 await self.db.flush()
+            return
+            
+        elif step.user_type == "tech_evaluation":
+            # Must be initiator or one of the committee members
+            allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
+            if user.id not in allowed_ids:
+                raise ValueError("Only the purchase initiator or purchase committee nominees can perform technical evaluation")
+            return
+
+        # Standard role/group checking
+        if step.role_id:
+            await self.db.refresh(step, ["role"])
+
+        role_value = step.role.value if (step.role_id and step.role) else None
+        is_faculty = (role_value == "faculty") or (step.user_group == "faculty")
+        is_initiator_acting_as_faculty = (is_faculty and pr.initiator_id == user.id)
+
+        # Check by role_id first
+        if step.role_id:
+            if user.role_id != step.role_id and not is_initiator_acting_as_faculty:
+                raise ValueError(f"Action requires role {step.role.name}, but user has {user.role.name if user.role else 'None'}")
+        else:
+            group = user.role.group_key if user.role else None
+            expected = step.user_group
+            if expected != group and not is_initiator_acting_as_faculty:
+                raise ValueError(f"Action requires role {expected}, but user has {group}")
+
+        is_hod = (role_value == "hod") or (step.user_group == "hod")
+        if is_hod:
+            await self.db.refresh(pr, ["initiator"])
+            if pr.initiator.department_id != user.department_id:
+                raise ValueError("Only the HOD of the initiator's department can perform this step")
 
     async def initialize(self, pr: PurchaseRequest, initiator: User) -> None:
         """Called when PR is first submitted. Locks budget and creates flow step 1."""
@@ -189,8 +210,6 @@ class FlowEngineService:
 
         if not first_step:
             raise RuntimeError(f"No workflow step 1 found for PR #{pr.id}")
-
-        await self._add_history(pr, initiator, "PR Submitted")
 
         flow = PurchaseRequestFlow(
             purchase_request_id=pr.id,
@@ -211,7 +230,15 @@ class FlowEngineService:
             or first_step.user_type == "purchase_initiator"
         )
         if is_first_faculty:
-            await self.advance(pr, initiator, "Auto-advanced (PI is first assignee)", db_flush=False)
+            await self.advance(
+                pr,
+                initiator,
+                remarks="Auto-advanced (PI is first assignee)",
+                status="PR Submitted",
+                db_flush=False,
+            )
+        else:
+            await self._add_history(pr, initiator, "PR Submitted")
 
     async def advance(self, pr: PurchaseRequest, acted_by: User, remarks: Optional[str] = None,
                       status: Optional[str] = None, db_flush: bool = True) -> PurchaseRequest:
@@ -232,6 +259,14 @@ class FlowEngineService:
             pr.current_status = RequestStatus.IN_PROGRESS
             await self._add_history(pr, acted_by, status or "Forwarded", remarks)
         else:
+            if current_phase.phase_name == "Administrative Approval":
+                pr.aa_approved_at = datetime.utcnow()
+                pr.aa_approver_id = acted_by.id
+            elif current_phase.phase_name == "Technical Evaluation":
+                pr.te_approved_at = datetime.utcnow()
+            elif current_phase.phase_name == "Financial Sanction":
+                pr.fs_approved_at = datetime.utcnow()
+
             next_phase = await self._get_next_valid_phase(pr, current_phase)
             if next_phase:
                 flow.phase_id = next_phase.id
@@ -355,6 +390,12 @@ class FlowEngineService:
         flow.rejected = True
         pr.current_status = RequestStatus.REJECTED
         await self._add_history(pr, rejected_by, f"PR Rejected by {rejected_by.name}", reason)
+
+        # Release locked budget so available_amount is restored
+        from app.services.budget_service import BudgetService
+        budget_svc = BudgetService(self.db)
+        await budget_svc.unlock_amount(pr)
+
         await self.db.flush()
 
         # Notify initiator

@@ -35,7 +35,6 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat1, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat1, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat1, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),
-                    step(cat1, "PO", 4, "faculty", "purchase_initiator", "faculty", ptype, proc),
                 ])
             if "cat2" in proc_cats:
                 cat2 = proc_cats["cat2"]
@@ -43,12 +42,12 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat2, "AA", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
                     step(cat2, "AA", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat2, "AA", 3, "dean_approver", "approver", "dean_pd", ptype, proc),
-                    step(cat2, "TD", 1, "verifier_sp", "verifier", "superintendent", ptype, proc),
-                    step(cat2, "TD", 2, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
+                    step(cat2, "TD", 1, "verifier_sp", "da_assigner", "superintendent", ptype, proc),
+                    step(cat2, "TD", 2, "verifier_da", "verifier_da", "dealing_assistant", ptype, proc),
                     step(cat2, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat2, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat2, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
-                    step(cat2, "TE", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    step(cat2, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat2, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat2, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
                     step(cat2, "TE", 4, "dean_approver", "approver", "dean_pd", ptype, proc),
@@ -61,7 +60,6 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat2, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat2, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat2, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),
-                    step(cat2, "PO", 4, "faculty", "purchase_initiator", "faculty", ptype, proc),
                 ])
             if "cat3" in proc_cats:
                 cat3 = proc_cats["cat3"]
@@ -70,12 +68,12 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat3, "AA", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat3, "AA", 3, "dean_approver", "approver", "dean_pd", ptype, proc),
                     step(cat3, "AA", 4, "apex_approver", "approver", "director", ptype, proc),
-                    step(cat3, "TD", 1, "verifier_sp", "verifier", "superintendent", ptype, proc),
-                    step(cat3, "TD", 2, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
+                    step(cat3, "TD", 1, "verifier_sp", "da_assigner", "superintendent", ptype, proc),
+                    step(cat3, "TD", 2, "verifier_da", "verifier_da", "dealing_assistant", ptype, proc),
                     step(cat3, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat3, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat3, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
-                    step(cat3, "TE", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    step(cat3, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat3, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat3, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
                     step(cat3, "TE", 4, "dean_approver", "approver", "dean_pd", ptype, proc),
@@ -89,7 +87,6 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat3, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat3, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat3, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),
-                    step(cat3, "PO", 4, "faculty", "purchase_initiator", "faculty", ptype, proc),
                 ])
 
 

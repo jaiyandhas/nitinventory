@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   CheckCircle2, Circle, XCircle, Clock, ChevronDown, ChevronUp, 
-  RotateCcw, Download, UserPlus, FileText, Check, Plus, Trash2, Award
+  RotateCcw, Download, UserPlus, FileText, Check, Plus, Trash2, Award, ShieldAlert, Search
 } from 'lucide-react';
 import { useParams, Link } from 'react-router-dom';
-import { prApi, budgetApi } from '../services/api';
+import { prApi, budgetApi, adminApi } from '../services/api';
 import { PurchaseRequest, PR_STATUS_COLORS, PR_STATUS_LABELS, PRStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -37,14 +37,83 @@ const WorkflowTimeline: React.FC<{ history: PurchaseRequest['history']; currentS
   );
 };
 
+const getDocLabel = (docKey: string): string => {
+  if (!docKey) return 'Document';
+  if (docKey === 'draft_tender_document') return 'Draft Tender Document';
+  if (docKey === 'tender_document') return 'Final Tender Document';
+  if (docKey === 'quotation_file' || docKey === 'basis_of_estimation') return 'Basis of Estimation (Quotation)';
+  
+  // Format keys like item_12_tech_specs_file or item_3_gem_nac_file
+  let label = docKey;
+  
+  // Replace underscores and clean up
+  label = label.replace(/_/g, ' ');
+  
+  // Capitalize words
+  label = label.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  
+  // Specific replacements
+  label = label.replace(/Tech Specs/i, 'Technical Specifications');
+  label = label.replace(/Gem Nac/i, 'GeM Non-Availability Certificate');
+  
+  return label;
+};
+
 export const PRDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isAdmin = user?.role?.group_key === 'admin';
+
   const [remarks, setRemarks] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
   const [faculty1Id, setFaculty1Id] = useState<number | ''>('');
   const [faculty2Id, setFaculty2Id] = useState<number | ''>('');
+  const [faculty3Id, setFaculty3Id] = useState<number | ''>('');
+
+  // Admin control states
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [adminFilterRole, setAdminFilterRole] = useState('');
+  const [adminFilterDept, setAdminFilterDept] = useState('');
+
+  // Admin queries
+  const { data: adminRoles = [] } = useQuery({
+    queryKey: ['admin_roles'],
+    queryFn: () => adminApi.roles().then(res => res.data),
+    enabled: isAdmin
+  });
+  const { data: adminUsers = [] } = useQuery({
+    queryKey: ['admin_users_list'],
+    queryFn: () => adminApi.users().then(res => res.data),
+    enabled: isAdmin
+  });
+  const { data: adminDepts = [] } = useQuery({
+    queryKey: ['admin_depts'],
+    queryFn: () => adminApi.departments().then(res => res.data),
+    enabled: isAdmin
+  });
+
+  // Admin mutations
+  const updateWfMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateWorkflow(id, data),
+    onSuccess: () => {
+      toast.success('Workflow step updated successfully');
+      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to update workflow step')
+  });
+
+  const updateUserRoleMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateUser(id, data),
+    onSuccess: () => {
+      toast.success('User role updated successfully');
+      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin_users_list'] });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to update user role')
+  });
 
   // Send back states
   const [showSendBackModal, setShowSendBackModal] = useState(false);
@@ -85,7 +154,7 @@ export const PRDetailPage: React.FC = () => {
   const { data: faculties = [] } = useQuery<any[]>({
     queryKey: ['departmentFaculty'],
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
-    enabled: !!pr && user?.role?.group_key === 'hod' && pr.flow?.phase_name === 'Administrative Approval',
+    enabled: !!pr && user?.role?.group_key === 'hod' && (pr.flow?.expected_group === 'hod' || pr.flow?.expected_role_name?.toLowerCase().includes('hod') || pr.flow?.phase_name === 'Administrative Approval'),
   });
 
   // Load auxiliary data based on roles/phase
@@ -94,6 +163,7 @@ export const PRDetailPage: React.FC = () => {
 
     if (pr.faculty1_id) setFaculty1Id(pr.faculty1_id);
     if (pr.faculty2_id) setFaculty2Id(pr.faculty2_id);
+    if (pr.faculty3_id) setFaculty3Id(pr.faculty3_id);
 
     const expectedGroup = pr.flow?.expected_group;
     const phaseName = pr.flow?.phase_name;
@@ -202,26 +272,29 @@ export const PRDetailPage: React.FC = () => {
 
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to advance the PR'); return; }
+    if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
 
     let f1: number | undefined = undefined;
     let f2: number | undefined = undefined;
+    let f3: number | undefined = undefined;
 
-    if (user?.role?.group_key === 'hod' && phaseName === 'Administrative Approval') {
-      if (!faculty1Id || !faculty2Id) {
-        toast.error('HOD must assign Faculty 1 and Faculty 2 committee members to approve this request.');
+    if (user?.role?.group_key === 'hod' && (pr.flow?.expected_group === 'hod' || pr.flow?.expected_role_name?.toLowerCase().includes('hod') || phaseName === 'Administrative Approval')) {
+      if (!faculty1Id || !faculty2Id || !faculty3Id) {
+        toast.error('HOD must assign Faculty 1, Faculty 2, and Director Nominee (Faculty 3) committee members to approve this request.');
         return;
       }
-      if (faculty1Id === faculty2Id) {
-        toast.error('Faculty 1 and Faculty 2 must be different members.');
+      if (faculty1Id === faculty2Id || faculty1Id === faculty3Id || faculty2Id === faculty3Id) {
+        toast.error('All 3 committee nominees must be different members.');
         return;
       }
       f1 = Number(faculty1Id);
       f2 = Number(faculty2Id);
+      f3 = Number(faculty3Id);
     }
 
     setActionLoading(true);
     try {
-      await prApi.advance(pr.id, remarks, undefined, f1, f2);
+      await prApi.advance(pr.id, remarks, undefined, f1, f2, f3);
       toast.success('PR advanced successfully');
       setRemarks('');
       refetch();
@@ -299,6 +372,7 @@ export const PRDetailPage: React.FC = () => {
     }
 
     if (!remarks.trim()) { toast.error('Remarks are required to register and advance'); return; }
+    if (!window.confirm('Are you sure you want to register these tender details and advance?')) return;
 
     setActionLoading(true);
     try {
@@ -356,6 +430,8 @@ export const PRDetailPage: React.FC = () => {
       return;
     }
 
+    if (!window.confirm('Are you sure you want to submit this technical evaluation and advance?')) return;
+
     const formattedVendors = Object.entries(techQualifications).map(([name, data]) => ({
       name,
       is_qualified: data.is_qualified,
@@ -394,6 +470,8 @@ export const PRDetailPage: React.FC = () => {
         remarks: data.remarks
       };
     });
+
+    if (!window.confirm('Are you sure you want to submit these financial bids and advance?')) return;
 
     setActionLoading(true);
     try {
@@ -482,7 +560,10 @@ export const PRDetailPage: React.FC = () => {
             </a>
           </div>
           <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PR #${pr.id}`}</h1>
-          <p className="text-sm font-medium text-slate-600 mt-1">{pr.category?.title} · {pr.procurement?.name}</p>
+          <p className="text-sm font-medium text-slate-600 mt-1">
+            {pr.category?.title} · {pr.procurement?.name}
+            {pr.category?.requirement_type && ` · Nature of Requirement: ${pr.category.requirement_type}`}
+          </p>
         </div>
         <span className="status-badge border-slate-300 bg-slate-100 text-slate-800 px-3 py-1 text-sm shadow-sm">
           {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
@@ -504,13 +585,73 @@ export const PRDetailPage: React.FC = () => {
                 <div className="text-sm font-bold text-blue-800">
                   Phase {pr.flow.phase_id}: {pr.flow.phase_name || 'N/A'} (Step {pr.flow.step_order})
                 </div>
-                <div className="text-xs font-medium text-slate-500 mt-1">
-                  Pending with:{' '}
-                  <span className="font-semibold text-slate-700">
-                    {pr.flow.expected_user_name
-                      ? `${pr.flow.expected_user_name} (User)`
-                      : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}
-                  </span>
+                <div className="text-xs font-medium text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                  <span>Pending with:</span>
+                  {isAdmin && pr.flow.workflow_step_id ? (
+                    <select
+                      value={
+                        pr.flow.expected_user_id ? `user:${pr.flow.expected_user_id}` :
+                        pr.flow.expected_role_id ? `role:${pr.flow.expected_role_id}` :
+                        pr.flow.expected_group ? `group:${pr.flow.expected_group}` : ''
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        const stepId = pr.flow?.workflow_step_id;
+                        if (!stepId) return;
+                        if (val.startsWith('tag:')) {
+                          const tag = val.substring(4);
+                          updateWfMutation.mutate({ id: stepId, data: { user_type: tag } });
+                        } else if (val.startsWith('user:')) {
+                          const userId = Number(val.substring(5));
+                          updateWfMutation.mutate({ id: stepId, data: { user_id: userId, user_type: 'user' } });
+                        } else if (val.startsWith('role:')) {
+                          const roleId = Number(val.substring(5));
+                          updateWfMutation.mutate({ id: stepId, data: { role_id: roleId, user_type: 'group' } });
+                        } else if (val.startsWith('group:')) {
+                          const groupKey = val.substring(6);
+                          updateWfMutation.mutate({ id: stepId, data: { user_group: groupKey, user_type: 'group' } });
+                        }
+                      }}
+                      className="font-semibold text-[#1a3a6b] bg-blue-50/50 border-b border-dashed border-blue-300 hover:border-[#1a3a6b] focus:border-[#1a3a6b] focus:outline-none pr-6 py-0.5 max-w-full text-xs cursor-pointer rounded"
+                    >
+                      <optgroup label="Special Workflow Roles">
+                        <option value="tag:purchase_initiator">Purchase Initiator (Faculty)</option>
+                        <option value="tag:da_assigner">Superintendent (DA Assigner)</option>
+                        <option value="tag:verifier_da">Dealing Assistant (verifier_da)</option>
+                        <option value="tag:tech_evaluation">Committee (tech_evaluation)</option>
+                      </optgroup>
+                      <optgroup label="Roles">
+                        {adminRoles.map((r: any) => (
+                          <option key={r.id} value={`role:${r.id}`}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="User Groups">
+                        <option value="group:faculty">Faculty Group</option>
+                        <option value="group:hod">HOD Group</option>
+                        <option value="group:verifier_da">Dealing Assistant Group</option>
+                        <option value="group:verifier_sp">Superintendent / AR Group</option>
+                        <option value="group:verifier_general">Associate Dean Group</option>
+                        <option value="group:dean_approver">Dean Approver Group</option>
+                        <option value="group:apex_approver">Apex Approver Group</option>
+                      </optgroup>
+                      <optgroup label="Users">
+                        {adminUsers.map((u: any) => (
+                          <option key={u.id} value={`user:${u.id}`}>
+                            {u.name} ({u.email})
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  ) : (
+                    <span className="font-semibold text-slate-700">
+                      {pr.flow.expected_user_name
+                        ? `${pr.flow.expected_user_name} (User)`
+                        : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -530,17 +671,17 @@ export const PRDetailPage: React.FC = () => {
               </div>
             )}
 
-            {(pr.faculty1 || pr.faculty2) && (
+            {(pr.faculty1 || pr.faculty2 || pr.faculty3) && (
               <div className="col-span-2 border-t border-slate-100 pt-4">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Purchase Committee</div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-3 border border-slate-200 rounded">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-3 border border-slate-200 rounded">
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Purchase Initiator</span>
                     <p className="text-xs font-bold text-slate-800">{pr.initiator?.name || 'N/A'}</p>
                     <p className="text-[10px] text-slate-500">{pr.initiator?.email || ''}</p>
                   </div>
                   {pr.faculty1 && (
-                    <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
+                    <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-4">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 1</span>
                       <p className="text-xs font-bold text-slate-800">{pr.faculty1.name}</p>
                       <p className="text-[10px] text-slate-500">{pr.faculty1.email}</p>
@@ -551,6 +692,13 @@ export const PRDetailPage: React.FC = () => {
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 2</span>
                       <p className="text-xs font-bold text-slate-800">{pr.faculty2.name}</p>
                       <p className="text-[10px] text-slate-500">{pr.faculty2.email}</p>
+                    </div>
+                  )}
+                  {pr.faculty3 && (
+                    <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Director Nominee</span>
+                      <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
+                      <p className="text-[10px] text-slate-500">{pr.faculty3.email}</p>
                     </div>
                   )}
                 </div>
@@ -657,8 +805,45 @@ export const PRDetailPage: React.FC = () => {
               <div className="divide-y divide-slate-200">
                 {pr.items.map(item => (
                   <div key={item.id} className="flex justify-between items-center px-6 py-4">
-                    <span className="text-sm font-medium text-slate-700">{item.item_description}</span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700">{item.item_description}</span>
+                      <span className="text-xs text-slate-500 font-semibold mt-0.5">Quantity: {item.quantity ?? 1}</span>
+                    </div>
                     <span className="text-sm font-bold text-[#1a3a6b]">{formatCurrency(item.estimated_total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Global Uploaded Documents card */}
+          {pr.documents && pr.documents.length > 0 && (
+            <div className="card">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Uploaded Documents</h3>
+                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                  {pr.documents.length} File(s)
+                </span>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pr.documents.map((doc: any) => (
+                  <div key={doc.id} className="flex items-center justify-between p-3 border border-slate-100 hover:border-slate-200 hover:shadow-sm bg-white rounded-lg transition-all">
+                    <div className="flex flex-col gap-1 pr-4 min-w-0">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {getDocLabel(doc.doc_key)}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-800 truncate" title={doc.original_name}>
+                        {doc.original_name}
+                      </span>
+                    </div>
+                    <a
+                      href={doc.path}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs py-1.5 px-3 border-blue-200 text-blue-600 hover:bg-blue-50 shrink-0 font-semibold"
+                    >
+                      View PDF
+                    </a>
                   </div>
                 ))}
               </div>
@@ -781,9 +966,9 @@ export const PRDetailPage: React.FC = () => {
                   <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                     <UserPlus size={16} className="text-[#1a3a6b]" /> Assign Purchase Committee Members
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="label text-slate-600 font-bold">Faculty 1 Nominee *</label>
+                      <label className="label text-slate-600 font-bold text-xs">Faculty 1 Nominee (Dept) *</label>
                       <select
                         value={faculty1Id}
                         onChange={(e) => setFaculty1Id(e.target.value === '' ? '' : Number(e.target.value))}
@@ -796,13 +981,26 @@ export const PRDetailPage: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="label text-slate-600 font-bold">Faculty 2 Nominee *</label>
+                      <label className="label text-slate-600 font-bold text-xs">Faculty 2 Nominee (Dept) *</label>
                       <select
                         value={faculty2Id}
                         onChange={(e) => setFaculty2Id(e.target.value === '' ? '' : Number(e.target.value))}
                         className="input-field mt-1"
                       >
                         <option value="">-- Select Faculty 2 --</option>
+                        {faculties.map((f: any) => (
+                          <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-slate-600 font-bold text-xs">Faculty 3 Nominee (Director) *</label>
+                      <select
+                        value={faculty3Id}
+                        onChange={(e) => setFaculty3Id(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="input-field mt-1"
+                      >
+                        <option value="">-- Select Director Nominee --</option>
                         {faculties.map((f: any) => (
                           <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                         ))}
@@ -1103,7 +1301,7 @@ export const PRDetailPage: React.FC = () => {
                         pr.documents.map((doc: any) => (
                           <div key={doc.id} className="flex items-center gap-2 text-sm bg-white p-2 border border-slate-100 rounded shadow-sm">
                             <span className="font-bold text-slate-600">
-                              {doc.doc_key === 'draft_tender_document' ? 'Draft Tender Document' : 'Tender Document'}:
+                              {getDocLabel(doc.doc_key)}:
                             </span>
                             <a href={doc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 font-semibold">
                               {doc.original_name}
@@ -1415,16 +1613,119 @@ export const PRDetailPage: React.FC = () => {
         </div>
 
         {/* Timeline */}
-        <div className="card h-fit">
-          <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Workflow History</h3>
-            <button onClick={() => setShowHistory(!showHistory)} className="text-slate-500 hover:text-[#1a3a6b]">
-              {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+        <div className="space-y-6">
+          <div className="card h-fit">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Workflow History</h3>
+              <button onClick={() => setShowHistory(!showHistory)} className="text-slate-500 hover:text-[#1a3a6b]">
+                {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
+            {showHistory && (
+              <div className="p-5">
+                <WorkflowTimeline history={pr.history} currentStatus={pr.current_status} />
+              </div>
+            )}
           </div>
-          {showHistory && (
-            <div className="p-5">
-              <WorkflowTimeline history={pr.history} currentStatus={pr.current_status} />
+
+          {/* Admin user role quick edit panel */}
+          {isAdmin && (
+            <div className="card h-fit border border-blue-200 bg-blue-50/20">
+              <div className="px-5 py-4 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wide flex items-center gap-1.5">
+                  <ShieldAlert size={14} /> Quick User Roles Admin
+                </h3>
+                <button 
+                  onClick={() => setIsAdminPanelOpen(!isAdminPanelOpen)} 
+                  className="text-[#1a3a6b] hover:underline text-xs font-semibold"
+                >
+                  {isAdminPanelOpen ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              
+              {isAdminPanelOpen && (
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Search User</label>
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        placeholder="Search name/email..." 
+                        value={adminUserSearch}
+                        onChange={(e) => setAdminUserSearch(e.target.value)}
+                        className="input-field pl-8 text-xs py-1 px-2 h-8"
+                      />
+                      <Search size={12} className="absolute left-2.5 top-2.5 text-slate-400" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Filter Role</label>
+                      <select 
+                        value={adminFilterRole} 
+                        onChange={(e) => setAdminFilterRole(e.target.value)}
+                        className="input-field text-xs py-1.5 px-1 h-8"
+                      >
+                        <option value="">All Roles</option>
+                        {adminRoles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Filter Dept</label>
+                      <select 
+                        value={adminFilterDept} 
+                        onChange={(e) => setAdminFilterDept(e.target.value)}
+                        className="input-field text-xs py-1.5 px-1 h-8"
+                      >
+                        <option value="">All Depts</option>
+                        {adminDepts.map((d: any) => <option key={d.id} value={d.id}>{d.short_code}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                    {adminUsers
+                      .filter((u: any) => {
+                        if (adminUserSearch && !u.name.toLowerCase().includes(adminUserSearch.toLowerCase()) && !u.email.toLowerCase().includes(adminUserSearch.toLowerCase())) return false;
+                        if (adminFilterRole && u.role_id !== Number(adminFilterRole)) return false;
+                        if (adminFilterDept && u.department_id !== Number(adminFilterDept)) return false;
+                        return true;
+                      })
+                      .map((u: any) => (
+                        <div key={u.id} className="bg-white border border-slate-100 p-2.5 rounded shadow-sm flex flex-col gap-1.5 text-xs hover:border-slate-300 transition-colors">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-bold text-slate-800 leading-snug">{u.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono leading-none mt-0.5">{u.email}</div>
+                            </div>
+                            {u.department_id && (
+                              <span className="bg-slate-100 text-slate-600 px-1 py-0.5 rounded text-[9px] font-bold">
+                                {adminDepts.find((d: any) => d.id === u.department_id)?.short_code}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 pt-1 border-t border-slate-50">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0">Role:</span>
+                            <select
+                              value={u.role_id || ''}
+                              onChange={(e) => {
+                                const newRoleId = Number(e.target.value);
+                                updateUserRoleMutation.mutate({ id: u.id, data: { role_id: newRoleId } });
+                              }}
+                              className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-[11px] font-semibold text-slate-700 focus:outline-none focus:border-[#1a3a6b] w-full cursor-pointer"
+                            >
+                              <option value="">No Role</option>
+                              {adminRoles.map((r: any) => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

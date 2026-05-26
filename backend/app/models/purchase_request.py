@@ -80,6 +80,8 @@ class PurchaseRequest(Base):
     po_approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     faculty1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     faculty2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    faculty3_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    aa_approver_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
@@ -90,6 +92,8 @@ class PurchaseRequest(Base):
     procurement: Mapped["ProcurementManager"] = relationship("ProcurementManager", foreign_keys=[procurement_id])  # type: ignore
     faculty1: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty1_id])  # type: ignore
     faculty2: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty2_id])  # type: ignore
+    faculty3: Mapped[Optional["User"]] = relationship("User", foreign_keys=[faculty3_id])  # type: ignore
+    aa_approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[aa_approver_id])  # type: ignore
     items: Mapped[List["PurchaseRequestItem"]] = relationship("PurchaseRequestItem", back_populates="purchase_request", cascade="all, delete-orphan")
     history: Mapped[List["PurchaseRequestHistory"]] = relationship("PurchaseRequestHistory", back_populates="purchase_request", cascade="all, delete-orphan")
     flow: Mapped[Optional["PurchaseRequestFlow"]] = relationship("PurchaseRequestFlow", back_populates="purchase_request", uselist=False, cascade="all, delete-orphan")
@@ -107,6 +111,7 @@ class PurchaseRequestItem(Base):
     purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False)
     budget_file_id: Mapped[int] = mapped_column(ForeignKey("budget_master.id"), nullable=False)
     item_description: Mapped[str] = mapped_column(String(500), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     estimated_total: Mapped[float] = mapped_column(Float, nullable=False)
     charges: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     requirement_type: Mapped[str] = mapped_column(String(100), nullable=False)

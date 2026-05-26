@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { assetsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { ArrowLeft, Edit, Trash2, ArrowRightLeft, Shield, MapPin, User as UserIcon, Calendar, DollarSign, Activity } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, ArrowRightLeft, Shield, MapPin, User as UserIcon, Calendar, IndianRupee, Activity } from 'lucide-react';
 
 export const AssetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -54,6 +54,18 @@ export const AssetDetailPage: React.FC = () => {
     }
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => assetsApi.delete(Number(id)),
+    onSuccess: () => {
+      toast.success('Asset deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      navigate('/assets');
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to delete asset');
+    }
+  });
+
   const handleMoveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
@@ -89,7 +101,9 @@ export const AssetDetailPage: React.FC = () => {
               {asset.condition}
             </span>
           </div>
-          <p className="page-subtitle font-mono text-slate-700 font-semibold">{asset.asset_tag}</p>
+          <p className="page-subtitle font-mono text-slate-700 font-semibold">
+            {asset.asset_tag} {asset.legacy_asset_tag ? `· Prev: ${asset.legacy_asset_tag}` : ''}
+          </p>
         </div>
       </div>
 
@@ -98,7 +112,15 @@ export const AssetDetailPage: React.FC = () => {
           <div className="card p-6 grid grid-cols-2 md:grid-cols-3 gap-y-6 gap-x-4">
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Shield size={16} /> Category</p>
-              <p className="font-semibold">{asset.category}</p>
+              <p className="font-semibold capitalize">{asset.category?.replace('_', ' ')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Shield size={16} /> Existing/Legacy Tag</p>
+              <p className="font-semibold font-mono">{asset.legacy_asset_tag || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Shield size={16} /> Funding Source</p>
+              <p className="font-semibold capitalize">{asset.fund_source?.replace('_', ' ') || 'N/A'}</p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><UserIcon size={16} /> Custodian</p>
@@ -106,14 +128,14 @@ export const AssetDetailPage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><MapPin size={16} /> Location</p>
-              <p className="font-semibold">{asset.building} - {asset.room}</p>
+              <p className="font-semibold">{asset.building || 'N/A'} - {asset.room || 'N/A'}</p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Calendar size={16} /> Purchase Date</p>
               <p className="font-semibold">{asset.purchase_date ? new Date(asset.purchase_date).toLocaleDateString() : 'N/A'}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><DollarSign size={16} /> Unit Cost</p>
+              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><IndianRupee size={16} /> Unit Cost</p>
               <p className="font-semibold">₹{(asset.unit_cost || 0).toLocaleString()}</p>
             </div>
             <div>
@@ -234,6 +256,18 @@ export const AssetDetailPage: React.FC = () => {
             
             {asset.disposal_status === 'disposed' && (
                <p className="text-center text-sm text-red-500 font-medium italic">Asset has been disposed.</p>
+            )}
+
+            {(isHod || isAdmin) && (
+              <div className="pt-4 border-t border-slate-200 mt-4">
+                <button 
+                  onClick={() => { if(confirm('Are you sure you want to permanently delete this asset? This cannot be undone.')) deleteMutation.mutate(); }}
+                  disabled={deleteMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded font-medium text-sm border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors"
+                >
+                  <Trash2 size={16} /> Delete Asset
+                </button>
+              </div>
             )}
           </div>
         </div>

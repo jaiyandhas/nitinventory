@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -19,12 +19,29 @@ async def list_assets(db: AsyncSession = Depends(get_db), user: User = Depends(g
     result = await db.execute(query)
     assets = result.scalars().all()
     return [
-        {"id": a.id, "asset_tag": a.asset_tag, "name": a.name, "category": a.category,
+        {"id": a.id, "asset_tag": a.asset_tag, "legacy_asset_tag": a.legacy_asset_tag, "fund_source": a.fund_source, "name": a.name, "category": a.category,
          "condition": a.condition, "disposal_status": a.disposal_status,
          "building": a.building, "room": a.room, "qr_code_url": a.qr_code_url,
-         "delivery_item_id": a.delivery_item_id}
+         "delivery_item_id": a.delivery_item_id, "department_id": a.department_id,
+         "serial_number": a.serial_number, "custodian": a.custodian,
+         "purchase_date": a.purchase_date.isoformat() if a.purchase_date else None,
+         "unit_cost": a.unit_cost}
         for a in assets
     ]
+
+
+@router.post("/")
+async def register_asset(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(require_roles("hod", "admin"))):
+    svc = AssetService(db)
+    asset = await svc.register_asset(body, user)
+    await db.commit()
+    return {
+        "message": "Asset manually registered successfully",
+        "id": asset.id,
+        "asset_tag": asset.asset_tag,
+        "legacy_asset_tag": asset.legacy_asset_tag,
+        "fund_source": asset.fund_source
+    }
 
 
 @router.get("/qr/{asset_tag}")
@@ -36,6 +53,8 @@ async def public_asset_profile(asset_tag: str, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=404, detail="Asset not found")
     return {
         "asset_tag": asset.asset_tag,
+        "legacy_asset_tag": asset.legacy_asset_tag,
+        "fund_source": asset.fund_source,
         "name": asset.name,
         "category": asset.category,
         "condition": asset.condition,
@@ -59,7 +78,7 @@ async def get_asset(asset_id: int, db: AsyncSession = Depends(get_db), user: Use
         raise HTTPException(status_code=403, detail="Access denied")
     await db.refresh(asset, ["movements", "logs"])
     return {
-        "id": asset.id, "asset_tag": asset.asset_tag, "name": asset.name,
+        "id": asset.id, "asset_tag": asset.asset_tag, "legacy_asset_tag": asset.legacy_asset_tag, "fund_source": asset.fund_source, "name": asset.name,
         "category": asset.category, "condition": asset.condition,
         "disposal_status": asset.disposal_status, "qr_code_url": asset.qr_code_url,
         "building": asset.building, "room": asset.room, "custodian": asset.custodian,
@@ -101,3 +120,25 @@ async def confirm_disposal(asset_id: int, db: AsyncSession = Depends(get_db), us
     asset = await svc.confirm_disposal(asset_id, user)
     await db.commit()
     return {"message": "Disposal confirmed", "disposal_status": asset.disposal_status}
+
+
+@router.delete("/{asset_id}")
+async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(require_roles("hod", "admin"))):
+    svc = AssetService(db)
+    await svc.delete_asset(asset_id, user)
+    await db.commit()
+    return {"message": "Asset deleted successfully"}
+
+
+@router.post("/import")
+async def import_assets(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("hod", "admin"))
+):
+    contents = await file.read()
+    file_content = contents.decode("utf-8")
+    svc = AssetService(db)
+    result = await svc.import_assets_csv(file_content, user)
+    await db.commit()
+    return result

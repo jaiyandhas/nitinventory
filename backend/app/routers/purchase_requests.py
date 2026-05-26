@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
 
@@ -23,7 +24,18 @@ from app.services.budget_service import BudgetService
 from app.services.document_service import DocumentService
 from app.schemas.pr_create import PRCreatePayload, PRItemCreate
 
+from datetime import timedelta, timezone
+
 router = APIRouter(prefix="/api/pr", tags=["purchase-requests"])
+
+
+def to_local_time(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    return dt.astimezone(ist_tz)
 
 
 def _combined_service_center_desc(payload: PRCreatePayload) -> Optional[str]:
@@ -47,9 +59,13 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "current_status": pr.current_status,
         "amount": pr.amount,
         "purchase_type": pr.purchase_type,
-        "created_at": pr.created_at.isoformat() if pr.created_at else None,
+        "created_at": pr.created_at.isoformat() + "Z" if pr.created_at else None,
         "initiator": {"id": pr.initiator.id, "name": pr.initiator.name, "email": pr.initiator.email} if pr.initiator else None,
-        "category": {"id": pr.purchase_category.id, "title": pr.purchase_category.title} if pr.purchase_category else None,
+        "category": {
+            "id": pr.purchase_category.id,
+            "title": pr.purchase_category.title,
+            "requirement_type": pr.purchase_category.requirement_type,
+        } if pr.purchase_category else None,
         "procurement": {"id": pr.procurement.id, "name": pr.procurement.name} if pr.procurement else None,
     }
 
@@ -61,7 +77,7 @@ async def _persist_pr(
     background_tasks: BackgroundTasks,
     uploads: Optional[dict] = None,
 ) -> dict:
-    """Create PR with full NPFS-aligned fields and optional document uploads."""
+    """Create PR with full procurement-aligned fields and optional document uploads."""
     await db.refresh(user, ["department", "role"])
     if not user.is_approved:
         raise HTTPException(status_code=403, detail="Your profile is not yet approved by the administrator.")
@@ -85,6 +101,7 @@ async def _persist_pr(
             }
         )
 
+    items_by_budget = {it.budget_file_id: it for it in payload.items}
     budget_by_id: dict[int, BudgetMaster] = {}
     total_amount = 0.0
     for fid in selected_file_ids:
@@ -95,19 +112,57 @@ async def _persist_pr(
         if bm.department_id != user.department_id:
             raise HTTPException(status_code=403, detail="Budget file belongs to a different department")
         budget_by_id[fid] = bm
-        total_amount += bm.total_cost
-
-    cat_result = await db.execute(
-        select(PurchaseCategory).where(
-            and_(
-                PurchaseCategory.procurement_id == payload.mop,
-                PurchaseCategory.min_amount <= total_amount,
-                PurchaseCategory.max_amount >= total_amount,
-                PurchaseCategory.is_active == True,
+        
+        item_data = items_by_budget.get(fid)
+        if not item_data:
+            raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
+            
+        item_qty = item_data.quantity if item_data.quantity is not None else 1
+        item_est_total = item_qty * bm.unit_cost
+        
+        if item_est_total > bm.available_amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{bm.available_amount:,.2f}."
             )
+        total_amount += item_est_total
+
+    from sqlalchemy import case
+
+    item_req_type = None
+    if payload.items:
+        req_types = {item.requirement_type for item in payload.items if item.requirement_type}
+        if req_types:
+            item_req_type = list(req_types)[0]
+
+    stmt = select(PurchaseCategory).where(
+        and_(
+            PurchaseCategory.procurement_id == payload.mop,
+            PurchaseCategory.min_amount <= total_amount,
+            PurchaseCategory.max_amount >= total_amount,
+            PurchaseCategory.is_active == True,
         )
     )
-    category = cat_result.scalar_one_or_none()
+
+    if item_req_type:
+        stmt = stmt.where(
+            (PurchaseCategory.requirement_type == item_req_type) | 
+            (PurchaseCategory.requirement_type == None) | 
+            (PurchaseCategory.requirement_type == "")
+        ).order_by(
+            case(
+                (PurchaseCategory.requirement_type == item_req_type, 0),
+                else_=1
+            )
+        )
+    else:
+        stmt = stmt.where(
+            (PurchaseCategory.requirement_type == None) | 
+            (PurchaseCategory.requirement_type == "")
+        )
+
+    cat_result = await db.execute(stmt)
+    category = cat_result.scalars().first()
     if not category:
         raise HTTPException(
             status_code=400,
@@ -188,11 +243,15 @@ async def _persist_pr(
         if not item_data:
             raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
 
+        item_qty = item_data.quantity if item_data.quantity is not None else 1
+        item_est_total = item_qty * bm.unit_cost
+
         item = PurchaseRequestItem(
             purchase_request_id=pr.id,
             budget_file_id=bm.id,
             item_description=bm.item_name,
-            estimated_total=bm.total_cost,
+            quantity=item_qty,
+            estimated_total=item_est_total,
             charges=item_data.charges,
             requirement_type=item_data.requirement_type,
             availability=item_data.availability,
@@ -332,7 +391,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
 
     await db.refresh(pr, ["initiator", "purchase_category", "procurement", "items", "history", "flow",
                           "technical_evaluations", "financial_evaluations", "commercial_evaluations", "assignments", "documents",
-                          "faculty1", "faculty2"])
+                          "faculty1", "faculty2", "faculty3", "aa_approver"])
 
     # BOLA fix: department-scope check
     group = user.role.group_key if user.role else None
@@ -410,7 +469,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "id": h.id,
             "status": h.status,
             "remarks": h.remarks,
-            "acted_at": h.acted_at.isoformat() if h.acted_at else None,
+            "acted_at": h.acted_at.isoformat() + "Z" if h.acted_at else None,
             "approver_id": h.current_approver_id,
             "actor_name": actor_name,
             "actor_role_name": actor_role_name,
@@ -465,8 +524,12 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         **_serialize_pr(pr),
         "faculty1_id": pr.faculty1_id,
         "faculty2_id": pr.faculty2_id,
+        "faculty3_id": pr.faculty3_id,
+        "aa_approver_id": pr.aa_approver_id,
         "faculty1": {"id": pr.faculty1.id, "name": pr.faculty1.name, "email": pr.faculty1.email} if pr.faculty1 else None,
         "faculty2": {"id": pr.faculty2.id, "name": pr.faculty2.name, "email": pr.faculty2.email} if pr.faculty2 else None,
+        "faculty3": {"id": pr.faculty3.id, "name": pr.faculty3.name, "email": pr.faculty3.email} if pr.faculty3 else None,
+        "aa_approver": {"id": pr.aa_approver.id, "name": pr.aa_approver.name, "email": pr.aa_approver.email} if pr.aa_approver else None,
         "emd": pr.emd,
         "performance_security": pr.performance_security,
         "is_item_split": pr.is_item_split,
@@ -483,7 +546,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "delivery_mode": pr.delivery_mode,
         "basis_of_estimate": pr.basis_of_estimate_details,
         "history": history,
-        "items": [{"id": i.id, "item_description": i.item_description, "estimated_total": i.estimated_total} for i in pr.items],
+        "items": [{"id": i.id, "item_description": i.item_description, "estimated_total": i.estimated_total, "quantity": i.quantity} for i in pr.items],
         "flow": {
             "phase_id": pr.flow.phase_id,
             "phase_name": phase_name,
@@ -494,6 +557,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "expected_role_name": expected_role_name,
             "expected_user_id": expected_user_id,
             "expected_user_name": expected_user_name,
+            "workflow_step_id": step.id if step else None,
         } if pr.flow else None,
         "commercial_evaluations": commercial_evaluations,
         "technical_evaluations": technical_evaluations,
@@ -506,7 +570,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 "original_name": doc.doc_value.get("original_name"),
                 "path": f"/storage/{doc.doc_value.get('path')}" if doc.doc_value.get("path") else None,
                 "uploaded_by_id": doc.uploaded_by_id,
-                "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+                "updated_at": doc.updated_at.isoformat() + "Z" if doc.updated_at else None,
             }
             for doc in pr.documents
         ],
@@ -530,15 +594,37 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
         if pr.flow:
             phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id))
             phase = phase_res.scalar_one_or_none()
-            if phase and phase.phase_name == "Administrative Approval":
+            
+            # check if the step expects HOD
+            step_res = await db.execute(
+                select(WorkFlowHierarchy).where(
+                    and_(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                        WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                        WorkFlowHierarchy.step_order == pr.flow.step_order,
+                        WorkFlowHierarchy.is_enabled == True,
+                    )
+                )
+            )
+            step = step_res.scalar_one_or_none()
+            is_hod_step = False
+            if step:
+                await db.refresh(step, ["role"])
+                is_hod_step = (step.user_group == "hod") or (step.role and step.role.group_key == "hod")
+                
+            if (phase and phase.phase_name == "Administrative Approval") or is_hod_step:
                 faculty1_id = body.get("faculty1_id") or pr.faculty1_id
                 faculty2_id = body.get("faculty2_id") or pr.faculty2_id
-                if not faculty1_id or not faculty2_id:
-                    raise HTTPException(status_code=400, detail="HOD must assign Faculty 1 and Faculty 2 committee members to approve this request.")
-                if faculty1_id == faculty2_id:
-                    raise HTTPException(status_code=400, detail="Faculty 1 and Faculty 2 must be different members.")
+                faculty3_id = body.get("faculty3_id") or pr.faculty3_id
+                if not faculty1_id or not faculty2_id or not faculty3_id:
+                    raise HTTPException(status_code=400, detail="HOD must assign Faculty 1, Faculty 2, and Director Nominee committee members to approve this request.")
+                if len({faculty1_id, faculty2_id, faculty3_id}) < 3:
+                    raise HTTPException(status_code=400, detail="All 3 committee members must be different.")
                 pr.faculty1_id = faculty1_id
                 pr.faculty2_id = faculty2_id
+                pr.faculty3_id = faculty3_id
 
     flow_engine = FlowEngineService(db, background_tasks)
     try:
@@ -636,6 +722,60 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
     expected = step.user_group
     group = user.role.group_key
 
+    # Special tag validations first
+    if step.user_type == "purchase_initiator":
+        if pr.initiator_id != user.id:
+            raise HTTPException(status_code=403, detail="Only the purchase initiator can perform this step")
+        return
+
+    elif step.user_type == "da_assigner":
+        if action_type == "assign-da":
+            if phase_name != "Tendering" or pr.flow.step_order != 1:
+                raise HTTPException(status_code=403, detail="DA can only be assigned at Tendering step 1")
+        if step.role_id:
+            if user.role_id != step.role_id:
+                raise HTTPException(status_code=403, detail="Only the Superintendent may perform this action")
+        else:
+            if group not in ["superintendent", "verifier_sp"]:
+                raise HTTPException(status_code=403, detail="Only the Superintendent may perform this action")
+        return
+
+    elif step.user_type == "verifier_da":
+        assignment_result = await db.execute(
+            select(PurchaseRequestAssignment).where(
+                and_(
+                    PurchaseRequestAssignment.purchase_request_id == pr.id,
+                    PurchaseRequestAssignment.assigned_da_id == user.id
+                )
+            )
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        if not assignment:
+            any_assignment_result = await db.execute(
+                select(PurchaseRequestAssignment).where(
+                    PurchaseRequestAssignment.purchase_request_id == pr.id
+                )
+            )
+            any_assignment = any_assignment_result.scalar_one_or_none()
+            if any_assignment:
+                raise HTTPException(status_code=403, detail="User is not the assigned Dealing Assistant for this PR")
+            auto_assignment = PurchaseRequestAssignment(
+                purchase_request_id=pr.id,
+                assigned_by_id=user.id,
+                assigned_da_id=user.id,
+                status=AssignmentStatus.PENDING,
+            )
+            db.add(auto_assignment)
+            await db.flush()
+        return
+
+    elif step.user_type == "tech_evaluation":
+        allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
+        if user.id not in allowed_ids:
+            raise HTTPException(status_code=403, detail="Only the purchase initiator or purchase committee nominees can perform technical evaluation")
+        return
+
+    # Route action-specific checks (e.g. data uploads)
     if action_type == "assign-da":
         if phase_name != "Tendering" or pr.flow.step_order != 1:
             raise HTTPException(status_code=403, detail="DA can only be assigned at Tendering step 1")
@@ -643,9 +783,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
             raise HTTPException(status_code=403, detail="Only the Superintendent may assign a Dealing Assistant")
         return
 
-    # Special handling for actions performed by Dealing Assistant (verifier_da)
-    if action_type in ["tender-details", "technical-eval", "financial-bids"] and group == "verifier_da":
-        # Check if the user is the assigned DA for this PR
+    if action_type in ["tender-details", "technical-eval", "financial-bids"] and (group == "verifier_da" or step.user_type == "verifier_da"):
         assignment_result = await db.execute(
             select(PurchaseRequestAssignment).where(
                 and_(
@@ -657,7 +795,6 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         assignment = assignment_result.scalar_one_or_none()
         if not assignment:
             raise HTTPException(status_code=403, detail="User is not the assigned Dealing Assistant for this PR")
-        # Ensure the phase matches the action
         if action_type == "tender-details" and phase_name != "Tendering":
             raise HTTPException(status_code=403, detail="Tender details can only be registered during Tendering phase")
         if action_type == "technical-eval" and phase_name != "Technical Evaluation":
@@ -671,18 +808,17 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         and pr.initiator_id == user.id
     )
 
-    # Special handling for technical-eval by initiator (faculty)
-    if action_type == "technical-eval" and (group == "faculty" or is_initiator_acting_as_faculty):
-        if pr.initiator_id != user.id:
-            raise HTTPException(status_code=403, detail="Only the PR initiator can perform technical evaluation")
+    if action_type == "technical-eval" and (group == "faculty" or step.user_type == "tech_evaluation" or user.id == pr.initiator_id):
+        allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
+        if user.id not in allowed_ids:
+            raise HTTPException(status_code=403, detail="Only the purchase initiator or purchase committee nominees can perform technical evaluation")
         if phase_name != "Technical Evaluation":
             raise HTTPException(status_code=403, detail="Technical evaluations can only be registered during Technical Evaluation phase")
-        if expected != "faculty" and step.user_type != "purchase_initiator":
-            raise HTTPException(status_code=403, detail="Initiator can only submit evaluation when it is their workflow step")
+        if step.user_type != "tech_evaluation" and step.user_type != "purchase_initiator" and expected != "faculty":
+            raise HTTPException(status_code=403, detail="Evaluator can only submit evaluation when it is their workflow step")
         return
 
-    # Special handling for financial-bids by initiator (faculty)
-    if action_type == "financial-bids" and (group == "faculty" or is_initiator_acting_as_faculty):
+    if action_type == "financial-bids" and (group == "faculty" or step.user_type == "purchase_initiator" or user.id == pr.initiator_id):
         if pr.initiator_id != user.id:
             raise HTTPException(status_code=403, detail="Only the PR initiator can register financial bids")
         if phase_name != "Financial Sanction":
@@ -691,6 +827,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
             raise HTTPException(status_code=403, detail="Initiator can only submit financial bids when it is their workflow step")
         return
 
+    # Standard role checking
     if step.role_id and user.role_id != step.role_id and not is_initiator_acting_as_faculty:
         await db.refresh(step, ["role"])
         role_label = step.role.name if step.role else expected
@@ -1070,7 +1207,9 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
         "financial_evaluations",
         "assignments",
         "faculty1",
-        "faculty2"
+        "faculty2",
+        "faculty3",
+        "aa_approver"
     ])
     if pr.initiator:
         await db.refresh(pr.initiator, ["department"])
@@ -1078,6 +1217,10 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
         await db.refresh(pr.faculty1, ["department"])
     if pr.faculty2:
         await db.refresh(pr.faculty2, ["department"])
+    if pr.faculty3:
+        await db.refresh(pr.faculty3, ["department"])
+    if pr.aa_approver:
+        await db.refresh(pr.aa_approver, ["department"])
     
     import io
     import os
@@ -1099,27 +1242,33 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
                 designation = actor.designation or (actor.role.name if actor.role else "-")
                 if actor.signature_path:
                     signature_url = f"file://{os.path.join(settings.STORAGE_PATH, actor.signature_path)}"
+        local_acted_at = to_local_time(h.acted_at)
         history_serialized.append({
             "actor_name": actor_name,
             "designation": designation,
             "status": h.status,
             "remarks": h.remarks or "-",
             "signature_url": signature_url,
-            "acted_at_str": h.acted_at.strftime("%d/%m/%Y %H:%M") if h.acted_at else "-"
+            "acted_at_str": local_acted_at.strftime("%d/%m/%Y %H:%M") if local_acted_at else "-"
         })
 
     from fastapi.templating import Jinja2Templates
     import weasyprint
 
+    local_created_at = to_local_time(pr.created_at)
+    local_aa_approved_at = to_local_time(pr.aa_approved_at)
+
     templates = Jinja2Templates(directory="app/templates")
     html_content = templates.get_template("administrative_approval.html").render({
         "pr": pr,
         "history_serialized": history_serialized,
-        "storage_dir": settings.STORAGE_PATH
+        "storage_dir": settings.STORAGE_PATH,
+        "pr_created_at_str": local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-",
+        "pr_aa_approved_at_str": local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-",
     })
 
     try:
-        pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()
+        pdf_bytes = weasyprint.HTML(string=html_content, base_url=settings.STORAGE_PATH).write_pdf()
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",

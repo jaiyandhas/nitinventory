@@ -43,6 +43,8 @@ class Asset(Base):
     room: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     custodian: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     serial_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    legacy_asset_tag: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    fund_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     condition: Mapped[str] = mapped_column(String(50), default=AssetCondition.WORKING)
     disposal_status: Mapped[str] = mapped_column(String(50), default=DisposalStatus.ACTIVE)
     qr_code_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

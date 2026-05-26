@@ -36,12 +36,13 @@ class GrnService:
         await self.db.flush()
 
         for item in pr_items:
+            qty = item.quantity if item.quantity else 1
             di = DeliveryItem(
                 delivery_id=delivery.id,
                 name=item.item_description,
                 category="other",
-                challan_quantity=item.budget_file.quantity if item.budget_file else 1,
-                unit_price=item.estimated_total / max(item.budget_file.quantity, 1) if item.budget_file else item.estimated_total,
+                challan_quantity=qty,
+                unit_price=item.estimated_total / max(qty, 1),
             )
             self.db.add(di)
 

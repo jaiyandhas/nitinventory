@@ -1,37 +1,37 @@
 version: "3.9"
 
 services:
-  iris-db:
+  nitinventory-db:
     image: postgres:16-alpine
-    container_name: iris-db
+    container_name: nitinventory-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: iris
-      POSTGRES_PASSWORD: iris_secret
-      POSTGRES_DB: iris
+      POSTGRES_USER: nitinventory
+      POSTGRES_PASSWORD: nitinventory_secret
+      POSTGRES_DB: nitinventory
     ports:
       - "5432:5432"
     volumes:
-      - iris_pgdata:/var/lib/postgresql/data
+      - nitinventory_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U iris -d iris"]
+      test: ["CMD-SHELL", "pg_isready -U nitinventory -d nitinventory"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  iris-backend:
+  nitinventory-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: iris-backend
+    container_name: nitinventory-backend
     restart: unless-stopped
     depends_on:
-      iris-db:
+      nitinventory-db:
         condition: service_healthy
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://iris:iris_secret@iris-db:5432/iris
+      DATABASE_URL: postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory
     ports:
       - "8000:8000"
     volumes:
@@ -41,14 +41,14 @@ services:
     command: >
       bash -c "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-  iris-frontend:
+  nitinventory-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: iris-frontend
+    container_name: nitinventory-frontend
     restart: unless-stopped
     depends_on:
-      - iris-backend
+      - nitinventory-backend
     ports:
       - "5173:5173"
     volumes:
@@ -57,4 +57,4 @@ services:
       VITE_API_URL: http://localhost:8000
 
 volumes:
-  iris_pgdata:
+  nitinventory_pgdata:

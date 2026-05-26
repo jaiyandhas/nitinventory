@@ -59,6 +59,7 @@ export function buildPRCreateFormData(
       const item = items[fileId];
       return {
         budget_file_id: fileId,
+        quantity: Number(item.quantity) || 1,
         charges: item.charges ? Number(item.charges) : null,
         requirement_type: item.requirement_type,
         warranty: item.warranty ? Number(item.warranty) : null,

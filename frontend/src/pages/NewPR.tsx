@@ -52,7 +52,7 @@ export const NewPRPage: React.FC = () => {
       wizard.initItemsFromSelection(wizard.selection.selectedFileIds);
     }
     if (wizard.stepId === 'items' && procurementMethod) {
-      const err = wizard.validateItems(procurementMethod.name);
+      const err = wizard.validateItems(procurementMethod.name, budgetFiles);
       if (err) {
         toast.error(err);
         return;
@@ -69,7 +69,7 @@ export const NewPRPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = wizard.validateSubmit() ?? wizard.validateCommon() ?? wizard.validateItems(procurementMethod?.name ?? '');
+    const err = wizard.validateSubmit() ?? wizard.validateCommon() ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
     if (err) {
       toast.error(err);
       return;
@@ -101,7 +101,7 @@ export const NewPRPage: React.FC = () => {
       <div>
         <h1 className="page-header">New Purchase Request</h1>
         <p className="page-subtitle">
-          Multi-step initiation aligned with institute procurement requirements (mapped from NPFS).
+          Multi-step initiation aligned with institute procurement guidelines.
         </p>
       </div>
 
@@ -147,6 +147,8 @@ export const NewPRPage: React.FC = () => {
             procurementName={procurementMethod?.name ?? ''}
             onUpdateCommon={wizard.updateCommon}
             onSubmit={handleSubmit}
+            onBack={wizard.goBack}
+            onCancel={() => navigate('/pr')}
             loading={loading}
           />
         )}

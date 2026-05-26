@@ -117,7 +117,7 @@ export const RegisterPage: React.FC = () => {
           </div>
           <h2 className="text-2xl font-bold text-slate-800">Registration Submitted</h2>
           <p className="text-slate-600 text-sm">
-            Thank you for registering on IRIS. Your account request (including your digital signature) has been sent to the Administrator for approval.
+            Thank you for registering on NIT Inventory. Your account request (including your digital signature) has been sent to the Administrator for approval.
           </p>
           <p className="text-slate-500 text-xs font-semibold">
             You will be able to log in once your profile is verified and approved.
@@ -141,7 +141,7 @@ export const RegisterPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-6">
           <img src="/NITLOGO.png" alt="NIT Logo" className="w-16 h-16 object-contain mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-[#1a3a6b]">IRIS</h1>
+          <h1 className="text-3xl font-bold text-[#1a3a6b]">NIT Inventory</h1>
           <p className="text-sm text-slate-600 font-medium">Faculty & HOD Onboarding</p>
           <p className="text-xs text-slate-500 mt-0.5">National Institute of Technology, Tiruchirappalli</p>
         </div>
@@ -334,7 +334,7 @@ export const RegisterPage: React.FC = () => {
         </div>
 
         <p className="text-center text-xs text-slate-500 mt-6">
-          © {new Date().getFullYear()} NIT Tiruchirappalli — IRIS v1.0
+          © {new Date().getFullYear()} NIT Tiruchirappalli — NIT Inventory v1.0
         </p>
       </div>
     </div>
