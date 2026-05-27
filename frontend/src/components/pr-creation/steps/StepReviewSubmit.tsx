@@ -38,7 +38,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
 
   const grandTotal = files.reduce((sum, f) => {
     const item = items[f.id];
-    const qty = Number(item?.quantity) || 1;
+    const qty = item?.quantity !== undefined && item?.quantity !== '' ? Number(item.quantity) : 0;
     return sum + qty * f.unit_cost;
   }, 0);
 
@@ -49,7 +49,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
         <ul className="list-disc pl-5 space-y-1">
           {files.map((f) => {
             const item = items[f.id];
-            const qty = Number(item?.quantity) || 1;
+            const qty = item?.quantity !== undefined && item?.quantity !== '' ? Number(item.quantity) : 0;
             const estTotal = qty * f.unit_cost;
             return (
               <li key={f.id}>

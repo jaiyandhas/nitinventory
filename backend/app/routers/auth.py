@@ -19,6 +19,38 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
 
 
+def process_signature_image(content: bytes) -> bytes:
+    """Process uploaded signature image to make the white background transparent with smooth anti-aliased edges."""
+    from PIL import Image
+    import io
+    try:
+        img = Image.open(io.BytesIO(content))
+        img = img.convert("RGBA")
+        datas = img.getdata()
+        
+        new_data = []
+        for item in datas:
+            r, g, b, a = item
+            # Calculate average intensity
+            brightness = (r + g + b) // 3
+            if brightness >= 240:
+                new_data.append((r, g, b, 0))
+            elif brightness <= 180:
+                new_data.append(item)
+            else:
+                # Interpolate alpha smoothly between 180 and 240
+                factor = (240 - brightness) / 60.0
+                new_alpha = int(a * factor)
+                new_data.append((r, g, b, new_alpha))
+                
+        img.putdata(new_data)
+        out_io = io.BytesIO()
+        img.save(out_io, format="PNG")
+        return out_io.getvalue()
+    except Exception:
+        return content
+
+
 @router.get("/departments")
 async def public_departments(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Department).order_by(Department.name))
@@ -76,12 +108,14 @@ async def register(
 
     if signature:
         os.makedirs(os.path.join(settings.STORAGE_PATH, "signatures"), exist_ok=True)
-        filename = f"{user.id}_{uuid.uuid4().hex}_{signature.filename}"
+        base_name, _ = os.path.splitext(signature.filename)
+        filename = f"{user.id}_{uuid.uuid4().hex}_{base_name}.png"
         file_path = os.path.join("signatures", filename)
         abs_path = os.path.join(settings.STORAGE_PATH, file_path)
         content = await signature.read()
+        processed_content = process_signature_image(content)
         with open(abs_path, "wb") as f:
-            f.write(content)
+            f.write(processed_content)
         user.signature_path = file_path
 
     await db.commit()
@@ -110,12 +144,14 @@ async def update_profile(
                     os.remove(old_abs)
                 except Exception:
                     pass
-        filename = f"{user.id}_{uuid.uuid4().hex}_{signature.filename}"
+        base_name, _ = os.path.splitext(signature.filename)
+        filename = f"{user.id}_{uuid.uuid4().hex}_{base_name}.png"
         file_path = os.path.join("signatures", filename)
         abs_path = os.path.join(settings.STORAGE_PATH, file_path)
         content = await signature.read()
+        processed_content = process_signature_image(content)
         with open(abs_path, "wb") as f:
-            f.write(content)
+            f.write(processed_content)
         user.signature_path = file_path
 
     await db.commit()

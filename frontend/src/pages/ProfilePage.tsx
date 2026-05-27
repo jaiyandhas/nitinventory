@@ -308,6 +308,7 @@ export const ProfilePage: React.FC = () => {
             <Upload className="w-8 h-8 text-slate-400" />
             <span className="text-sm font-semibold text-[#1a3a6b] hover:underline">Select Image File</span>
             <span className="text-xs text-slate-400">PNG, JPG, or JPEG</span>
+            <span className="text-[10px] text-amber-600 font-semibold mt-1">💡 For the best digital signature quality, please crop tightly and remove the image background before uploading.</span>
             <input
               type="file"
               accept="image/*"

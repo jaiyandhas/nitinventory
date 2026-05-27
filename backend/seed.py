@@ -37,6 +37,7 @@ async def create_tables():
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS tender_vendors_threshold INTEGER;"))
     print("✓ Database tables verified/created")
 
 

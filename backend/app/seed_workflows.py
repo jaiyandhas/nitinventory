@@ -3,7 +3,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 
 def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: list) -> list:
-    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None):
+    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None):
         r = roles[role_key] if role_key else None
         return WorkFlowHierarchy(
             category_id=cat.id,
@@ -15,6 +15,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
             role_id=r.id if r else None,
             purchase_type=ptype,
             is_enabled=True,
+            tender_vendors_threshold=tender_vendors_threshold,
         )
 
     rows: list[WorkFlowHierarchy] = []
@@ -47,6 +48,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat2, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat2, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat2, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
+                    step(cat2, "TD", 6, "apex_approver", "approver", "director", ptype, proc, tender_vendors_threshold=3),
                     step(cat2, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat2, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat2, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
@@ -73,6 +75,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat3, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat3, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat3, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
+                    step(cat3, "TD", 6, "apex_approver", "approver", "director", ptype, proc, tender_vendors_threshold=3),
                     step(cat3, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat3, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat3, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),

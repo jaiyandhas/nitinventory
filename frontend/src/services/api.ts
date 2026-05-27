@@ -48,7 +48,8 @@ export const prApi = {
   reject: (id: number, reason: string) => api.post(`/pr/${id}/reject`, { reason }),
   sendBack: (id: number, to_step: number, reason: string) => api.post(`/pr/${id}/send-back`, { to_step, reason }),
   assignDa: (id: number, da_id: number) => api.post(`/pr/${id}/assign-da`, { da_id }),
-  addTechnicalEval: (id: number, vendors: object[]) => api.post(`/pr/${id}/technical-eval`, { vendors }),
+  addTechnicalEval: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/technical-eval`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   addFinancialBids: (id: number, vendors: object[], remarks?: string) => api.post(`/pr/${id}/financial-bids`, { vendors, remarks }),
   getSendBackCandidates: (id: number) => api.get(`/pr/${id}/send-back-candidates`),
   addTenderDetails: (id: number, data: any) => {

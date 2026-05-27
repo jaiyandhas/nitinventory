@@ -69,15 +69,27 @@ class FlowEngineService:
     async def _get_next_step_in_phase(self, pr: PurchaseRequest, phase: PhaseManager, current_step: int) -> Optional[int]:
         """Retrieve the sequence step order index for the next step within the active phase."""
         result = await self.db.execute(
-            select(WorkFlowHierarchy.step_order).where(
+            select(WorkFlowHierarchy).where(
                 and_(
                     self._wf_filters(pr, phase.id),
                     WorkFlowHierarchy.step_order > current_step,
                 )
-            ).order_by(WorkFlowHierarchy.step_order).limit(1)
+            ).order_by(WorkFlowHierarchy.step_order)
         )
-        row = result.first()
-        return row[0] if row else None
+        steps = result.scalars().all()
+        
+        for step in steps:
+            if step.tender_vendors_threshold is not None:
+                # Tender details (commercial evaluations) count check
+                await self.db.refresh(pr, ["commercial_evaluations"])
+                vendor_count = len(pr.commercial_evaluations)
+                if vendor_count > step.tender_vendors_threshold:
+                    # Skip this step if the number of vendors exceeds the threshold
+                    continue
+            
+            return step.step_order
+            
+        return None
 
     async def _get_next_valid_phase(self, pr: PurchaseRequest, current_phase: PhaseManager) -> Optional[PhaseManager]:
         """Next phase that has at least one enabled workflow step (skips TD/TE/FS when undefined)."""
@@ -264,66 +276,103 @@ class FlowEngineService:
 
         next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
 
-        if next_step is not None:
-            flow.step_order = next_step
-            pr.current_status = RequestStatus.IN_PROGRESS
-            await self._add_history(pr, acted_by, status or "Forwarded", remarks)
-        else:
-            if current_phase.phase_name == "Administrative Approval":
-                pr.aa_approved_at = datetime.utcnow()
-                pr.aa_approver_id = acted_by.id
-            elif current_phase.phase_name == "Technical Evaluation":
-                pr.te_approved_at = datetime.utcnow()
-            elif current_phase.phase_name == "Financial Sanction":
-                pr.fs_approved_at = datetime.utcnow()
+        # Check if this is the committee technical evaluation step
+        step_def = await self._get_step_def(pr, flow.phase_id, flow.step_order)
+        is_tech_eval_step = step_def and step_def.user_type == "tech_evaluation"
 
-            next_phase = await self._get_next_valid_phase(pr, current_phase)
-            if next_phase:
-                flow.phase_id = next_phase.id
-                flow.step_order = 1
+        should_advance = True
+
+        if is_tech_eval_step:
+            await self.db.refresh(pr, ["history"])
+            # Check if this user has already logged an approval in the database for this step
+            has_approval_log = any(
+                h.current_approver_id == acted_by.id
+                and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                for h in pr.history
+            )
+            if not has_approval_log:
+                default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
+                await self._add_history(pr, acted_by, status or default_status, remarks)
+            
+            # Check if all required committee members have approved
+            required_ids = {uid for uid in [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id] if uid is not None}
+            
+            await self.db.refresh(pr, ["history"])
+            approved_ids = {
+                h.current_approver_id for h in pr.history 
+                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+            }
+            
+            if not required_ids.issubset(approved_ids):
+                should_advance = False
+                flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS
-                await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
+
+        if should_advance:
+            if next_step is not None:
+                flow.step_order = next_step
+                pr.current_status = RequestStatus.IN_PROGRESS
+                if not is_tech_eval_step:
+                    await self._add_history(pr, acted_by, status or "Forwarded", remarks)
             else:
-                # Workflow complete — final PO step is faculty goods receipt
-                completed_step = await self._get_step_def(pr, current_phase.id, current_step)
-                phase_name = current_phase.phase_name or ""
-                is_po_completion = (phase_name == "Purchase Order")
-                
-                role_value = None
-                if completed_step and completed_step.role_id:
-                    await self.db.refresh(completed_step, ["role"])
-                    role_value = completed_step.role.value if completed_step.role else None
+                if current_phase.phase_name == "Administrative Approval":
+                    pr.aa_approved_at = datetime.utcnow()
+                    pr.aa_approver_id = acted_by.id
+                elif current_phase.phase_name == "Technical Evaluation":
+                    pr.te_approved_at = datetime.utcnow()
+                    # Write final TE completion entry (after all committee members have signed)
+                    await self._add_history(pr, acted_by, "Technical Evaluation Phase Completed", remarks)
+                elif current_phase.phase_name == "Financial Sanction":
+                    pr.fs_approved_at = datetime.utcnow()
 
-                is_faculty_receipt = (
-                    is_po_completion
-                    and completed_step is not None
-                    and (
-                        completed_step.user_group == "faculty"
-                        or role_value == "faculty"
-                        or completed_step.user_type == "purchase_initiator"
+                next_phase = await self._get_next_valid_phase(pr, current_phase)
+                if next_phase:
+                    flow.phase_id = next_phase.id
+                    flow.step_order = 1
+                    pr.current_status = RequestStatus.IN_PROGRESS
+                    if not is_tech_eval_step:
+                        await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
+                else:
+                    # Workflow complete — final PO step is faculty goods receipt
+                    completed_step = await self._get_step_def(pr, current_phase.id, current_step)
+                    phase_name = current_phase.phase_name or ""
+                    is_po_completion = (phase_name == "Purchase Order")
+                    
+                    role_value = None
+                    if completed_step and completed_step.role_id:
+                        await self.db.refresh(completed_step, ["role"])
+                        role_value = completed_step.role.value if completed_step.role else None
+
+                    is_faculty_receipt = (
+                        is_po_completion
+                        and completed_step is not None
+                        and (
+                            completed_step.user_group == "faculty"
+                            or role_value == "faculty"
+                            or completed_step.user_type == "purchase_initiator"
+                        )
                     )
-                )
-                if is_faculty_receipt and pr.initiator_id != acted_by.id:
-                    raise ValueError("Only the PR initiator can confirm receipt of goods")
+                    if is_faculty_receipt and pr.initiator_id != acted_by.id:
+                        raise ValueError("Only the PR initiator can confirm receipt of goods")
 
-                pr.current_status = RequestStatus.PO_ISSUED
-                pr.po_approved_at = datetime.utcnow()
-                await self._add_history(
-                    pr,
-                    acted_by,
-                    status or ("Goods received — PO Issued" if is_faculty_receipt else "PO Issued"),
-                    remarks,
-                )
-                await self.db.delete(flow)
+                    pr.current_status = RequestStatus.PO_ISSUED
+                    pr.po_approved_at = datetime.utcnow()
+                    await self._add_history(
+                        pr,
+                        acted_by,
+                        status or ("Goods received — PO Issued" if is_faculty_receipt else "PO Issued"),
+                        remarks,
+                    )
+                    await self.db.delete(flow)
 
-                from app.services.budget_service import BudgetService
-                budget_svc = BudgetService(self.db)
-                await budget_svc.deduct_amount(pr)
+                    from app.services.budget_service import BudgetService
+                    budget_svc = BudgetService(self.db)
+                    await budget_svc.deduct_amount(pr)
 
-                if is_po_completion:
-                    from app.services.grn_service import GrnService
-                    grn_svc = GrnService(self.db)
-                    await grn_svc.create_delivery(pr)
+                    if is_po_completion:
+                        from app.services.grn_service import GrnService
+                        grn_svc = GrnService(self.db)
+                        await grn_svc.create_delivery(pr)
 
         if db_flush:
             await self.db.flush()

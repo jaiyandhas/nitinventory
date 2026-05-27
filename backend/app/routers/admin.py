@@ -596,6 +596,7 @@ async def list_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "role_name": w.role.name if w.role else (w.user_group.replace("_", " ").title() if w.user_group else None),
             "is_enabled": w.is_enabled,
             "purchase_type": w.purchase_type,
+            "tender_vendors_threshold": w.tender_vendors_threshold,
         }
         for w in entries
     ]
@@ -641,6 +642,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         role_id=role_id,
         purchase_type=purchase_type,
         is_enabled=True,
+        tender_vendors_threshold=body.get("tender_vendors_threshold"),
     )
     db.add(wf)
     await db.commit()
@@ -692,6 +694,9 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
             wf.user_type = "verifier"
     if "is_enabled" in body:
         wf.is_enabled = bool(body["is_enabled"])
+    if "tender_vendors_threshold" in body:
+        # Accept null/None to clear the threshold
+        wf.tender_vendors_threshold = body["tender_vendors_threshold"]
     await db.commit()
     return {"message": "Workflow updated"}
 

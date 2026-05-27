@@ -49,7 +49,7 @@ export const NewPRPage: React.FC = () => {
         toast.error(err);
         return;
       }
-      wizard.initItemsFromSelection(wizard.selection.selectedFileIds);
+      wizard.initItemsFromSelection(wizard.selection.selectedFileIds, budgetFiles);
     }
     if (wizard.stepId === 'items' && procurementMethod) {
       const err = wizard.validateItems(procurementMethod.name, budgetFiles);

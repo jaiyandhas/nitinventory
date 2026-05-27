@@ -34,11 +34,24 @@ export function usePRWizard() {
   const currentStep = PR_CREATION_STEPS[stepIndex];
   const stepId = currentStep.id as PRWizardStepId;
 
-  const initItemsFromSelection = useCallback((fileIds: number[]) => {
+  const initItemsFromSelection = useCallback((fileIds: number[], budgetFiles?: BudgetFile[]) => {
     setItems((prev) => {
       const next: Record<number, PRItemFormState> = {};
       for (const id of fileIds) {
-        next[id] = prev[id] ?? createEmptyItemState(id);
+        let defaultQty = '1';
+        if (budgetFiles) {
+          const file = budgetFiles.find((f) => f.id === id);
+          if (file && file.unit_cost > 0) {
+            const maxQty = Math.floor(file.available_amount / file.unit_cost);
+            if (maxQty <= 0) {
+              defaultQty = '0';
+            }
+          }
+        }
+        next[id] = prev[id] ?? {
+          ...createEmptyItemState(id),
+          quantity: defaultQty,
+        };
       }
       return next;
     });
@@ -92,15 +105,23 @@ export function usePRWizard() {
           ...item,
           _procurement_is_gem: isGem,
         };
-        const qty = Number(item.quantity);
-        if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
-          return `Quantity for all items must be a valid positive integer`;
-        }
         const file = budgetFiles.find((f) => f.id === fileId);
         if (file && file.unit_cost > 0) {
           const maxQty = Math.floor(file.available_amount / file.unit_cost);
+          if (maxQty <= 0) {
+            return `Budget for "${file.item_name}" is exhausted. Please select a different budget file.`;
+          }
+          const qty = Number(item.quantity);
+          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
+            return `Quantity for "${file.item_name}" must be a valid positive integer`;
+          }
           if (qty > maxQty) {
             return `Requested quantity for "${file.item_name}" (${qty}) exceeds the maximum available quantity (${maxQty}) based on available budget`;
+          }
+        } else {
+          const qty = Number(item.quantity);
+          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
+            return `Quantity for all items must be a valid positive integer`;
           }
         }
         if (!item.charges.trim()) return `Enter GST & charges for all items`;

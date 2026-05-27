@@ -73,16 +73,16 @@ export const DashboardPage: React.FC = () => {
         <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
         <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
         <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
-        {budget && (
+        {budget && safeBudget.total > 0 && (
           <StatCard icon={<Wallet size={20} />} label="Budget Available" value={formatCurrency(safeBudget.available)} color="#1a3a6b" />
         )}
-        {isRole('hod', 'verifier_sp', 'admin') && !budget && (
+        {isRole('hod', 'verifier_sp', 'admin') && (!budget || safeBudget.total === 0) && (
           <StatCard icon={<Package size={20} />} label="Total Assets" value={assets.length} color="#8b5cf6" />
         )}
       </div>
-
+ 
       {/* Budget bar */}
-      {budget && (
+      {budget && safeBudget.total > 0 && (
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Department Budget Overview</h3>

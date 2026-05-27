@@ -50,20 +50,33 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
               </div>
             </div>
 
+            {/* Warning banner if budget is exhausted */}
+            {Math.floor(file.available_amount / file.unit_cost) <= 0 && (
+              <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 text-sm space-y-1">
+                <div className="font-semibold flex items-center gap-1.5 text-red-900">
+                  <span>⚠️</span> Budget Exhausted
+                </div>
+                <p className="text-xs text-red-700">
+                  The available budget for this file ({formatCurrency(file.available_amount)}) is less than the unit cost ({formatCurrency(file.unit_cost)}). No units can be purchased.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="label">Quantity to Purchase *</label>
                 <input
                   type="number"
-                  min={1}
+                  min={Math.floor(file.available_amount / file.unit_cost) <= 0 ? 0 : 1}
                   max={Math.floor(file.available_amount / file.unit_cost)}
-                  required
-                  className="input-field"
-                  value={item.quantity}
+                  required={Math.floor(file.available_amount / file.unit_cost) > 0}
+                  disabled={Math.floor(file.available_amount / file.unit_cost) <= 0}
+                  className="input-field disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  value={Math.floor(file.available_amount / file.unit_cost) <= 0 ? '0' : item.quantity}
                   onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
-                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(item.quantity) || 1) * file.unit_cost)}</strong>
+                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(Math.floor(file.available_amount / file.unit_cost) <= 0 ? '0' : item.quantity) || 0) * file.unit_cost)}</strong>
                 </span>
               </div>
 

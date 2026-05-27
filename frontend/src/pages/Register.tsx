@@ -286,6 +286,7 @@ export const RegisterPage: React.FC = () => {
                     <p className="pl-1">or drag and drop</p>
                   </div>
                   <p className="text-xs text-slate-500">PNG, JPG up to 2MB</p>
+                  <p className="text-[10px] text-amber-600 font-semibold mt-1">💡 For the best digital signature quality, please crop tightly and remove the image background before uploading.</p>
                 </div>
               </div>
               

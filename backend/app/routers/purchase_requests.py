@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request,
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, delete
+from sqlalchemy import select, and_, delete, or_
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
@@ -328,7 +328,14 @@ async def list_prs(
     group = user.role.group_key if user.role else None
 
     if group == "faculty":
-        query = query.where(PurchaseRequest.initiator_id == user.id)
+        query = query.where(
+            or_(
+                PurchaseRequest.initiator_id == user.id,
+                PurchaseRequest.faculty1_id == user.id,
+                PurchaseRequest.faculty2_id == user.id,
+                PurchaseRequest.faculty3_id == user.id,
+            )
+        )
     elif group == "hod":
         # HOD sees all PRs from their department
         query = query.join(User, PurchaseRequest.initiator_id == User.id).where(
@@ -452,8 +459,38 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
         phase_name = phase_res.scalar_one_or_none()
 
+        # Get threshold if exists in the current phase
+        threshold_res = await db.execute(
+            select(WorkFlowHierarchy.tender_vendors_threshold)
+            .where(
+                and_(
+                    WorkFlowHierarchy.category_id == pr.category_id,
+                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                    WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                    WorkFlowHierarchy.tender_vendors_threshold != None,
+                )
+            )
+            .limit(1)
+        )
+        row = threshold_res.first()
+        tender_vendors_threshold = row[0] if row else None
+
     history = []
+    # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
     for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
+        if h.status in ("Forwarded", "Forwarded to next phase"):
+            has_specific_entry = any(
+                other.current_approver_id == h.current_approver_id
+                and other.status
+                and other.status not in ("Forwarded", "Forwarded to next phase")
+                and other.acted_at
+                and h.acted_at
+                and abs((other.acted_at - h.acted_at).total_seconds()) < 60
+                for other in pr.history
+            )
+            if has_specific_entry:
+                continue
         actor_name = ""
         actor_role_name = ""
         if h.current_approver_id:
@@ -522,6 +559,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
 
     return {
         **_serialize_pr(pr),
+        "initiator_id": pr.initiator_id,
         "faculty1_id": pr.faculty1_id,
         "faculty2_id": pr.faculty2_id,
         "faculty3_id": pr.faculty3_id,
@@ -558,6 +596,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "expected_user_id": expected_user_id,
             "expected_user_name": expected_user_name,
             "workflow_step_id": step.id if step else None,
+            "tender_vendors_threshold": tender_vendors_threshold,
         } if pr.flow else None,
         "commercial_evaluations": commercial_evaluations,
         "technical_evaluations": technical_evaluations,
@@ -900,7 +939,13 @@ async def get_send_back_candidates(pr_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.post("/{pr_id}/assign-da")
-async def assign_da(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def assign_da(
+    pr_id: int,
+    body: dict,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
     pr = result.scalar_one_or_none()
     if not pr:
@@ -919,14 +964,22 @@ async def assign_da(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), 
         status=AssignmentStatus.PENDING,
     )
     db.add(assignment)
-    history = PurchaseRequestHistory(
-        purchase_request_id=pr.id,
-        current_approver_id=user.id,
-        status=f"Assigned to {da.name}",
-        acted_at=datetime.utcnow(),
-    )
-    db.add(history)
-    await db.commit()
+
+    flow_engine = FlowEngineService(db, background_tasks)
+    try:
+        await flow_engine.advance(
+            pr=pr,
+            acted_by=user,
+            remarks=f"Assigned Dealing Assistant: {da.name}",
+            status=f"Assigned to {da.name}",
+            db_flush=False
+        )
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     return {"message": f"PR assigned to {da.name}"}
 
 
@@ -1065,34 +1118,91 @@ async def add_tender_details(
 
 
 @router.post("/{pr_id}/technical-eval")
-async def add_technical_eval(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def add_technical_eval(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
-    
+
     await verify_current_user_group_for_pr(pr, user, db, "technical-eval")
 
-    for vendor in body.get("vendors", []):
-        ev = TechnicalEvaluation(
-            purchase_request_id=pr.id,
-            vendor_name=vendor["name"],
-            is_qualified=vendor.get("is_qualified", False),
-            remarks=vendor.get("remarks"),
-            created_at=datetime.utcnow(),
+    content_type = request.headers.get("content-type", "")
+    tech_eval_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field in multipart form")
+        body = json.loads(raw)
+        tech_eval_file = form.get("tech_evaluation_document")
+        if tech_eval_file and not getattr(tech_eval_file, "filename", None):
+            tech_eval_file = None
+    else:
+        body = await request.json()
+
+    # Require the tech evaluation PDF document
+    if "multipart/form-data" in content_type:
+        await db.refresh(pr, ["documents"])
+        doc_key = f"tech_eval_doc_{user.id}"
+        existing_te_doc = next((d for d in pr.documents if d.doc_key == doc_key), None)
+        if not existing_te_doc and not tech_eval_file:
+            raise HTTPException(
+                status_code=400,
+                detail="Technical Evaluation Report PDF is mandatory. Please upload your signed evaluation document."
+            )
+
+    # Prevent duplicate submission
+    await db.refresh(pr, ["history"])
+    has_approval_log = any(
+        h.current_approver_id == user.id
+        and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+        for h in pr.history
+    )
+    if has_approval_log:
+        raise HTTPException(
+            status_code=409,
+            detail="You have already submitted your technical evaluation for this PR."
         )
-        db.add(ev)
-    
+
+    # Save tech evaluation PDF document
+    doc_svc = DocumentService(db)
+    if tech_eval_file:
+        doc_key = f"tech_eval_doc_{user.id}"
+        await db.refresh(pr, ["documents"])
+        existing_te_doc = next((d for d in pr.documents if d.doc_key == doc_key), None)
+        if existing_te_doc:
+            await db.delete(existing_te_doc)
+        await doc_svc.save_upload(pr, doc_key, tech_eval_file, user.id)
+
+    # Save vendor technical qualifications (only initiator submits the vendor list)
+    if pr.initiator_id == user.id:
+        for vendor in body.get("vendors", []):
+            ev = TechnicalEvaluation(
+                purchase_request_id=pr.id,
+                vendor_name=vendor["name"],
+                is_qualified=vendor.get("is_qualified", False),
+                remarks=vendor.get("remarks"),
+                created_at=datetime.utcnow(),
+            )
+            db.add(ev)
+
+    status = "Technical Evaluation Completed" if pr.initiator_id == user.id else "Technical Evaluation Approved"
     history = PurchaseRequestHistory(
         purchase_request_id=pr.id,
         current_approver_id=user.id,
-        status="Technical Evaluation Completed",
-        remarks=body.get("remarks") or "Technical evaluation checks submitted.",
+        status=status,
+        remarks=body.get("remarks") or f"Technical evaluation submitted by {user.name}.",
         acted_at=datetime.utcnow(),
     )
     db.add(history)
     await db.commit()
-    return {"message": "Technical evaluations saved"}
+    return {"message": "Technical evaluation saved"}
 
 
 @router.post("/{pr_id}/financial-bids")
@@ -1226,7 +1336,20 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
     import os
     from app.core.config import settings
     history_serialized = []
+    # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
     for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
+        if h.status in ("Forwarded", "Forwarded to next phase"):
+            has_specific_entry = any(
+                other.current_approver_id == h.current_approver_id
+                and other.status
+                and other.status not in ("Forwarded", "Forwarded to next phase")
+                and other.acted_at
+                and h.acted_at
+                and abs((other.acted_at - h.acted_at).total_seconds()) < 60
+                for other in pr.history
+            )
+            if has_specific_entry:
+                continue
         actor_name = "System"
         signature_url = None
         designation = "-"

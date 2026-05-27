@@ -39,14 +39,14 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-6">
-          <img src="/NITLOGO.png" alt="NIT Logo" className="w-20 h-20 object-contain mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-[#1a3a6b]">NIT Inventory</h1>
-          <p className="text-sm text-slate-600 mt-1 font-medium">Institutional Resource & Inventory System</p>
-          <p className="text-xs text-slate-500 mt-0.5">National Institute of Technology, Tiruchirappalli</p>
+          <img src="/NITLOGO.png" alt="NIT Logo" className="w-20 h-20 object-contain mx-auto mb-4 drop-shadow-md" />
+          <h1 className="text-3xl font-bold text-white drop-shadow-md">NIT Inventory</h1>
+          <p className="text-sm text-slate-200 mt-1 font-semibold drop-shadow-sm">Institutional Resource & Inventory System</p>
+          <p className="text-xs text-slate-300 mt-0.5 drop-shadow-sm">National Institute of Technology, Tiruchirappalli</p>
         </div>
 
         {/* Card */}
-        <div className="card p-8">
+        <div className="glass-card p-8">
           <h2 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-200 pb-2">Sign in to your account</h2>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -106,7 +106,7 @@ export const LoginPage: React.FC = () => {
 
         </div>
 
-        <p className="text-center text-xs text-slate-500 mt-6">
+        <p className="text-center text-xs text-slate-300 mt-6 drop-shadow-sm">
           © {new Date().getFullYear()} NIT Tiruchirappalli — NIT Inventory v1.0
         </p>
       </div>

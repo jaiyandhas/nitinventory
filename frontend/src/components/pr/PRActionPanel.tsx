@@ -18,6 +18,7 @@ const getDocLabel = (docKey: string): string => {
   if (docKey === 'draft_tender_document') return 'Draft Tender Document';
   if (docKey === 'tender_document') return 'Final Tender Document';
   if (docKey === 'quotation_file' || docKey === 'basis_of_estimation') return 'Basis of Estimation (Quotation)';
+  if (docKey.startsWith('tech_eval_doc_')) return 'Technical Evaluation Report';
   
   let label = docKey;
   label = label.replace(/_/g, ' ');
@@ -62,9 +63,27 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   // Technical Evaluation states
   const [techQualifications, setTechQualifications] = useState<Record<string, { is_qualified: boolean; remarks: string }>>({});
   const [selectedAwardedVendorId, setSelectedAwardedVendorId] = useState<string>('');
+  const [techEvalPdf, setTechEvalPdf] = useState<File | null>(null);
 
   // Financial Sanction states
   const [finBids, setFinBids] = useState<Record<string, { quoted_amount: string; remarks: string }>>({});
+
+  const hasUserSigned = pr.history?.some((h: any) => 
+    h.approver_id === user?.id && 
+    (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved')
+  );
+
+  // Derive if the current user is a committee member for TE phase
+  const isCommitteeMember = [
+    pr.initiator_id,
+    pr.faculty1_id,
+    pr.faculty2_id,
+    pr.faculty3_id,
+  ].filter(Boolean).includes(user?.id);
+
+  // Key for the user's own uploaded tech eval document
+  const userTechEvalDocKey = `tech_eval_doc_${user?.id}`;
+  const userTechEvalDoc = pr.documents?.find((d: any) => d.doc_key === userTechEvalDocKey);
 
   useEffect(() => {
     if (!pr) return;
@@ -226,8 +245,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     setActionLoading(true);
     try {
       await prApi.assignDa(pr.id, Number(selectedDa));
-      toast.success('DA assigned successfully. Advancing step...');
-      await prApi.advance(pr.id, `Assigned Dealing Assistant`);
+      toast.success('DA assigned successfully.');
       refetch();
     } catch (e: any) {
       const detail = e.response?.data?.detail || 'Action failed';
@@ -298,37 +316,59 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   };
 
   const handleTechEvalSubmit = async () => {
-    if (!remarks.trim()) { toast.error('Remarks are required to register and advance'); return; }
-    
-    const hasFinancialBids = pr.financial_evaluations && pr.financial_evaluations.length > 0;
-    const qualifiedNames = Object.entries(techQualifications)
-      .filter(([_, q]) => q.is_qualified)
-      .map(([name]) => name);
-      
-    if (hasFinancialBids && qualifiedNames.length > 0 && !selectedAwardedVendorId) {
-      toast.error('Please select the recommended vendor to award the bid');
+    if (!remarks.trim()) { toast.error('Remarks are required to submit the technical evaluation'); return; }
+
+    // Require PDF upload for all committee members
+    if (!techEvalPdf && !userTechEvalDoc) {
+      toast.error('Please upload your signed Technical Evaluation Report PDF');
       return;
     }
 
-    if (!window.confirm('Are you sure you want to submit this technical evaluation and advance?')) return;
+    // For initiator: vendor qualifications must be filled
+    if (pr.initiator_id === user?.id) {
+      const hasFinancialBids = pr.financial_evaluations && pr.financial_evaluations.length > 0;
+      const qualifiedNames = Object.entries(techQualifications)
+        .filter(([_, q]) => q.is_qualified)
+        .map(([name]) => name);
 
-    const formattedVendors = Object.entries(techQualifications).map(([name, data]) => ({
-      name,
-      is_qualified: data.is_qualified,
-      remarks: data.remarks
+      if (hasFinancialBids && qualifiedNames.length > 0 && !selectedAwardedVendorId) {
+        toast.error('Please select the recommended vendor to award the bid');
+        return;
+      }
+    }
+
+    if (!window.confirm('Are you sure you want to submit your Technical Evaluation?')) return;
+
+    // Build FormData with JSON payload + PDF file
+    const formattedVendors = pr.initiator_id === user?.id
+      ? Object.entries(techQualifications).map(([name, data]) => ({
+          name,
+          is_qualified: data.is_qualified,
+          remarks: data.remarks
+        }))
+      : [];
+
+    const formData = new FormData();
+    formData.append('payload', JSON.stringify({
+      vendors: formattedVendors,
+      remarks,
     }));
+    if (techEvalPdf) {
+      formData.append('tech_evaluation_document', techEvalPdf);
+    }
 
     setActionLoading(true);
     try {
-      await prApi.addTechnicalEval(pr.id, formattedVendors);
-      
-      if (selectedAwardedVendorId) {
+      await prApi.addTechnicalEval(pr.id, formData);
+
+      if (pr.initiator_id === user?.id && selectedAwardedVendorId) {
         await prApi.awardBid(pr.id, parseInt(selectedAwardedVendorId), remarks);
       }
 
-      toast.success('Technical Evaluation saved. Advancing step...');
+      toast.success('Technical Evaluation submitted. Advancing workflow...');
       await prApi.advance(pr.id, remarks);
       setRemarks('');
+      setTechEvalPdf(null);
       refetch();
     } catch (e: any) {
       const detail = e.response?.data?.detail || 'Action failed';
@@ -479,83 +519,105 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
       {/* Tendering phase inputs - Dealing Assistant Form */}
       {phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Dealing Assistant' && (
-        <div className="space-y-4 bg-white p-4 border border-blue-200 rounded shadow-sm">
-          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Register Tender Details</h4>
+        <div className="space-y-6 bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+          <h4 className="text-base font-bold text-[#1a3a6b] border-b border-slate-100 pb-2">Register Tender Details</h4>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label text-slate-600 font-bold">Tender Reference Number *</label>
-              <input 
-                type="text" 
-                value={tenderRef} 
-                onChange={(e) => setTenderRef(e.target.value)} 
-                className="input-field mt-1" 
-                placeholder="e.g. NITT/CSE/2026/04" 
-              />
-            </div>
-            <div>
-              <label className="label text-slate-600 font-bold">Date of Tender *</label>
-              <input 
-                type="date" 
-                value={tenderDate} 
-                onChange={(e) => setTenderDate(e.target.value)} 
-                className="input-field mt-1" 
-              />
-            </div>
-            <div>
-              <label className="label text-slate-600 font-bold">Tech Bid Opening Date</label>
-              <input 
-                type="date" 
-                value={techOpenDate} 
-                onChange={(e) => setTechOpenDate(e.target.value)} 
-                className="input-field mt-1" 
-              />
-            </div>
-            <div>
-              <label className="label text-slate-600 font-bold">Financial Bid Opening Date</label>
-              <input 
-                type="date" 
-                value={finOpenDate} 
-                onChange={(e) => setFinOpenDate(e.target.value)} 
-                className="input-field mt-1" 
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="label text-slate-600 font-bold">External Vendor List Document URL</label>
-              <input 
-                type="text" 
-                value={vendorListLink} 
-                onChange={(e) => setVendorListLink(e.target.value)} 
-                className="input-field mt-1" 
-                placeholder="https://drive.google.com/..." 
-              />
-            </div>
-            <div>
-              <label className="label text-slate-600 font-bold">
-                Draft Tender Document * {hasExistingDraft && <span className="text-green-600 text-xs font-normal">(Uploaded: {pr.documents?.find((d: any) => d.doc_key === 'draft_tender_document')?.original_name})</span>}
-              </label>
-              <input 
-                type="file" 
-                onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)} 
-                className="input-field mt-1" 
-                required={!hasExistingDraft}
-              />
-            </div>
-            <div>
-              <label className="label text-slate-600 font-bold">
-                Tender Document (Optional) {hasExistingTender && <span className="text-green-600 text-xs font-normal">(Uploaded: {pr.documents?.find((d: any) => d.doc_key === 'tender_document')?.original_name})</span>}
-              </label>
-              <input 
-                type="file" 
-                onChange={(e) => setTenderDoc(e.target.files?.[0] || null)} 
-                className="input-field mt-1" 
-              />
+          {/* Section 1: Specifications */}
+          <div className="space-y-4">
+            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-1">Tender Specifications</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="label text-slate-600 font-semibold">Tender Reference Number *</label>
+                <input 
+                  type="text" 
+                  value={tenderRef} 
+                  onChange={(e) => setTenderRef(e.target.value)} 
+                  className="input-field mt-1.5" 
+                  placeholder="e.g. NITT/CSE/2026/04" 
+                />
+              </div>
+              <div>
+                <label className="label text-slate-600 font-semibold">Date of Tender *</label>
+                <input 
+                  type="date" 
+                  value={tenderDate} 
+                  onChange={(e) => setTenderDate(e.target.value)} 
+                  className="input-field mt-1.5" 
+                />
+              </div>
+              <div>
+                <label className="label text-slate-600 font-semibold">Tech Bid Opening Date</label>
+                <input 
+                  type="date" 
+                  value={techOpenDate} 
+                  onChange={(e) => setTechOpenDate(e.target.value)} 
+                  className="input-field mt-1.5" 
+                />
+              </div>
+              <div>
+                <label className="label text-slate-600 font-semibold">Financial Bid Opening Date</label>
+                <input 
+                  type="date" 
+                  value={finOpenDate} 
+                  onChange={(e) => setFinOpenDate(e.target.value)} 
+                  className="input-field mt-1.5" 
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="label text-slate-600 font-semibold">External Vendor List Document URL</label>
+                <input 
+                  type="url" 
+                  value={vendorListLink} 
+                  onChange={(e) => setVendorListLink(e.target.value)} 
+                  className="input-field mt-1.5" 
+                  placeholder="https://drive.google.com/..." 
+                />
+              </div>
             </div>
           </div>
 
-          <div className="border-t border-slate-100 pt-4 space-y-4">
-            <div className="flex justify-between items-center">
-              <label className="label text-slate-700 font-bold">Bidding Vendors *</label>
+          {/* Section 2: Documents */}
+          <div className="space-y-4 pt-2">
+            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-1">Tender Documents</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center">
+                  <span>Draft Tender Document *</span>
+                  {hasExistingDraft && (
+                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                      Saved: {pr.documents?.find((d: any) => d.doc_key === 'draft_tender_document')?.original_name}
+                    </span>
+                  )}
+                </label>
+                <input 
+                  type="file" 
+                  onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)} 
+                  className="input-field mt-1.5 text-sm" 
+                  required={!hasExistingDraft}
+                />
+              </div>
+              <div>
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center">
+                  <span>Tender Document (Optional)</span>
+                  {hasExistingTender && (
+                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                      Saved: {pr.documents?.find((d: any) => d.doc_key === 'tender_document')?.original_name}
+                    </span>
+                  )}
+                </label>
+                <input 
+                  type="file" 
+                  onChange={(e) => setTenderDoc(e.target.files?.[0] || null)} 
+                  className="input-field mt-1.5 text-sm" 
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Bidding Vendor Registry */}
+          <div className="space-y-4 pt-2">
+            <div className="flex justify-between items-center border-b border-slate-100/50 pb-2">
+              <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
               <button
                 type="button"
                 onClick={() => {
@@ -564,99 +626,89 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                     { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
                   ]);
                 }}
-                className="btn-secondary py-1 px-3 flex items-center gap-1 text-xs"
+                className="btn-secondary py-1 px-3 flex items-center gap-1.5 text-xs font-semibold border-slate-200 hover:border-slate-300"
               >
-                <Plus size={14} /> Add Vendor Row
+                <Plus size={13} /> Add Vendor Row
               </button>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Vendor Name *</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Vendor Email</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Quoted Amount (Lakhs)</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Status</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Remarks</th>
-                    <th className="px-3 py-2 text-center font-bold text-slate-600">Actions</th>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
+              <table className="min-w-[950px] divide-y divide-slate-100 text-sm" style={{ minWidth: '950px' }}>
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 font-semibold text-xs uppercase tracking-wider">
+                    <th className="px-2 py-2.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
+                    <th className="px-2 py-2.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
+                    <th className="px-2 py-2.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
+                    <th className="px-2 py-2.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
+                    <th className="px-2 py-2.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
+                    <th className="px-2 py-2.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
+                <tbody className="bg-white divide-y divide-slate-100">
                   {tenderVendors.map((vendor, index) => (
-                    <tr key={index}>
-                      <td className="px-3 py-1.5">
+                    <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                      <td className="px-2 py-2">
                         <input
                           type="text"
                           value={vendor.name}
                           onChange={(e) => {
-                            const updated = [...tenderVendors];
-                            updated[index].name = e.target.value;
-                            setTenderVendors(updated);
+                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, name: e.target.value } : v));
                           }}
-                          className="input-field py-1 px-2 text-sm w-full"
-                          placeholder="Vendor Name"
+                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
+                          placeholder="e.g. Apple Inc."
                           required
                         />
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-2">
                         <input
                           type="email"
                           value={vendor.email}
                           onChange={(e) => {
-                            const updated = [...tenderVendors];
-                            updated[index].email = e.target.value;
-                            setTenderVendors(updated);
+                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, email: e.target.value } : v));
                           }}
-                          className="input-field py-1 px-2 text-sm w-full"
+                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
                           placeholder="email@example.com"
                         />
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-2">
                         <div className="relative">
                           <input
                             type="number"
                             step="0.01"
                             value={vendor.quoted_amount}
                             onChange={(e) => {
-                              const updated = [...tenderVendors];
-                              updated[index].quoted_amount = e.target.value;
-                              setTenderVendors(updated);
+                              setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, quoted_amount: e.target.value } : v));
                             }}
-                            className="input-field py-1 pl-5 pr-1 text-sm w-full"
-                            placeholder="Amount"
+                            className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 pl-4 pr-1 text-sm transition-all placeholder:text-slate-300 rounded-none"
+                            placeholder="0.00"
                           />
-                          <span className="absolute left-1.5 top-2 text-xs text-slate-400 font-bold">₹</span>
+                          <span className="absolute left-0 top-1.5 text-xs text-slate-400 font-semibold">₹</span>
                         </div>
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-2">
                         <select
                           value={vendor.is_qualified ? 'qualified' : 'unqualified'}
                           onChange={(e) => {
-                            const updated = [...tenderVendors];
-                            updated[index].is_qualified = e.target.value === 'qualified';
-                            setTenderVendors(updated);
+                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, is_qualified: e.target.value === 'qualified' } : v));
                           }}
-                          className="input-field py-1 px-2 text-sm w-full"
+                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all rounded-none"
                         >
                           <option value="qualified">Qualified</option>
                           <option value="unqualified">Not Qualified</option>
                         </select>
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-2">
                         <input
                           type="text"
                           value={vendor.remarks}
                           onChange={(e) => {
-                            const updated = [...tenderVendors];
-                            updated[index].remarks = e.target.value;
-                            setTenderVendors(updated);
+                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, remarks: e.target.value } : v));
                           }}
-                          className="input-field py-1 px-2 text-sm w-full"
+                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
                           placeholder="Remarks"
                         />
                       </td>
-                      <td className="px-3 py-1.5 text-center">
+                      <td className="px-2 py-2 text-center">
                         <button
                           type="button"
                           onClick={() => {
@@ -664,9 +716,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                             updated.splice(index, 1);
                             setTenderVendors(updated);
                           }}
-                          className="text-red-500 hover:text-red-700 p-1"
+                          className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          title="Delete Row"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={15} />
                         </button>
                       </td>
                     </tr>
@@ -677,11 +730,11 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           </div>
 
           <div className="pt-2 border-t border-slate-100 space-y-2">
-            <label className="label text-slate-700 font-bold">Remarks *</label>
+            <label className="label text-slate-700 font-semibold">Remarks *</label>
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Provide remarks to register and advance this step..."
+              placeholder="Provide official remarks/justification to register and advance..."
               className="input-field min-h-[80px]"
             />
           </div>
@@ -689,7 +742,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           <button 
             onClick={handleTenderSubmit} 
             disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
-            className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2"
+            className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2 shadow-md font-semibold"
           >
             Submit Tender Details & Advance
           </button>
@@ -752,15 +805,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
           <div>
             <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vendor List</h5>
-            <div className="overflow-x-auto border border-slate-200 rounded">
-              <table className="min-w-full text-sm text-slate-700 divide-y divide-slate-200">
+            <div className="overflow-x-auto border border-slate-200 rounded bg-slate-50/30 p-0.5">
+              <table className="min-w-[780px] divide-y divide-slate-200 text-sm text-slate-700" style={{ minWidth: '780px' }}>
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Vendor Name</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Vendor Email</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Quoted Amount</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Techno-Commercial Status</th>
-                    <th className="px-3 py-2 text-left font-bold text-slate-600">Remarks</th>
+                    <th className="px-3 py-2 text-left font-bold text-slate-600" style={{ minWidth: '150px' }}>Vendor Name</th>
+                    <th className="px-3 py-2 text-left font-bold text-slate-600" style={{ minWidth: '180px' }}>Vendor Email</th>
+                    <th className="px-3 py-2 text-left font-bold text-slate-600" style={{ minWidth: '120px' }}>Quoted Amount</th>
+                    <th className="px-3 py-2 text-left font-bold text-slate-600" style={{ minWidth: '180px' }}>Techno-Commercial Status</th>
+                    <th className="px-3 py-2 text-left font-bold text-slate-600" style={{ minWidth: '150px' }}>Remarks</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-200">
@@ -818,54 +871,116 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         </div>
       )}
 
-      {/* Technical Evaluation checklist form */}
-      {phaseName === 'Technical Evaluation' && pr.flow?.expected_group === 'faculty' && (
+      {/* Technical Evaluation form — shown to all nominated committee members */}
+      {phaseName === 'Technical Evaluation' && isCommitteeMember && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Register Technical Qualification</h4>
           
-          {!pr.commercial_evaluations || pr.commercial_evaluations.length === 0 ? (
+          {hasUserSigned ? (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-4 text-sm space-y-1">
+              <div className="font-semibold flex items-center gap-2 text-emerald-900">
+                <CheckCircle2 size={16} className="text-emerald-600" /> Technical Evaluation Submitted
+              </div>
+              <p className="text-xs text-emerald-700">
+                You have successfully submitted your Technical Evaluation Report. Waiting for other committee members to sign.
+              </p>
+              {userTechEvalDoc && (
+                <div className="mt-2 flex items-center gap-2 text-xs bg-white border border-emerald-100 rounded px-2 py-1.5">
+                  <FileText size={13} className="text-emerald-600 shrink-0" />
+                  <span className="font-semibold text-slate-700">Your uploaded report:</span>
+                  <a href={userTechEvalDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate font-semibold">
+                    {userTechEvalDoc.original_name}
+                  </a>
+                </div>
+              )}
+            </div>
+          ) : !pr.commercial_evaluations || pr.commercial_evaluations.length === 0 ? (
             <div className="p-6 text-center border border-dashed border-slate-200 rounded bg-slate-50 space-y-2">
               <p className="text-sm text-slate-500 italic">No vendors exist yet in commercial bids.</p>
               <p className="text-xs text-slate-400">Please go back to the Tendering phase or add commercial vendors first.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {pr.commercial_evaluations.map(ce => {
-                const state = techQualifications[ce.vendor_name] || { is_qualified: true, remarks: '' };
-                return (
-                  <div key={ce.id} className="flex gap-4 items-center bg-slate-50 p-3 border border-slate-100 rounded">
-                    <div className="w-1/3 text-sm font-bold text-slate-700">{ce.vendor_name}</div>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        id={`tech-check-${ce.id}`}
-                        checked={state.is_qualified}
-                        onChange={(e) => setTechQualifications({
-                          ...techQualifications,
-                          [ce.vendor_name]: { ...state, is_qualified: e.target.checked }
-                        })}
-                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                      />
-                      <label htmlFor={`tech-check-${ce.id}`} className="text-sm font-semibold text-slate-600 select-none">Technically Qualified</label>
-                    </div>
-                    <div className="flex-1">
-                      <input 
-                        type="text"
-                        value={state.remarks}
-                        onChange={(e) => setTechQualifications({
-                          ...techQualifications,
-                          [ce.vendor_name]: { ...state, remarks: e.target.value }
-                        })}
-                        className="input-field py-1"
-                        placeholder="Remarks"
-                      />
-                    </div>
+            <div className="space-y-4">
+
+              {/* PDF Upload — required for every committee member */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                <h5 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <FileText size={14} className="text-amber-600" />
+                  Technical Evaluation Report (PDF) *
+                </h5>
+                <p className="text-xs text-amber-700">
+                  Each committee member must upload their individually signed Technical Evaluation Report before submitting.
+                </p>
+                {userTechEvalDoc && (
+                  <div className="flex items-center gap-2 text-xs bg-white border border-amber-100 rounded px-2 py-1.5">
+                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                    <span className="font-semibold text-slate-600">Currently saved:</span>
+                    <a href={userTechEvalDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate font-semibold">
+                      {userTechEvalDoc.original_name}
+                    </a>
                   </div>
-                );
-              })}
+                )}
+                <div>
+                  <input
+                    id="tech-eval-pdf"
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={(e) => setTechEvalPdf(e.target.files?.[0] || null)}
+                    className="input-field mt-1 text-sm"
+                    required={!userTechEvalDoc}
+                  />
+                  {techEvalPdf && (
+                    <p className="text-xs text-emerald-700 mt-1 flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Selected: <span className="font-semibold">{techEvalPdf.name}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Vendor Qualifications — only initiator fills this */}
+              {pr.initiator_id === user?.id && (
+                <div className="space-y-3">
+                  <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-1">
+                    Vendor Qualification Checklist
+                  </h5>
+                  {pr.commercial_evaluations.map(ce => {
+                    const state = techQualifications[ce.vendor_name] || { is_qualified: true, remarks: '' };
+                    return (
+                      <div key={ce.id} className="flex gap-4 items-center bg-slate-50 p-3 border border-slate-100 rounded">
+                        <div className="w-1/3 text-sm font-bold text-slate-700">{ce.vendor_name}</div>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            id={`tech-check-${ce.id}`}
+                            checked={state.is_qualified}
+                            onChange={(e) => setTechQualifications({
+                              ...techQualifications,
+                              [ce.vendor_name]: { ...state, is_qualified: e.target.checked }
+                            })}
+                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                          />
+                          <label htmlFor={`tech-check-${ce.id}`} className="text-sm font-semibold text-slate-600 select-none">Technically Qualified</label>
+                        </div>
+                        <div className="flex-1">
+                          <input 
+                            type="text"
+                            value={state.remarks}
+                            onChange={(e) => setTechQualifications({
+                              ...techQualifications,
+                              [ce.vendor_name]: { ...state, remarks: e.target.value }
+                            })}
+                            className="input-field py-1"
+                            placeholder="Remarks"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Live Ranking & Award Selection */}
-              {Object.values(techQualifications).some(v => v.is_qualified) && pr.financial_evaluations && pr.financial_evaluations.length > 0 && (
+              {pr.initiator_id === user?.id && Object.values(techQualifications).some(v => v.is_qualified) && pr.financial_evaluations && pr.financial_evaluations.length > 0 && (
                 <div className="border-t border-slate-100 pt-4 space-y-3">
                   <label className="label text-slate-700 font-bold">Select Recommended Vendor (Award Bid) *</label>
                   <div className="space-y-2">
@@ -919,10 +1034,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
               <button 
                 onClick={handleTechEvalSubmit} 
-                disabled={actionLoading}
-                className="btn-primary w-full py-2.5 mt-2"
+                disabled={actionLoading || (!techEvalPdf && !userTechEvalDoc)}
+                className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2"
               >
-                Submit Technical Qualification & Advance
+                <CheckCircle2 size={16} /> Submit Technical Evaluation Report
               </button>
             </div>
           )}
@@ -1005,6 +1120,27 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
       {/* Standard text remarks & actions */}
       <div className="space-y-4 pt-2 border-t border-blue-200">
+        {phaseName === 'Tendering' && pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
+          const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
+          const threshold = pr.flow.tender_vendors_threshold;
+          return (
+            <div className={`p-3.5 rounded border text-xs font-semibold flex flex-col gap-1.5 ${
+              vendorCount <= threshold 
+                ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                : 'bg-green-50 border-green-200 text-green-800'
+            }`}>
+              <span className="font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${vendorCount <= threshold ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
+                Tender Routing Notice
+              </span>
+              <span>
+                {vendorCount <= threshold 
+                  ? `Since ${threshold} or fewer bidding vendors are registered (Count: ${vendorCount}), this purchase request requires Director approval. After Superintendent/AR approvals, it will route to the Director.`
+                  : `Since more than ${threshold} bidding vendors are registered (Count: ${vendorCount}), this purchase request bypasses Director approval and will advance directly to the Technical Evaluation phase.`}
+              </span>
+            </div>
+          );
+        })()}
         <div>
           <label className="label font-bold text-slate-700">Remarks / Justification</label>
           <textarea
@@ -1021,16 +1157,18 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             (phaseName === 'Tendering' && !['Dealing Assistant', 'Superintendent'].includes(pr.flow?.expected_role_name || '')) ||
             (phaseName === 'Technical Evaluation' && pr.flow?.expected_group !== 'faculty') ||
             (phaseName === 'Financial Sanction' && pr.flow?.expected_group !== 'faculty')
-          ) && (
+          ) && !(phaseName === 'Technical Evaluation' && isCommitteeMember) && (
             <button onClick={handleAdvance} disabled={actionLoading} className="btn-primary flex items-center gap-2">
-              <CheckCircle2 size={16} /> Approve & Forward
+              <CheckCircle2 size={16} /> Approve &amp; Forward
             </button>
           )}
           
-          {/* Rejection button */}
-          <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex items-center gap-2">
-            <XCircle size={16} /> Reject
-          </button>
+          {/* Rejection button — hidden from TE committee nominees who haven't signed */}
+          {!(phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) && (
+            <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex items-center gap-2">
+              <XCircle size={16} /> Reject
+            </button>
+          )}
 
           {/* Send Back button (only shown if step_order > 1) */}
           {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (

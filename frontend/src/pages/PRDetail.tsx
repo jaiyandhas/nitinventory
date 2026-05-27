@@ -109,7 +109,12 @@ export const PRDetailPage: React.FC = () => {
   if (user?.role?.group_key === 'admin') {
     canActOn = true;
   } else if (pr.flow) {
-    if (pr.flow.expected_user_id) {
+    const phaseName = pr.flow?.phase_name;
+    // During Technical Evaluation, ALL 4 committee members can act simultaneously
+    if (phaseName === 'Technical Evaluation') {
+      const committeeIds = [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
+      canActOn = committeeIds.includes(user?.id);
+    } else if (pr.flow.expected_user_id) {
       if (user?.id === pr.flow.expected_user_id) {
         canActOn = true;
       }

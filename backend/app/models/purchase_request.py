@@ -245,6 +245,7 @@ class WorkFlowHierarchy(Base):
     purchase_type: Mapped[str] = mapped_column(String(100), nullable=False)
 
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tender_vendors_threshold: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User")  # type: ignore
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")  # type: ignore

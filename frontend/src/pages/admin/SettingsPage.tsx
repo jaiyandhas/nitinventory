@@ -255,6 +255,12 @@ export const SettingsPage: React.FC = () => {
       }
     }
 
+    if (data.tender_vendors_threshold !== undefined && data.tender_vendors_threshold !== '') {
+      payload.tender_vendors_threshold = Number(data.tender_vendors_threshold);
+    } else {
+      payload.tender_vendors_threshold = null;
+    }
+
     createWfMutation.mutate(payload);
   };
 
@@ -481,7 +487,9 @@ export const SettingsPage: React.FC = () => {
                                           Order: {wf.step_order} | Action:
                                           {wf.user_type === 'approver' ? (
                                             <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold uppercase tracking-wider">
-                                              Approver (Ends Phase)
+                                              {wf.tender_vendors_threshold !== null && wf.tender_vendors_threshold !== undefined 
+                                                ? `Approver (if bids <= ${wf.tender_vendors_threshold})` 
+                                                : 'Approver (Ends Phase)'}
                                             </span>
                                           ) : ['purchase_initiator', 'da_assigner', 'verifier_da', 'tech_evaluation'].includes(wf.user_type) ? (
                                             <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold uppercase tracking-wider">
@@ -489,25 +497,47 @@ export const SettingsPage: React.FC = () => {
                                             </span>
                                           ) : (
                                             <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold uppercase tracking-wider">
-                                              Verifier
+                                              {wf.tender_vendors_threshold !== null && wf.tender_vendors_threshold !== undefined 
+                                                ? `Verifier (if bids <= ${wf.tender_vendors_threshold})` 
+                                                : 'Verifier'}
                                             </span>
                                           )}
                                         </p>
                                         
                                         {!['purchase_initiator', 'da_assigner', 'verifier_da', 'tech_evaluation'].includes(wf.user_type) && (
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Action Type:</span>
-                                            <select
-                                              value={wf.user_type === 'approver' ? 'approver' : 'verifier'}
-                                              onChange={(e) => {
-                                                const newAction = e.target.value;
-                                                updateWfMutation.mutate({ id: wf.id, data: { user_type: newAction } });
-                                              }}
-                                              className="text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 cursor-pointer focus:outline-none focus:border-[#1a3a6b] hover:border-slate-300 transition-colors"
-                                            >
-                                              <option value="verifier">Verifier</option>
-                                              <option value="approver">Approver</option>
-                                            </select>
+                                          <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[10px] font-bold text-slate-400 uppercase">Action Type:</span>
+                                              <select
+                                                value={wf.user_type === 'approver' ? 'approver' : 'verifier'}
+                                                onChange={(e) => {
+                                                  const newAction = e.target.value;
+                                                  updateWfMutation.mutate({ id: wf.id, data: { user_type: newAction } });
+                                                }}
+                                                className="text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 cursor-pointer focus:outline-none focus:border-[#1a3a6b] hover:border-slate-300 transition-colors"
+                                              >
+                                                <option value="verifier">Verifier</option>
+                                                <option value="approver">Approver</option>
+                                              </select>
+                                            </div>
+
+                                            {phase.phase_name === 'Tendering' && (
+                                              <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Skip if Bids &gt;</span>
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  placeholder="None"
+                                                  value={wf.tender_vendors_threshold !== null && wf.tender_vendors_threshold !== undefined ? wf.tender_vendors_threshold : ''}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    const threshold = val === '' ? null : parseInt(val);
+                                                    updateWfMutation.mutate({ id: wf.id, data: { tender_vendors_threshold: threshold } });
+                                                  }}
+                                                  className="w-12 text-center text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:outline-none focus:border-[#1a3a6b]"
+                                                />
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -1073,6 +1103,16 @@ export const SettingsPage: React.FC = () => {
                     </div>
                   </div>
                 )}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Skip if Bidding Vendors &gt; (Tendering Phase Only)</label>
+                  <input
+                    name="tender_vendors_threshold"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 3 (leave blank for always active)"
+                    className="input-field w-full text-xs"
+                  />
+                </div>
                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                   <button type="button" onClick={() => setIsWfModalOpen(false)} className="btn-secondary">Cancel</button>
                   <button type="submit" disabled={createWfMutation.isPending} className="btn-primary">

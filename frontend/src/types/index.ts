@@ -77,6 +77,7 @@ export interface PRFlow {
   expected_user_id?: number;
   expected_user_name?: string;
   workflow_step_id?: number;
+  tender_vendors_threshold?: number | null;
 }
 
 export interface PRItem {
@@ -133,6 +134,7 @@ export interface PurchaseRequest {
   faculty1_id?: number;
   faculty2_id?: number;
   faculty3_id?: number;
+  initiator_id?: number;
   aa_approver_id?: number;
   faculty1?: { id: number; name: string; email: string };
   faculty2?: { id: number; name: string; email: string };
