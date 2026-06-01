@@ -560,60 +560,65 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
       {/* Tendering phase inputs - Dealing Assistant Form */}
       {phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Dealing Assistant' && (
-        <div className="space-y-6 bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
-          <h4 className="text-base font-bold text-[#1a3a6b] border-b border-slate-100 pb-2">Register Tender Details</h4>
+        <div className="space-y-4 bg-white p-5 border border-slate-200 rounded-xl shadow-sm animate-fadeIn">
+          <h4 className="text-sm font-bold text-[#1a3a6b] border-b border-slate-100 pb-1.5 flex justify-between items-center">
+            <span>Register Tender Details</span>
+            <span className="text-[10px] text-slate-400 font-normal">Please fill in specs and bidders</span>
+          </h4>
           
           {/* Section 1: Specifications */}
-          <div className="space-y-4">
-            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-1">Tender Specifications</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="space-y-2">
+            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Specifications</h5>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
-                <label className="label text-slate-600 font-semibold">Tender Reference Number *</label>
+                <label className="label text-slate-600 font-semibold text-xs">Tender Ref Number *</label>
                 <div className="relative mt-1">
                   <input 
                     type="text" 
                     value={tenderRef} 
                     onChange={(e) => setTenderRef(e.target.value)} 
-                    className="input-field pl-8" 
+                    className="input-field pl-8 py-1.5 text-xs" 
                     placeholder="e.g. NITT/CSE/2026/04" 
+                    required
                   />
-                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-semibold font-mono">#</span>
+                  <span className="absolute left-3 top-2 text-slate-400 text-xs font-semibold font-mono">#</span>
                 </div>
               </div>
               <div>
-                <label className="label text-slate-600 font-semibold">Date of Tender *</label>
+                <label className="label text-slate-600 font-semibold text-xs">Date of Tender *</label>
                 <input 
                   type="date" 
                   value={tenderDate} 
                   onChange={(e) => setTenderDate(e.target.value)} 
-                  className="input-field mt-1" 
+                  className="input-field mt-1 py-1.5 text-xs" 
+                  required
                 />
               </div>
               <div>
-                <label className="label text-slate-600 font-semibold">Tech Bid Opening Date</label>
+                <label className="label text-slate-600 font-semibold text-xs">Tech Bid Opening</label>
                 <input 
                   type="date" 
                   value={techOpenDate} 
                   onChange={(e) => setTechOpenDate(e.target.value)} 
-                  className="input-field mt-1" 
+                  className="input-field mt-1 py-1.5 text-xs" 
                 />
               </div>
               <div>
-                <label className="label text-slate-600 font-semibold">Financial Bid Opening Date</label>
+                <label className="label text-slate-600 font-semibold text-xs">Fin Bid Opening</label>
                 <input 
                   type="date" 
                   value={finOpenDate} 
                   onChange={(e) => setFinOpenDate(e.target.value)} 
-                  className="input-field mt-1" 
+                  className="input-field mt-1 py-1.5 text-xs" 
                 />
               </div>
-              <div className="md:col-span-2">
-                <label className="label text-slate-600 font-semibold">External Vendor List Document URL</label>
+              <div className="lg:col-span-4">
+                <label className="label text-slate-600 font-semibold text-xs">External Vendor List Document URL</label>
                 <input 
                   type="url" 
                   value={vendorListLink} 
                   onChange={(e) => setVendorListLink(e.target.value)} 
-                  className="input-field mt-1" 
+                  className="input-field mt-1 py-1.5 text-xs" 
                   placeholder="https://drive.google.com/..." 
                 />
               </div>
@@ -621,14 +626,14 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           </div>
 
           {/* Section 2: Documents */}
-          <div className="space-y-4 pt-2">
-            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-1">Tender Documents</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="p-4 border border-dashed border-slate-200 rounded-lg hover:border-slate-300 transition-colors bg-slate-50/20">
-                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-2">
+          <div className="space-y-2 pt-1">
+            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Documents</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-1 text-xs">
                   <span>Draft Tender Document *</span>
                   {hasExistingDraft && (
-                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[9px] font-medium">
                       Saved: {pr.documents?.find((d: any) => d.doc_key === 'draft_tender_document')?.original_name}
                     </span>
                   )}
@@ -636,15 +641,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 <input 
                   type="file" 
                   onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)} 
-                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
+                  className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
                   required={!hasExistingDraft}
                 />
               </div>
-              <div className="p-4 border border-dashed border-slate-200 rounded-lg hover:border-slate-300 transition-colors bg-slate-50/20">
-                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-2">
+              <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-1 text-xs">
                   <span>Tender Document (Optional)</span>
                   {hasExistingTender && (
-                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[9px] font-medium">
                       Saved: {pr.documents?.find((d: any) => d.doc_key === 'tender_document')?.original_name}
                     </span>
                   )}
@@ -652,16 +657,16 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 <input 
                   type="file" 
                   onChange={(e) => setTenderDoc(e.target.files?.[0] || null)} 
-                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
+                  className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
                 />
               </div>
             </div>
           </div>
 
           {/* Section 3: Bidding Vendor Registry */}
-          <div className="space-y-4 pt-2">
-            <div className="flex flex-wrap gap-3 justify-between items-center border-b border-slate-100/50 pb-2">
-              <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
+          <div className="space-y-2 pt-1">
+            <div className="flex flex-wrap gap-3 justify-between items-center border-b border-slate-100/50 pb-1">
+              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
               <div className="flex items-center gap-2">
                 {masterVendors.length > 0 && (
                   <select
@@ -696,9 +701,9 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                         setTenderVendors(newVendors);
                       }
                     }}
-                    className="text-xs py-1 px-2 border border-slate-300 rounded bg-white font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#1a3a6b]"
+                    className="text-[10px] py-0.5 px-1.5 border border-slate-300 rounded bg-white font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#1a3a6b]"
                   >
-                    <option value="">-- Quick Add Master Vendor --</option>
+                    <option value="">-- Quick Add Vendor --</option>
                     {masterVendors.map(mv => (
                       <option key={mv.id} value={mv.vendor_name}>{mv.vendor_name}</option>
                     ))}
@@ -712,29 +717,29 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                       { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
                     ]);
                   }}
-                  className="btn-secondary py-1 px-3 flex items-center gap-1.5 text-xs font-semibold border-slate-200 hover:border-slate-300"
+                  className="btn-secondary py-0.5 px-2 flex items-center gap-1 text-[10px] font-semibold border-slate-200 hover:border-slate-300"
                 >
-                  <Plus size={13} /> Add Vendor Row
+                  <Plus size={11} /> Add Row
                 </button>
               </div>
             </div>
 
             <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
-              <table className="min-w-[950px] divide-y divide-slate-100 text-sm" style={{ minWidth: '950px' }}>
+              <table className="min-w-[950px] divide-y divide-slate-100 text-xs" style={{ minWidth: '950px' }}>
                 <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold text-xs uppercase tracking-wider">
-                    <th className="px-2 py-2.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
-                    <th className="px-2 py-2.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
-                    <th className="px-2 py-2.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
-                    <th className="px-2 py-2.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
-                    <th className="px-2 py-2.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
-                    <th className="px-2 py-2.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
+                  <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+                    <th className="px-2 py-1.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
+                    <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
+                    <th className="px-2 py-1.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
+                    <th className="px-2 py-1.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
+                    <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
+                    <th className="px-2 py-1.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
                   {tenderVendors.map((vendor, index) => (
                     <tr key={index} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-1">
                         <input
                           type="text"
                           list="master-vendors-datalist"
@@ -748,23 +753,23 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                               email: matched ? matched.email || '' : v.email 
                             } : v));
                           }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
                           placeholder="e.g. Apple Inc."
                           required
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-1">
                         <input
                           type="email"
                           value={vendor.email}
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, email: e.target.value } : v));
                           }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
                           placeholder="email@example.com"
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-1">
                         <div className="relative">
                           <input
                             type="number"
@@ -773,36 +778,36 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                             onChange={(e) => {
                               setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, quoted_amount: e.target.value } : v));
                             }}
-                            className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 pl-5 pr-2 text-sm rounded transition-all placeholder:text-slate-300"
+                            className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 pl-4 pr-1 text-xs rounded transition-all placeholder:text-slate-300"
                             placeholder="0.00"
                           />
-                          <span className="absolute left-1.5 top-2 text-xs text-slate-400 font-semibold">₹</span>
+                          <span className="absolute left-1 top-1.5 text-[10px] text-slate-400 font-semibold">₹</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-1">
                         <select
                           value={vendor.is_qualified ? 'qualified' : 'unqualified'}
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, is_qualified: e.target.value === 'qualified' } : v));
                           }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1 text-xs rounded transition-all"
                         >
                           <option value="qualified">Qualified</option>
                           <option value="unqualified">Not Qualified</option>
                         </select>
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-1">
                         <input
                           type="text"
                           value={vendor.remarks}
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, remarks: e.target.value } : v));
                           }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
                           placeholder="Remarks"
                         />
                       </td>
-                      <td className="px-2 py-2 text-center">
+                      <td className="px-1.5 py-1 text-center">
                         <button
                           type="button"
                           onClick={() => {
@@ -810,10 +815,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                             updated.splice(index, 1);
                             setTenderVendors(updated);
                           }}
-                          className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          className="text-slate-400 hover:text-rose-600 transition-colors p-0.5"
                           title="Delete Row"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>
@@ -823,23 +828,68 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             </div>
           </div>
 
+          {/* Tender Routing Notice inside form */}
+          {pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
+            const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
+            const threshold = pr.flow.tender_vendors_threshold;
+            return (
+              <div className={`p-2.5 rounded border text-[10px] font-semibold flex flex-col gap-1 ${
+                vendorCount <= threshold 
+                  ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                  : 'bg-green-50 border-green-200 text-green-800'
+              }`}>
+                <span className="font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                  <span className={`w-1 h-1 rounded-full ${vendorCount <= threshold ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
+                  Tender Routing Notice
+                </span>
+                <span>
+                  {vendorCount <= threshold 
+                    ? `Since ${threshold} or fewer bidding vendors are registered (Count: ${vendorCount}), this purchase request requires Director approval. After Superintendent/AR approvals, it will route to the Director.`
+                    : `Since more than ${threshold} bidding vendors are registered (Count: ${vendorCount}), this purchase request bypasses Director approval and will advance directly to the Technical Evaluation phase.`}
+                </span>
+              </div>
+            );
+          })()}
+
+          {/* Remarks & Buttons */}
           <div className="pt-2 border-t border-slate-100 space-y-2">
-            <label className="label text-slate-700 font-bold">Remarks *</label>
+            <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder="Provide official remarks/justification to register and advance..."
-              className="input-field min-h-[80px]"
+              className="input-field min-h-[60px] text-xs py-1.5"
+              required
             />
-          </div>
+            
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <button 
+                onClick={handleTenderSubmit} 
+                disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
+                className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+              >
+                <CheckCircle2 size={14} /> Submit Tender Details &amp; Advance
+              </button>
 
-          <button 
-            onClick={handleTenderSubmit} 
-            disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
-            className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2 shadow-md font-semibold"
-          >
-            Submit Tender Details & Advance
-          </button>
+              <button 
+                onClick={handleReject} 
+                disabled={actionLoading} 
+                className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+              >
+                <XCircle size={14} /> Reject
+              </button>
+
+              {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                <button 
+                  onClick={() => setShowSendBackModal(true)} 
+                  disabled={actionLoading} 
+                  className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                >
+                  <RotateCcw size={14} /> Send Back
+                </button>
+              )}
+            </div>
+          </div>
           
           <datalist id="master-vendors-datalist">
             {masterVendors.map(mv => (
@@ -938,35 +988,56 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           </div>
 
           <div className="pt-2 border-t border-slate-100 space-y-2">
-            <label className="label text-slate-700 font-bold">Review Remarks *</label>
+            <label className="label text-slate-700 font-bold text-xs">Review Remarks *</label>
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder="Provide remarks to approve and advance this step..."
-              className="input-field min-h-[80px]"
+              className="input-field min-h-[60px] text-xs py-1.5"
+              required
             />
-            <button
-              onClick={async () => {
-                if (!remarks.trim()) {
-                  toast.error('Remarks are required to approve');
-                  return;
-                }
-                setActionLoading(true);
-                try {
-                  await prApi.advance(pr.id, remarks);
-                  toast.success('Tender details approved. Advancing workflow...');
-                  setRemarks('');
-                  refetch();
-                } catch (e: any) {
-                  toast.error(e.response?.data?.detail || 'Approval failed');
-                }
-                setActionLoading(false);
-              }}
-              disabled={actionLoading}
-              className="btn-primary w-full py-2.5 flex justify-center items-center gap-2"
-            >
-              <CheckCircle2 size={16} /> Approve & Forward
-            </button>
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <button
+                onClick={async () => {
+                  if (!remarks.trim()) {
+                    toast.error('Remarks are required to approve');
+                    return;
+                  }
+                  setActionLoading(true);
+                  try {
+                    await prApi.advance(pr.id, remarks);
+                    toast.success('Tender details approved. Advancing workflow...');
+                    setRemarks('');
+                    refetch();
+                  } catch (e: any) {
+                    toast.error(e.response?.data?.detail || 'Approval failed');
+                  }
+                  setActionLoading(false);
+                }}
+                disabled={actionLoading || !remarks.trim()}
+                className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+              >
+                <CheckCircle2 size={14} /> Approve &amp; Forward
+              </button>
+
+              <button 
+                onClick={handleReject} 
+                disabled={actionLoading} 
+                className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+              >
+                <XCircle size={14} /> Reject
+              </button>
+
+              {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                <button 
+                  onClick={() => setShowSendBackModal(true)} 
+                  disabled={actionLoading} 
+                  className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                >
+                  <RotateCcw size={14} /> Send Back
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1167,22 +1238,43 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
               {/* Remarks / Justification for Technical Evaluation */}
               <div className="pt-2 border-t border-slate-100 space-y-2">
-                <label className="label text-slate-700 font-bold">Remarks / Justification *</label>
+                <label className="label text-slate-700 font-bold text-xs">Remarks / Justification *</label>
                 <textarea
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Provide technical evaluation remarks/justification..."
-                  className="input-field min-h-[80px]"
+                  className="input-field min-h-[60px] text-xs py-1.5"
+                  required
                 />
               </div>
 
-              <button 
-                onClick={handleTechEvalSubmit} 
-                disabled={actionLoading || (!techEvalPdf && !userTechEvalDoc) || !remarks.trim()}
-                className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2"
-              >
-                <CheckCircle2 size={16} /> Submit Technical Evaluation Report
-              </button>
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <button 
+                  onClick={handleTechEvalSubmit} 
+                  disabled={actionLoading || (!techEvalPdf && !userTechEvalDoc) || !remarks.trim()}
+                  className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+                >
+                  <CheckCircle2 size={14} /> Submit Technical Evaluation Report
+                </button>
+
+                <button 
+                  onClick={handleReject} 
+                  disabled={actionLoading} 
+                  className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                >
+                  <XCircle size={14} /> Reject
+                </button>
+
+                {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                  <button 
+                    onClick={() => setShowSendBackModal(true)} 
+                    disabled={actionLoading} 
+                    className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                  >
+                    <RotateCcw size={14} /> Send Back
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1269,52 +1361,73 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
               {/* Remarks / Justification for Financial Sanction */}
               <div className="pt-2 border-t border-slate-100 space-y-2">
-                <label className="label text-slate-700 font-bold">Remarks *</label>
+                <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
                 <textarea
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Provide financial sanction evaluation remarks..."
-                  className="input-field min-h-[80px]"
+                  className="input-field min-h-[60px] text-xs py-1.5"
+                  required
                 />
               </div>
 
-              <button 
-                onClick={handleFinBidsSubmit} 
-                disabled={actionLoading || !remarks.trim()}
-                className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2 font-semibold shadow-sm"
-              >
-                <CheckCircle2 size={16} /> Submit Financial Bids & Advance
-              </button>
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <button 
+                  onClick={handleFinBidsSubmit} 
+                  disabled={actionLoading || !remarks.trim()}
+                  className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+                >
+                  <CheckCircle2 size={14} /> Submit Financial Bids &amp; Advance
+                </button>
+
+                <button 
+                  onClick={handleReject} 
+                  disabled={actionLoading} 
+                  className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                >
+                  <XCircle size={14} /> Reject
+                </button>
+
+                {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                  <button 
+                    onClick={() => setShowSendBackModal(true)} 
+                    disabled={actionLoading} 
+                    className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                  >
+                    <RotateCcw size={14} /> Send Back
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
       {/* Standard text remarks & actions */}
-      <div className="space-y-4 pt-2 border-t border-blue-200">
-        {phaseName === 'Tendering' && pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
-          const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
-          const threshold = pr.flow.tender_vendors_threshold;
-          return (
-            <div className={`p-3.5 rounded border text-xs font-semibold flex flex-col gap-1.5 ${
-              vendorCount <= threshold 
-                ? 'bg-amber-50 border-amber-200 text-amber-800' 
-                : 'bg-green-50 border-green-200 text-green-800'
-            }`}>
-              <span className="font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${vendorCount <= threshold ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
-                Tender Routing Notice
-              </span>
-              <span>
-                {vendorCount <= threshold 
-                  ? `Since ${threshold} or fewer bidding vendors are registered (Count: ${vendorCount}), this purchase request requires Director approval. After Superintendent/AR approvals, it will route to the Director.`
-                  : `Since more than ${threshold} bidding vendors are registered (Count: ${vendorCount}), this purchase request bypasses Director approval and will advance directly to the Technical Evaluation phase.`}
-              </span>
-            </div>
-          );
-        })()}
+      {!hasCustomForm && (
+        <div className="space-y-4 pt-2 border-t border-blue-200">
+          {phaseName === 'Tendering' && pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
+            const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
+            const threshold = pr.flow.tender_vendors_threshold;
+            return (
+              <div className={`p-3.5 rounded border text-xs font-semibold flex flex-col gap-1.5 ${
+                vendorCount <= threshold 
+                  ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                  : 'bg-green-50 border-green-200 text-green-800'
+              }`}>
+                <span className="font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${vendorCount <= threshold ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
+                  Tender Routing Notice
+                </span>
+                <span>
+                  {vendorCount <= threshold 
+                    ? `Since ${threshold} or fewer bidding vendors are registered (Count: ${vendorCount}), this purchase request requires Director approval. After Superintendent/AR approvals, it will route to the Director.`
+                    : `Since more than ${threshold} bidding vendors are registered (Count: ${vendorCount}), this purchase request bypasses Director approval and will advance directly to the Technical Evaluation phase.`}
+                </span>
+              </div>
+            );
+          })()}
 
-        {!hasCustomForm && (
           <div>
             <label className="label font-bold text-slate-700">Remarks / Justification</label>
             <textarea
@@ -1325,39 +1438,39 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
               className="input-field resize-none bg-white mt-1"
             />
           </div>
-        )}
 
-        <div className="flex gap-3">
-          {/* Hide default forward/approve button if this step requires specific form entry and forms aren't complete */}
-          {(!['Tendering', 'Technical Evaluation', 'Financial Sanction'].includes(phaseName || '') || 
-            (phaseName === 'Tendering' && !['Dealing Assistant', 'Superintendent'].includes(pr.flow?.expected_role_name || '')) ||
-            (phaseName === 'Technical Evaluation' && pr.flow?.expected_group !== 'faculty') ||
-            (phaseName === 'Financial Sanction' && pr.flow?.expected_group !== 'faculty')
-          ) && !(phaseName === 'Technical Evaluation' && isCommitteeMember) && (
-            <button onClick={handleAdvance} disabled={actionLoading} className="btn-primary flex items-center gap-2">
-              <CheckCircle2 size={16} /> Approve &amp; Forward
-            </button>
-          )}
-          
-          {/* Rejection button — hidden from TE committee nominees who haven't signed */}
-          {!(phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) && (
-            <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex items-center gap-2">
-              <XCircle size={16} /> Reject
-            </button>
-          )}
+          <div className="flex gap-3">
+            {/* Hide default forward/approve button if this step requires specific form entry and forms aren't complete */}
+            {(!['Tendering', 'Technical Evaluation', 'Financial Sanction'].includes(phaseName || '') || 
+              (phaseName === 'Tendering' && !['Dealing Assistant', 'Superintendent'].includes(pr.flow?.expected_role_name || '')) ||
+              (phaseName === 'Technical Evaluation' && pr.flow?.expected_group !== 'faculty') ||
+              (phaseName === 'Financial Sanction' && pr.flow?.expected_group !== 'faculty')
+            ) && !(phaseName === 'Technical Evaluation' && isCommitteeMember) && (
+              <button onClick={handleAdvance} disabled={actionLoading} className="btn-primary flex items-center gap-2">
+                <CheckCircle2 size={16} /> Approve &amp; Forward
+              </button>
+            )}
+            
+            {/* Rejection button — hidden from TE committee nominees who haven't signed */}
+            {!(phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) && (
+              <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex items-center gap-2">
+                <XCircle size={16} /> Reject
+              </button>
+            )}
 
-          {/* Send Back button (only shown if step_order > 1) */}
-          {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
-            <button 
-              onClick={() => setShowSendBackModal(true)} 
-              disabled={actionLoading} 
-              className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-2 rounded px-4 py-2 font-medium transition"
-            >
-              <RotateCcw size={16} /> Send Back
-            </button>
-          )}
+            {/* Send Back button (only shown if step_order > 1) */}
+            {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+              <button 
+                onClick={() => setShowSendBackModal(true)} 
+                disabled={actionLoading} 
+                className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-2 rounded px-4 py-2 font-medium transition"
+              >
+                <RotateCcw size={16} /> Send Back
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Send Back Modal */}
       {showSendBackModal && (
