@@ -579,6 +579,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "date_of_tender": pr.date_of_tender.isoformat() if pr.date_of_tender else None,
         "date_of_tech_bid_opening": pr.date_of_tech_bid_opening.isoformat() if pr.date_of_tech_bid_opening else None,
         "date_of_financial_bid_opening": pr.date_of_financial_bid_opening.isoformat() if pr.date_of_financial_bid_opening else None,
+        "te_initiated_at": pr.te_initiated_at.isoformat() + "Z" if pr.te_initiated_at else None,
         # Delivery & Basis fields
         "delivery_location": pr.delivery_location,
         "delivery_mode": pr.delivery_mode,

@@ -68,9 +68,11 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   // Financial Sanction states
   const [finBids, setFinBids] = useState<Record<string, { quoted_amount: string; remarks: string }>>({});
 
+  const since = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
   const hasUserSigned = pr.history?.some((h: any) => 
     h.approver_id === user?.id && 
-    (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved')
+    (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
+    (!since || !h.acted_at || new Date(h.acted_at) >= since)
   );
 
   // Derive if the current user is a committee member for TE phase
@@ -168,11 +170,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
       setFinBids(initialBids);
     }
   }, [pr]);
-
   const phaseName = pr.flow?.phase_name;
   const hasExistingDraft = pr.documents?.some((d: any) => d.doc_key === 'draft_tender_document');
   const hasExistingTender = pr.documents?.some((d: any) => d.doc_key === 'tender_document');
 
+  const hasCustomForm = 
+    (phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Dealing Assistant') ||
+    (phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Superintendent' && pr.flow?.step_order === 3) ||
+    (phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) ||
+    (phaseName === 'Financial Sanction' && pr.flow?.expected_group === 'faculty');
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to advance the PR'); return; }
     if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
@@ -427,9 +433,27 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     });
     return rankings;
   };
-
   const liveRankings = getLiveRankings();
 
+  const committeeProgress = (() => {
+    const members = [
+      { id: pr.initiator_id, name: pr.initiator?.name || 'Initiator', email: pr.initiator?.email, roleLabel: 'Purchase Initiator' },
+      { id: pr.faculty1_id, name: pr.faculty1?.name || 'Faculty Nominee 1', email: pr.faculty1?.email, roleLabel: 'Faculty Nominee 1' },
+      { id: pr.faculty2_id, name: pr.faculty2?.name || 'Faculty Nominee 2', email: pr.faculty2?.email, roleLabel: 'Faculty Nominee 2' },
+      { id: pr.faculty3_id, name: pr.faculty3?.name || 'Director Nominee (Faculty 3)', email: pr.faculty3?.email, roleLabel: 'Director Nominee (Faculty 3)' },
+    ].filter(m => m.id !== null && m.id !== undefined);
+
+    const since = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
+
+    return members.map(m => {
+      const hasSigned = pr.history?.some((h: any) => 
+        h.approver_id === m.id && 
+        (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
+        (!since || !h.acted_at || new Date(h.acted_at) >= since)
+      );
+      return { ...m, hasSigned };
+    });
+  })();
   return (
     <div className="card p-6 bg-blue-50 border-blue-100 space-y-6">
       <h3 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide border-b border-blue-100 pb-2 flex items-center gap-2">
@@ -528,13 +552,16 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="label text-slate-600 font-semibold">Tender Reference Number *</label>
-                <input 
-                  type="text" 
-                  value={tenderRef} 
-                  onChange={(e) => setTenderRef(e.target.value)} 
-                  className="input-field mt-1.5" 
-                  placeholder="e.g. NITT/CSE/2026/04" 
-                />
+                <div className="relative mt-1">
+                  <input 
+                    type="text" 
+                    value={tenderRef} 
+                    onChange={(e) => setTenderRef(e.target.value)} 
+                    className="input-field pl-8" 
+                    placeholder="e.g. NITT/CSE/2026/04" 
+                  />
+                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-semibold font-mono">#</span>
+                </div>
               </div>
               <div>
                 <label className="label text-slate-600 font-semibold">Date of Tender *</label>
@@ -542,7 +569,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                   type="date" 
                   value={tenderDate} 
                   onChange={(e) => setTenderDate(e.target.value)} 
-                  className="input-field mt-1.5" 
+                  className="input-field mt-1" 
                 />
               </div>
               <div>
@@ -551,7 +578,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                   type="date" 
                   value={techOpenDate} 
                   onChange={(e) => setTechOpenDate(e.target.value)} 
-                  className="input-field mt-1.5" 
+                  className="input-field mt-1" 
                 />
               </div>
               <div>
@@ -560,7 +587,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                   type="date" 
                   value={finOpenDate} 
                   onChange={(e) => setFinOpenDate(e.target.value)} 
-                  className="input-field mt-1.5" 
+                  className="input-field mt-1" 
                 />
               </div>
               <div className="md:col-span-2">
@@ -569,7 +596,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                   type="url" 
                   value={vendorListLink} 
                   onChange={(e) => setVendorListLink(e.target.value)} 
-                  className="input-field mt-1.5" 
+                  className="input-field mt-1" 
                   placeholder="https://drive.google.com/..." 
                 />
               </div>
@@ -580,8 +607,8 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           <div className="space-y-4 pt-2">
             <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-1">Tender Documents</h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center">
+              <div className="p-4 border border-dashed border-slate-200 rounded-lg hover:border-slate-300 transition-colors bg-slate-50/20">
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-2">
                   <span>Draft Tender Document *</span>
                   {hasExistingDraft && (
                     <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
@@ -592,12 +619,12 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 <input 
                   type="file" 
                   onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)} 
-                  className="input-field mt-1.5 text-sm" 
+                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
                   required={!hasExistingDraft}
                 />
               </div>
-              <div>
-                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center">
+              <div className="p-4 border border-dashed border-slate-200 rounded-lg hover:border-slate-300 transition-colors bg-slate-50/20">
+                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-2">
                   <span>Tender Document (Optional)</span>
                   {hasExistingTender && (
                     <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[10px] font-medium">
@@ -608,7 +635,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 <input 
                   type="file" 
                   onChange={(e) => setTenderDoc(e.target.files?.[0] || null)} 
-                  className="input-field mt-1.5 text-sm" 
+                  className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
                 />
               </div>
             </div>
@@ -616,20 +643,63 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
           {/* Section 3: Bidding Vendor Registry */}
           <div className="space-y-4 pt-2">
-            <div className="flex justify-between items-center border-b border-slate-100/50 pb-2">
+            <div className="flex flex-wrap gap-3 justify-between items-center border-b border-slate-100/50 pb-2">
               <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
-              <button
-                type="button"
-                onClick={() => {
-                  setTenderVendors([
-                    ...tenderVendors,
-                    { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
-                  ]);
-                }}
-                className="btn-secondary py-1 px-3 flex items-center gap-1.5 text-xs font-semibold border-slate-200 hover:border-slate-300"
-              >
-                <Plus size={13} /> Add Vendor Row
-              </button>
+              <div className="flex items-center gap-2">
+                {masterVendors.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const selected = masterVendors.find(mv => mv.vendor_name === val);
+                      if (selected) {
+                        if (tenderVendors.some(v => v.name === selected.vendor_name)) {
+                          toast.error('Vendor already added');
+                          return;
+                        }
+                        const newVendors = [...tenderVendors];
+                        if (newVendors.length === 1 && !newVendors[0].name && !newVendors[0].email) {
+                          newVendors[0] = {
+                            name: selected.vendor_name,
+                            email: selected.email || '',
+                            quoted_amount: '',
+                            is_qualified: true,
+                            remarks: ''
+                          };
+                        } else {
+                          newVendors.push({
+                            name: selected.vendor_name,
+                            email: selected.email || '',
+                            quoted_amount: '',
+                            is_qualified: true,
+                            remarks: ''
+                          });
+                        }
+                        setTenderVendors(newVendors);
+                      }
+                    }}
+                    className="text-xs py-1 px-2 border border-slate-300 rounded bg-white font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#1a3a6b]"
+                  >
+                    <option value="">-- Quick Add Master Vendor --</option>
+                    {masterVendors.map(mv => (
+                      <option key={mv.id} value={mv.vendor_name}>{mv.vendor_name}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTenderVendors([
+                      ...tenderVendors,
+                      { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
+                    ]);
+                  }}
+                  className="btn-secondary py-1 px-3 flex items-center gap-1.5 text-xs font-semibold border-slate-200 hover:border-slate-300"
+                >
+                  <Plus size={13} /> Add Vendor Row
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
@@ -650,11 +720,18 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                       <td className="px-2 py-2">
                         <input
                           type="text"
+                          list="master-vendors-datalist"
                           value={vendor.name}
                           onChange={(e) => {
-                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, name: e.target.value } : v));
+                            const name = e.target.value;
+                            const matched = masterVendors.find(mv => mv.vendor_name.toLowerCase() === name.toLowerCase());
+                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { 
+                              ...v, 
+                              name, 
+                              email: matched ? matched.email || '' : v.email 
+                            } : v));
                           }}
-                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
                           placeholder="e.g. Apple Inc."
                           required
                         />
@@ -666,7 +743,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, email: e.target.value } : v));
                           }}
-                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
                           placeholder="email@example.com"
                         />
                       </td>
@@ -679,10 +756,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                             onChange={(e) => {
                               setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, quoted_amount: e.target.value } : v));
                             }}
-                            className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 pl-4 pr-1 text-sm transition-all placeholder:text-slate-300 rounded-none"
+                            className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 pl-5 pr-2 text-sm rounded transition-all placeholder:text-slate-300"
                             placeholder="0.00"
                           />
-                          <span className="absolute left-0 top-1.5 text-xs text-slate-400 font-semibold">₹</span>
+                          <span className="absolute left-1.5 top-2 text-xs text-slate-400 font-semibold">₹</span>
                         </div>
                       </td>
                       <td className="px-2 py-2">
@@ -691,7 +768,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, is_qualified: e.target.value === 'qualified' } : v));
                           }}
-                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all rounded-none"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all"
                         >
                           <option value="qualified">Qualified</option>
                           <option value="unqualified">Not Qualified</option>
@@ -704,7 +781,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                           onChange={(e) => {
                             setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, remarks: e.target.value } : v));
                           }}
-                          className="w-full bg-transparent border-t-0 border-x-0 border-b border-slate-200 focus:border-b-2 focus:border-[#1a3a6b] focus:ring-0 focus:outline-none focus-visible:outline-none py-1 px-1 text-sm transition-all placeholder:text-slate-300 placeholder:italic rounded-none"
+                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
                           placeholder="Remarks"
                         />
                       </td>
@@ -730,7 +807,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           </div>
 
           <div className="pt-2 border-t border-slate-100 space-y-2">
-            <label className="label text-slate-700 font-semibold">Remarks *</label>
+            <label className="label text-slate-700 font-bold">Remarks *</label>
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
@@ -746,6 +823,12 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           >
             Submit Tender Details & Advance
           </button>
+          
+          <datalist id="master-vendors-datalist">
+            {masterVendors.map(mv => (
+              <option key={mv.id} value={mv.vendor_name}>{mv.email}</option>
+            ))}
+          </datalist>
         </div>
       )}
 
@@ -870,12 +953,45 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           </div>
         </div>
       )}
-
       {/* Technical Evaluation form — shown to all nominated committee members */}
       {phaseName === 'Technical Evaluation' && isCommitteeMember && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded">
-          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Register Technical Qualification</h4>
+          <h4 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide pb-2 border-b border-slate-100">
+            Register Technical Qualification
+          </h4>
           
+          {/* Committee Progress Checklist */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3 shadow-xs">
+            <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-blue-600" />
+              Committee Evaluation Progress
+            </h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {committeeProgress.map(m => (
+                <div key={m.id} className={`flex items-center justify-between p-2.5 rounded-lg border bg-white transition-all ${
+                  m.hasSigned ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200 hover:border-slate-300'
+                }`}>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-slate-800">{m.name}</span>
+                    <span className="text-xs text-slate-500">{m.roleLabel}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {m.hasSigned ? (
+                      <>
+                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
+                        <CheckCircle2 size={16} className="text-emerald-600" />
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 animate-pulse">Pending</span>
+                        <div className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin" />
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>          
           {hasUserSigned ? (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-4 text-sm space-y-1">
               <div className="font-semibold flex items-center gap-2 text-emerald-900">
@@ -1032,9 +1148,20 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 </div>
               )}
 
+              {/* Remarks / Justification for Technical Evaluation */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <label className="label text-slate-700 font-bold">Remarks / Justification *</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide technical evaluation remarks/justification..."
+                  className="input-field min-h-[80px]"
+                />
+              </div>
+
               <button 
                 onClick={handleTechEvalSubmit} 
-                disabled={actionLoading || (!techEvalPdf && !userTechEvalDoc)}
+                disabled={actionLoading || (!techEvalPdf && !userTechEvalDoc) || !remarks.trim()}
                 className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2"
               >
                 <CheckCircle2 size={16} /> Submit Technical Evaluation Report
@@ -1055,63 +1182,91 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
               <p className="text-xs text-slate-400">Please complete Technical Evaluation first.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {pr.technical_evaluations.filter(t => t.is_qualified).map(te => {
-                const state = finBids[te.vendor_name] || { quoted_amount: '', remarks: '' };
-                const ranking = liveRankings[te.vendor_name] || '-';
-                const isL1 = ranking === 'L1';
-                const isL2 = ranking === 'L2';
+            <div className="space-y-4">
+              <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
+                <table className="min-w-[650px] divide-y divide-slate-100 text-sm animate-fadeIn" style={{ minWidth: '650px' }}>
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-semibold text-xs uppercase tracking-wider">
+                      <th className="px-3 py-2.5 text-left w-[35%]" style={{ minWidth: '220px' }}>Vendor Name</th>
+                      <th className="px-3 py-2.5 text-center w-[15%]" style={{ minWidth: '100px' }}>Rank</th>
+                      <th className="px-3 py-2.5 text-left w-[20%]" style={{ minWidth: '140px' }}>Quoted (Lakhs) *</th>
+                      <th className="px-3 py-2.5 text-left w-[30%]" style={{ minWidth: '200px' }}>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-100">
+                    {pr.technical_evaluations.filter(t => t.is_qualified).map((te) => {
+                      const state = finBids[te.vendor_name] || { quoted_amount: '', remarks: '' };
+                      const ranking = liveRankings[te.vendor_name] || '-';
+                      const isL1 = ranking === 'L1';
+                      const isL2 = ranking === 'L2';
 
-                return (
-                  <div 
-                    key={te.id} 
-                    className={`flex flex-col md:flex-row gap-3 items-start md:items-center p-3 border rounded transition-colors ${
-                      isL1 ? 'bg-green-50 border-green-200' : isL2 ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="w-full md:w-1/3 flex items-center justify-between">
-                      <span className="text-sm font-bold text-slate-700">{te.vendor_name}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${isL1 ? 'bg-green-100 text-green-800' : isL2 ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-100 text-slate-600'}`}>
-                        Rank: {ranking}
-                      </span>
-                    </div>
-                    <div className="flex-1 flex gap-2 w-full">
-                      <div className="relative flex-1">
-                        <input 
-                          type="number"
-                          step="0.01"
-                          value={state.quoted_amount}
-                          onChange={(e) => setFinBids({
-                            ...finBids,
-                            [te.vendor_name]: { ...state, quoted_amount: e.target.value }
-                          })}
-                          className="input-field py-1.5 pl-6"
-                          placeholder="Quoted Amount"
-                        />
-                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-400 font-bold">₹</span>
-                        <span className="absolute right-2 top-2.5 text-xs text-slate-400 font-medium font-sans pr-1">Lakhs</span>
-                      </div>
-                      <input 
-                        type="text"
-                        value={state.remarks}
-                        onChange={(e) => setFinBids({
-                          ...finBids,
-                          [te.vendor_name]: { ...state, remarks: e.target.value }
-                        })}
-                        className="input-field py-1.5 flex-1"
-                        placeholder="Remarks"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                      return (
+                        <tr key={te.id} className={`hover:bg-slate-50/40 transition-colors ${
+                          isL1 ? 'bg-green-50/10' : isL2 ? 'bg-yellow-50/10' : ''
+                        }`}>
+                          <td className="px-3 py-2 font-medium text-slate-800">{te.vendor_name}</td>
+                          <td className="px-3 py-2 text-center font-semibold">
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                              isL1 ? 'bg-green-100 text-green-800 border border-green-200' : 
+                              isL2 ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' : 
+                              'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {ranking}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="relative">
+                              <input 
+                                type="number"
+                                step="0.01"
+                                value={state.quoted_amount}
+                                onChange={(e) => setFinBids({
+                                  ...finBids,
+                                  [te.vendor_name]: { ...state, quoted_amount: e.target.value }
+                                })}
+                                className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 pl-6 pr-1 text-sm rounded transition-all placeholder:text-slate-300"
+                                placeholder="0.00"
+                                required
+                              />
+                              <span className="absolute left-2 top-2 text-xs text-slate-400 font-bold">₹</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input 
+                              type="text"
+                              value={state.remarks}
+                              onChange={(e) => setFinBids({
+                                ...finBids,
+                                [te.vendor_name]: { ...state, remarks: e.target.value }
+                              })}
+                              className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1.5 px-2 text-sm rounded transition-all placeholder:text-slate-300 placeholder:italic"
+                              placeholder="Remarks"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Remarks / Justification for Financial Sanction */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <label className="label text-slate-700 font-bold">Remarks *</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide financial sanction evaluation remarks..."
+                  className="input-field min-h-[80px]"
+                />
+              </div>
 
               <button 
                 onClick={handleFinBidsSubmit} 
-                disabled={actionLoading}
-                className="btn-primary w-full py-2.5 mt-2"
+                disabled={actionLoading || !remarks.trim()}
+                className="btn-primary w-full py-2.5 mt-2 flex justify-center items-center gap-2 font-semibold shadow-sm"
               >
-                Submit Financial Bids & Advance
+                <CheckCircle2 size={16} /> Submit Financial Bids & Advance
               </button>
             </div>
           )}
@@ -1141,16 +1296,20 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             </div>
           );
         })()}
-        <div>
-          <label className="label font-bold text-slate-700">Remarks / Justification</label>
-          <textarea
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Enter official remarks..."
-            rows={3}
-            className="input-field resize-none bg-white mt-1"
-          />
-        </div>
+
+        {!hasCustomForm && (
+          <div>
+            <label className="label font-bold text-slate-700">Remarks / Justification</label>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Enter official remarks..."
+              rows={3}
+              className="input-field resize-none bg-white mt-1"
+            />
+          </div>
+        )}
+
         <div className="flex gap-3">
           {/* Hide default forward/approve button if this step requires specific form entry and forms aren't complete */}
           {(!['Tendering', 'Technical Evaluation', 'Financial Sanction'].includes(phaseName || '') || 

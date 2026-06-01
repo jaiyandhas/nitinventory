@@ -140,6 +140,7 @@ export interface PurchaseRequest {
   faculty2?: { id: number; name: string; email: string };
   faculty3?: { id: number; name: string; email: string };
   aa_approver?: { id: number; name: string; email: string };
+  te_initiated_at?: string;
 }
 
 export interface DeliveryItem {

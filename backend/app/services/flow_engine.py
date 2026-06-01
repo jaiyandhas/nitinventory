@@ -273,7 +273,6 @@ class FlowEngineService:
         result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
         current_phase = result.scalar_one()
         current_step = flow.step_order
-
         next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
 
         # Check if this is the committee technical evaluation step
@@ -285,9 +284,11 @@ class FlowEngineService:
         if is_tech_eval_step:
             await self.db.refresh(pr, ["history"])
             # Check if this user has already logged an approval in the database for this step
+            since = pr.te_initiated_at or pr.created_at or datetime.min
             has_approval_log = any(
                 h.current_approver_id == acted_by.id
                 and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                and (h.acted_at is None or h.acted_at >= since)
                 for h in pr.history
             )
             if not has_approval_log:
@@ -295,18 +296,24 @@ class FlowEngineService:
                 await self._add_history(pr, acted_by, status or default_status, remarks)
             
             # Check if all required committee members have approved
-            required_ids = {uid for uid in [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id] if uid is not None}
+            required_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id}
             
-            await self.db.refresh(pr, ["history"])
-            approved_ids = {
-                h.current_approver_id for h in pr.history 
-                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
-            }
-            
-            if not required_ids.issubset(approved_ids):
+            if None in required_ids:
                 should_advance = False
                 flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS
+            else:
+                await self.db.refresh(pr, ["history"])
+                approved_ids = {
+                    h.current_approver_id for h in pr.history 
+                    if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                    and (h.acted_at is None or h.acted_at >= since)
+                }
+                
+                if not required_ids.issubset(approved_ids):
+                    should_advance = False
+                    flow.step_order = current_step
+                    pr.current_status = RequestStatus.IN_PROGRESS
 
         if should_advance:
             if next_step is not None:
@@ -330,6 +337,8 @@ class FlowEngineService:
                     flow.phase_id = next_phase.id
                     flow.step_order = 1
                     pr.current_status = RequestStatus.IN_PROGRESS
+                    if next_phase.phase_name == "Technical Evaluation":
+                        pr.te_initiated_at = datetime.utcnow()
                     if not is_tech_eval_step:
                         await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
                 else:
@@ -478,14 +487,18 @@ class FlowEngineService:
         
         if to_step >= flow.step_order or to_step < 1:
             raise ValueError(f"Cannot send back to step {to_step} from {flow.step_order}")
-
         pr.current_status = RequestStatus.SENT_BACK
         flow.step_order = to_step
         flow.rejected = False
-        await self._add_history(pr, acted_by, "PR Sent Back", reason)
-        await self.db.flush()
 
-        # Notify initiator
+        # Reset approvals round if sending back to step 1 of Technical Evaluation
+        result_phase = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
+        phase = result_phase.scalar_one()
+        if phase.phase_name == "Technical Evaluation" and to_step == 1:
+            pr.te_initiated_at = datetime.utcnow()
+
+        await self._add_history(pr, acted_by, "PR Sent Back", reason)
+        await self.db.flush()        # Notify initiator
         await self.db.refresh(pr, ["initiator"])
         if pr.initiator and pr.initiator.email:
             from app.services.email_service import EmailService

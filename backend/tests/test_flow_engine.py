@@ -245,3 +245,73 @@ async def test_technical_evaluation_committee_signatures(db_session):
     # Verify no redundant "Forwarded" or "Forwarded to next phase" status exists in the history logs for TE step 1
     redundant_logs = [h for h in pr.history if h.status in ("Forwarded", "Forwarded to next phase")]
     assert len(redundant_logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_technical_evaluation_send_back_signature_reset(db_session):
+    """Test that sending back a PR from TE step 2 to TE step 1 resets approvals, requiring all members to sign again."""
+    flow_service = FlowEngineService(db_session)
+    
+    # Fetch test users
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    
+    faculty1_res = await db_session.execute(select(User).where(User.email == "faculty1.cse@nitt.edu"))
+    faculty1 = faculty1_res.scalar_one()
+    
+    faculty2_res = await db_session.execute(select(User).where(User.email == "faculty2.cse@nitt.edu"))
+    faculty2 = faculty2_res.scalar_one()
+    
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+    
+    # Fetch Phase TE (Technical Evaluation)
+    phase_te_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation"))
+    phase_te = phase_te_res.scalar_one()
+    
+    # 1. Create Purchase Request
+    pr = PurchaseRequest(
+        amount=250000.0,
+        purchase_type="department",
+        initiator_id=faculty.id,
+        category_id=2,
+        financial_year_id=1,
+        procurement_id=1,
+        current_status="draft",
+        faculty1_id=faculty1.id,
+        faculty2_id=faculty2.id,
+        faculty3_id=hod.id,
+    )
+    db_session.add(pr)
+    await db_session.flush()
+    
+    flow = PurchaseRequestFlow(
+        purchase_request_id=pr.id,
+        phase_id=phase_te.id,
+        step_order=1,
+        rejected=False,
+    )
+    db_session.add(flow)
+    await db_session.flush()
+    
+    # Sign all 4 to advance to step 2
+    await flow_service.advance(pr, faculty, remarks="PI sign")
+    await flow_service.advance(pr, faculty1, remarks="F1 sign")
+    await flow_service.advance(pr, faculty2, remarks="F2 sign")
+    await flow_service.advance(pr, hod, remarks="F3 sign")
+    await db_session.refresh(flow)
+    assert flow.step_order == 2
+    
+    # Send back from step 2 (HOD review) to step 1 (Committee Evaluation)
+    await flow_service.send_back(pr, hod, to_step=1, reason="Need re-evaluation")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr)
+    assert flow.step_order == 1
+    assert pr.te_initiated_at is not None
+    
+    # Now verify that a single member's approval does NOT advance the PR
+    # Sign only Faculty 1
+    await flow_service.advance(pr, faculty1, remarks="New F1 sign")
+    await db_session.refresh(flow)
+    assert flow.step_order == 1  # Should stay on step 1 since others haven't signed this round!
+
