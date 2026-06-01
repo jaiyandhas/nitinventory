@@ -662,6 +662,8 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                     raise HTTPException(status_code=400, detail="HOD must assign Faculty 1, Faculty 2, and Director Nominee committee members to approve this request.")
                 if len({faculty1_id, faculty2_id, faculty3_id}) < 3:
                     raise HTTPException(status_code=400, detail="All 3 committee members must be different.")
+                if pr.initiator_id in {faculty1_id, faculty2_id, faculty3_id}:
+                    raise HTTPException(status_code=400, detail="The purchase request initiator cannot be assigned as a committee nominee.")
                 pr.faculty1_id = faculty1_id
                 pr.faculty2_id = faculty2_id
                 pr.faculty3_id = faculty3_id

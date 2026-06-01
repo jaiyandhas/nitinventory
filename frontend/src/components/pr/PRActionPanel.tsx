@@ -196,6 +196,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         toast.error('All 3 committee nominees must be different members.');
         return;
       }
+      if (faculty1Id === pr.initiator_id || faculty2Id === pr.initiator_id || faculty3Id === pr.initiator_id) {
+        toast.error('The purchase request initiator cannot be assigned as a committee nominee.');
+        return;
+      }
       f1 = Number(faculty1Id);
       f2 = Number(faculty2Id);
       f3 = Number(faculty3Id);
@@ -436,12 +440,21 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   const liveRankings = getLiveRankings();
 
   const committeeProgress = (() => {
-    const members = [
+    const rawMembers = [
       { id: pr.initiator_id, name: pr.initiator?.name || 'Initiator', email: pr.initiator?.email, roleLabel: 'Purchase Initiator' },
       { id: pr.faculty1_id, name: pr.faculty1?.name || 'Faculty Nominee 1', email: pr.faculty1?.email, roleLabel: 'Faculty Nominee 1' },
       { id: pr.faculty2_id, name: pr.faculty2?.name || 'Faculty Nominee 2', email: pr.faculty2?.email, roleLabel: 'Faculty Nominee 2' },
       { id: pr.faculty3_id, name: pr.faculty3?.name || 'Director Nominee (Faculty 3)', email: pr.faculty3?.email, roleLabel: 'Director Nominee (Faculty 3)' },
-    ].filter(m => m.id !== null && m.id !== undefined);
+    ].filter(m => m.id !== null && m.id !== undefined) as { id: number; name: string; email?: string; roleLabel: string }[];
+
+    const members: typeof rawMembers = [];
+    const seen = new Set<number>();
+    for (const m of rawMembers) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        members.push(m);
+      }
+    }
 
     const since = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
 
@@ -475,7 +488,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 className="input-field mt-1"
               >
                 <option value="">-- Select Faculty 1 --</option>
-                {faculties.map((f: any) => (
+                {faculties.filter((f: any) => f.id !== pr.initiator_id).map((f: any) => (
                   <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                 ))}
               </select>
@@ -488,7 +501,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 className="input-field mt-1"
               >
                 <option value="">-- Select Faculty 2 --</option>
-                {faculties.map((f: any) => (
+                {faculties.filter((f: any) => f.id !== pr.initiator_id).map((f: any) => (
                   <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                 ))}
               </select>
@@ -501,7 +514,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 className="input-field mt-1"
               >
                 <option value="">-- Select Director Nominee --</option>
-                {faculties.map((f: any) => (
+                {faculties.filter((f: any) => f.id !== pr.initiator_id).map((f: any) => (
                   <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                 ))}
               </select>
