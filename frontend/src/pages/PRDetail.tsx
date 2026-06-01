@@ -110,8 +110,8 @@ export const PRDetailPage: React.FC = () => {
     canActOn = true;
   } else if (pr.flow) {
     const phaseName = pr.flow?.phase_name;
-    // During Technical Evaluation, ALL 4 committee members can act simultaneously
-    if (phaseName === 'Technical Evaluation') {
+    // During Technical Evaluation, ALL 4 committee members can act simultaneously (only at step 1)
+    if (phaseName === 'Technical Evaluation' && pr.flow.step_order === 1) {
       const committeeIds = [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
       canActOn = committeeIds.includes(user?.id);
     } else if (pr.flow.expected_user_id) {

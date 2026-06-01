@@ -177,7 +177,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   const hasCustomForm = 
     (phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Dealing Assistant') ||
     (phaseName === 'Tendering' && pr.flow?.expected_role_name === 'Superintendent' && pr.flow?.step_order === 3) ||
-    (phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) ||
+    (phaseName === 'Technical Evaluation' && pr.flow?.step_order === 1 && isCommitteeMember && !hasUserSigned) ||
     (phaseName === 'Financial Sanction' && pr.flow?.expected_group === 'faculty');
   const handleAdvance = async () => {
     if (phaseName === 'Purchase Order' && !user?.signature_path) {
@@ -1042,7 +1042,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         </div>
       )}
       {/* Technical Evaluation form — shown to all nominated committee members */}
-      {phaseName === 'Technical Evaluation' && isCommitteeMember && (
+      {phaseName === 'Technical Evaluation' && pr.flow?.step_order === 1 && isCommitteeMember && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded">
           <h4 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide pb-2 border-b border-slate-100">
             Register Technical Qualification
@@ -1443,16 +1443,16 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             {/* Hide default forward/approve button if this step requires specific form entry and forms aren't complete */}
             {(!['Tendering', 'Technical Evaluation', 'Financial Sanction'].includes(phaseName || '') || 
               (phaseName === 'Tendering' && !['Dealing Assistant', 'Superintendent'].includes(pr.flow?.expected_role_name || '')) ||
-              (phaseName === 'Technical Evaluation' && pr.flow?.expected_group !== 'faculty') ||
+              (phaseName === 'Technical Evaluation' && (pr.flow?.step_order !== 1 || pr.flow?.expected_group !== 'faculty')) ||
               (phaseName === 'Financial Sanction' && pr.flow?.expected_group !== 'faculty')
-            ) && !(phaseName === 'Technical Evaluation' && isCommitteeMember) && (
+            ) && !(phaseName === 'Technical Evaluation' && pr.flow?.step_order === 1 && isCommitteeMember) && (
               <button onClick={handleAdvance} disabled={actionLoading} className="btn-primary flex items-center gap-2">
                 <CheckCircle2 size={16} /> Approve &amp; Forward
               </button>
             )}
             
             {/* Rejection button — hidden from TE committee nominees who haven't signed */}
-            {!(phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) && (
+            {!(phaseName === 'Technical Evaluation' && pr.flow?.step_order === 1 && isCommitteeMember && !hasUserSigned) && (
               <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex items-center gap-2">
                 <XCircle size={16} /> Reject
               </button>
