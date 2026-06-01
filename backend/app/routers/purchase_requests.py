@@ -421,11 +421,13 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             is_expected_user = True
 
     if not is_expected_user:
-        if group == "faculty" and pr.initiator_id != user.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        if group == "hod":
-            if pr.initiator.department_id != user.department_id:
+        allowed_nominees = {pr.faculty1_id, pr.faculty2_id, pr.faculty3_id}
+        if user.id not in allowed_nominees:
+            if group == "faculty" and pr.initiator_id != user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
+            if group == "hod":
+                if pr.initiator.department_id != user.department_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
                            
     expected_group = None
     expected_role_id = None
