@@ -180,6 +180,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     (phaseName === 'Technical Evaluation' && isCommitteeMember && !hasUserSigned) ||
     (phaseName === 'Financial Sanction' && pr.flow?.expected_group === 'faculty');
   const handleAdvance = async () => {
+    if (phaseName === 'Purchase Order' && !user?.signature_path) {
+      toast.error('You must upload a digital signature in your Profile to approve Purchase Order steps.');
+      return;
+    }
     if (!remarks.trim()) { toast.error('Remarks are required to advance the PR'); return; }
     if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
 

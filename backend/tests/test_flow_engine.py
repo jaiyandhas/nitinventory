@@ -315,3 +315,57 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     await db_session.refresh(flow)
     assert flow.step_order == 1  # Should stay on step 1 since others haven't signed this round!
 
+
+@pytest.mark.asyncio
+async def test_purchase_order_signature_validation(db_session):
+    """Test that approving a step in the Purchase Order phase requires the user to have a signature_path."""
+    flow_service = FlowEngineService(db_session)
+    
+    # Fetch test users
+    da_res = await db_session.execute(select(User).where(User.email == "da.stores@nitt.edu"))
+    da = da_res.scalar_one()
+    
+    # Ensure DA has no signature
+    da.signature_path = None
+    await db_session.flush()
+    
+    phase_po_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Purchase Order"))
+    phase_po = phase_po_res.scalar_one()
+    
+    # Create Purchase Request
+    pr = PurchaseRequest(
+        amount=10000.0,
+        purchase_type="department",
+        initiator_id=1,
+        category_id=1,
+        financial_year_id=1,
+        procurement_id=1,
+        current_status="draft",
+    )
+    db_session.add(pr)
+    await db_session.flush()
+    
+    flow = PurchaseRequestFlow(
+        purchase_request_id=pr.id,
+        phase_id=phase_po.id,
+        step_order=1,
+        rejected=False,
+    )
+    db_session.add(flow)
+    await db_session.flush()
+    
+    # Try to advance without signature - should raise ValueError
+    with pytest.raises(ValueError, match="You must upload a digital signature in your Profile to approve Purchase Order steps"):
+        await flow_service.advance(pr, da, remarks="Attempting PO sign without signature")
+        
+    # Now set a signature path
+    da.signature_path = "signatures/da_sign.png"
+    await db_session.flush()
+    
+    # Try to advance with signature - should succeed without ValueError (might fail on other validations, but not signature)
+    try:
+        await flow_service.advance(pr, da, remarks="PO sign with signature")
+    except ValueError as e:
+        assert "You must upload a digital signature" not in str(e)
+
+

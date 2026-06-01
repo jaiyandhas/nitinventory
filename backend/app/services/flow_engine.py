@@ -272,6 +272,9 @@ class FlowEngineService:
 
         result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
         current_phase = result.scalar_one()
+
+        if current_phase.phase_name == "Purchase Order" and not acted_by.signature_path:
+            raise ValueError("You must upload a digital signature in your Profile to approve Purchase Order steps.")
         current_step = flow.step_order
         next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
 
