@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Wallet, Package, Box, Settings,
   Users, ChevronLeft, ChevronRight, LogOut, Bell, Menu, X,
-  Truck, AlertTriangle, BarChart2, User
+  Truck, AlertTriangle, BarChart2, User, Layers
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 

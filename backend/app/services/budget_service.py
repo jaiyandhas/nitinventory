@@ -34,7 +34,7 @@ class BudgetService:
             await self.db.execute(
                 update(BudgetMaster)
                 .where(BudgetMaster.id == budget_file_id)
-                .values(locked_amount=BudgetMaster.locked_amount + delta)
+                .values(committed_amount=BudgetMaster.committed_amount + delta)
                 .execution_options(synchronize_session=False)
             )
         await self.db.flush()
@@ -60,7 +60,7 @@ class BudgetService:
             await self.db.execute(
                 update(BudgetMaster)
                 .where(BudgetMaster.id == budget_file_id)
-                .values(locked_amount=func.greatest(0.0, BudgetMaster.locked_amount - delta))
+                .values(committed_amount=func.greatest(0.0, BudgetMaster.committed_amount - delta))
                 .execution_options(synchronize_session=False)
             )
         await self.db.flush()
@@ -87,8 +87,8 @@ class BudgetService:
                 update(BudgetMaster)
                 .where(BudgetMaster.id == budget_file_id)
                 .values(
-                    locked_amount=func.greatest(0.0, BudgetMaster.locked_amount - delta),
-                    deducted_amount=BudgetMaster.deducted_amount + delta
+                    committed_amount=func.greatest(0.0, BudgetMaster.committed_amount - delta),
+                    utilized_amount=BudgetMaster.utilized_amount + delta
                 )
                 .execution_options(synchronize_session=False)
             )
@@ -107,10 +107,10 @@ class BudgetService:
             {
                 "id": bm.id,
                 "item_name": bm.item_name,
-                "total_cost": bm.total_cost,
-                "locked_amount": bm.locked_amount,
-                "deducted_amount": bm.deducted_amount,
-                "available_amount": bm.available_amount,
+                "total_allocation": bm.total_allocation,
+                "committed_amount": bm.committed_amount,
+                "utilized_amount": bm.utilized_amount,
+                "available_balance": bm.available_balance,
             }
             for bm in entries
         ]

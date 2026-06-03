@@ -151,6 +151,7 @@ async def test_tender_routing_operators_evaluation(db_session):
     )
     step = step_res.scalar_one()
     step.tender_vendors_threshold = 3
+    step.condition_field = None
 
     # Operator 1: "<" (Run if count < 3. Here count=3, so 3 < 3 is False, meaning skip -> returns None)
     step.tender_vendors_comparison = "<"
@@ -232,6 +233,22 @@ async def test_dynamic_routing_skip_condition(db_session):
     
     # Set skip condition
     step.skip_condition = "pr.amount < 100000"
+    await db_session.flush()
+
+    # Delete any steps after step 6 in this phase/category/procurement for this test,
+    # so that when step 6 is skipped, it correctly returns None.
+    from sqlalchemy import delete
+    await db_session.execute(
+        delete(WorkFlowHierarchy).where(
+            and_(
+                WorkFlowHierarchy.phase_id == phase_td.id,
+                WorkFlowHierarchy.step_order > 6,
+                WorkFlowHierarchy.category_id == pr_low.category_id,
+                WorkFlowHierarchy.procurement_id == pr_low.procurement_id,
+                WorkFlowHierarchy.purchase_type == pr_low.purchase_type,
+            )
+        )
+    )
     await db_session.flush()
 
     # For amount=50,000 (which is < 100,000), it evaluates to True (should skip -> returns None)

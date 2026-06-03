@@ -184,7 +184,7 @@ async def test_adhoc_consultation_referral_flow(db_session):
     # 1. HOD refers PR to faculty for opinion
     res_ref = await refer_pr(
         pr_id=pr.id,
-        body={"referred_to_id": fac.id, "query": "Is the spec for the GPU server okay?"},
+        request=MockRequest({"referred_to_id": fac.id, "query": "Is the spec for the GPU server okay?"}),
         db=db_session,
         user=hod
     )

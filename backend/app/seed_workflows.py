@@ -3,7 +3,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 
 def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: list) -> list:
-    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None):
+    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None, condition_field=None, condition_operator=None, condition_value=None):
         r = roles[role_key] if role_key else None
         return WorkFlowHierarchy(
             category_id=cat.id,
@@ -18,6 +18,9 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
             tender_vendors_threshold=tender_vendors_threshold,
             tender_vendors_comparison=tender_vendors_comparison,
             skip_condition=skip_condition,
+            condition_field=condition_field,
+            condition_operator=condition_operator,
+            condition_value=condition_value,
         )
 
     rows: list[WorkFlowHierarchy] = []
@@ -50,7 +53,11 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat2, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat2, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat2, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
-                    step(cat2, "TD", 6, "apex_approver", "approver", "director", ptype, proc, tender_vendors_threshold=3),
+                    # partial_approver: Dean reviews whether Director approval is needed.
+                    # If >=3 qualified vendors (Director step condition is False) the engine
+                    # auto-bypasses this step and advances straight to Technical Evaluation.
+                    step(cat2, "TD", 6, "dean_approver", "partial_approver", "dean_pd", ptype, proc),
+                    step(cat2, "TD", 7, "apex_approver", "approver", "director", ptype, proc, condition_field="qualified_vendor_count", condition_operator="<", condition_value=3),
                     step(cat2, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat2, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat2, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
@@ -78,7 +85,9 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat3, "TD", 3, "verifier_sp", "verifier", "superintendent", ptype, proc),
                     step(cat3, "TD", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
                     step(cat3, "TD", 5, "verifier_sp", "approver", "assistant_registrar", ptype, proc),
-                    step(cat3, "TD", 6, "apex_approver", "approver", "director", ptype, proc, tender_vendors_threshold=3),
+                    # partial_approver: Dean reviews whether Director approval is needed.
+                    step(cat3, "TD", 6, "dean_approver", "partial_approver", "dean_pd", ptype, proc),
+                    step(cat3, "TD", 7, "apex_approver", "approver", "director", ptype, proc, condition_field="qualified_vendor_count", condition_operator="<", condition_value=3),
                     step(cat3, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
                     step(cat3, "TE", 2, "hod", "verifier", "hod", ptype, proc),
                     step(cat3, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),

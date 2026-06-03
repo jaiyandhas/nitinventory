@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const StepReviewSelection: React.FC<Props> = ({ selectedFiles, procurementMethod }) => {
-  const grandTotal = selectedFiles.reduce((s, f) => s + f.total_cost, 0);
+  const grandTotal = selectedFiles.reduce((s, f) => s + (f.total_allocation ?? f.total_cost), 0);
 
   return (
     <div className="space-y-6">
@@ -32,7 +32,7 @@ export const StepReviewSelection: React.FC<Props> = ({ selectedFiles, procuremen
                 <td className="px-3 py-2 font-mono">{f.file_no}</td>
                 <td className="px-3 py-2">{f.item_name}</td>
                 <td className="px-3 py-2 text-right">{f.quantity}</td>
-                <td className="px-3 py-2 text-right font-medium">{formatCurrency(f.total_cost)}</td>
+                <td className="px-3 py-2 text-right font-medium">{formatCurrency(f.total_allocation ?? f.total_cost)}</td>
               </tr>
             ))}
           </tbody>

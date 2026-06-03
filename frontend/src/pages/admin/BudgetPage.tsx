@@ -30,10 +30,17 @@ export const BudgetPage: React.FC = () => {
   const [directorFacultyId, setDirectorFacultyId] = useState<number | null>(null);
 
   // Core Queries
-  const { data: budgets = [], isLoading: loadingBudgets } = useQuery({ 
-    queryKey: ['admin_budgets'], 
-    queryFn: () => adminApi.budget().then(res => res.data) 
+  const [page, setPage] = useState(1);
+  const limit = 50;
+
+  const { data: budgetsData, isLoading: loadingBudgets } = useQuery({ 
+    queryKey: ['admin_budgets', page], 
+    queryFn: () => adminApi.budget({ skip: (page - 1) * limit, limit }).then(res => res.data) 
   });
+
+  const budgets = budgetsData?.items || [];
+  const total = budgetsData?.total || 0;
+  const totalPages = Math.ceil(total / limit) || 1;
   
   const { data: depts = [] } = useQuery({ 
     queryKey: ['admin_departments'], 
@@ -56,7 +63,7 @@ export const BudgetPage: React.FC = () => {
     queryFn: () => budgetApi.allUsers().then(res => res.data)
   });
 
-  const isWriteAllowed = user && ['admin', 'dean_approver'].includes(user.role?.group_key || '');
+  const isWriteAllowed = user && user.role?.group_key === 'dean_approver';
   const isHOD = user && user.role?.group_key === 'hod';
   const isDirectorOrAdmin = user && (user.role?.value === 'director' || user.role?.group_key === 'admin');
 
@@ -171,7 +178,7 @@ export const BudgetPage: React.FC = () => {
   };
 
   // Filter department faculties for HOD select dropdowns
-  const deptFaculties = faculties.filter((f: any) => f.department_id === user?.department_id);
+  const deptFaculties = faculties.filter((f: any) => Number(f.department_id) === Number(user?.department_id || user?.department?.id));
 
   return (
     <div className="space-y-6">
@@ -237,10 +244,10 @@ export const BudgetPage: React.FC = () => {
               <th>File No / ID</th>
               <th>Dept</th>
               <th>Item Name</th>
-              <th>Total Cost</th>
-              <th>Locked (PRs)</th>
-              <th>Spent (POs)</th>
-              <th>Available</th>
+              <th>Total Allocation</th>
+              <th>Committed Amount</th>
+              <th>Utilized Amount</th>
+              <th>Available Balance</th>
               <th>Technical Committee</th>
               <th>Actions</th>
             </tr>
@@ -253,20 +260,20 @@ export const BudgetPage: React.FC = () => {
             ) : (
               filteredBudgets.map((b: any) => {
                 const hasCommittee = b.expert1 || b.expert2 || b.director_faculty;
-                const matchesDept = b.department_id === user?.department_id;
+                const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
                 
                 return (
-                  <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
+                   <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
                     <td className="font-medium text-slate-900">
                       <div className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</div>
                       <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
                     </td>
                     <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
                     <td className="max-w-[150px] truncate" title={b.item_name}>{b.item_name}</td>
-                    <td>{formatCurrency(b.total_cost)}</td>
-                    <td className="text-amber-600 font-medium">{formatCurrency(b.locked_amount)}</td>
-                    <td className="text-slate-600 font-medium">{formatCurrency(b.deducted_amount)}</td>
-                    <td className="font-semibold text-green-600">{formatCurrency(b.available_amount)}</td>
+                    <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
+                    <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
+                    <td className="text-slate-600 font-medium">{formatCurrency(b.utilized_amount ?? b.deducted_amount)}</td>
+                    <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
                     <td>
                       <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
                         <div className="flex justify-between gap-2">
@@ -330,6 +337,68 @@ export const BudgetPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg shadow-sm">
+          <div className="flex flex-1 justify-between sm:hidden">
+            <button
+              onClick={() => setPage(p => Math.max(p - 1, 1))}
+              disabled={page === 1}
+              className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+              disabled={page === totalPages}
+              className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+          <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-slate-700">
+                Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
+                <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
+                <span className="font-medium">{total}</span> budgets
+              </p>
+            </div>
+            <div>
+              <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                <button
+                  onClick={() => setPage(p => Math.max(p - 1, 1))}
+                  disabled={page === 1}
+                  className="relative inline-flex items-center rounded-l-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 ${
+                      p === page
+                        ? 'z-10 bg-[#1a3a6b] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                        : 'text-slate-900 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:outline-offset-0'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+                  disabled={page === totalPages}
+                  className="relative inline-flex items-center rounded-r-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* HOD nomination modal */}
       {selectedBudgetForCommittee && (

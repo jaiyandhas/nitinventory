@@ -40,11 +40,11 @@ def safe_eval(expr: str, context: dict) -> Any:
             return node.value
         
         # Legacy Python Constant nodes (Num, Str, NameConstant)
-        elif isinstance(node, ast.Num):
+        elif type(node).__name__ == "Num":
             return node.n
-        elif isinstance(node, ast.Str):
+        elif type(node).__name__ == "Str":
             return node.s
-        elif isinstance(node, ast.NameConstant):
+        elif type(node).__name__ == "NameConstant":
             return node.value
 
         # Variables: Context names
@@ -79,11 +79,20 @@ def safe_eval(expr: str, context: dict) -> Any:
 
         # Logical operators: and, or
         elif isinstance(node, ast.BoolOp):
-            vals = [_eval(v) for v in node.values]
             if isinstance(node.op, ast.And):
-                return all(vals)
+                val = None
+                for v in node.values:
+                    val = _eval(v)
+                    if not val:
+                        return val
+                return val
             elif isinstance(node.op, ast.Or):
-                return any(vals)
+                val = None
+                for v in node.values:
+                    val = _eval(v)
+                    if val:
+                        return val
+                return val
             raise TypeError(f"Unsupported logical operator: {type(node.op)}")
 
         # Unary operators: not, -

@@ -4,7 +4,7 @@ from sqlalchemy import select, and_
 from datetime import datetime
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_own_department
 from app.models.user import User, RoleManager
 from app.models.budget import BudgetMaster, FinancialYear, ProcurementManager
 
@@ -44,8 +44,11 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
     return [
         {
             "id": b.id, "item_name": b.item_name, "category": b.category,
-            "file_no": b.file_no, "total_cost": b.total_cost,
-            "available_amount": b.available_amount,
+            "file_no": b.file_no, 
+            "total_cost": b.total_allocation,
+            "total_allocation": b.total_allocation,
+            "available_amount": b.available_balance,
+            "available_balance": b.available_balance,
             "unit_cost": b.unit_cost, "quantity": b.quantity,
         }
         for b in entries
@@ -79,7 +82,10 @@ async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depen
     )
     fy = fy_result.scalar_one_or_none()
     if not fy:
-        return {"total": 0, "locked": 0, "deducted": 0, "available": 0}
+        return {
+            "total": 0, "locked": 0, "deducted": 0, "available": 0,
+            "total_allocation": 0, "committed_amount": 0, "utilized_amount": 0, "available_balance": 0
+        }
 
     dept_id = user.department_id
     query = select(BudgetMaster).where(BudgetMaster.financial_year_id == fy.id)
@@ -88,14 +94,17 @@ async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depen
         
     result = await db.execute(query)
     entries = result.scalars().all()
-    total = sum(b.total_cost for b in entries)
-    locked = sum(b.locked_amount for b in entries)
-    deducted = sum(b.deducted_amount for b in entries)
-    return {"total": total, "locked": locked, "deducted": deducted, "available": total - locked - deducted}
+    total = sum(b.total_allocation for b in entries)
+    locked = sum(b.committed_amount for b in entries)
+    deducted = sum(b.utilized_amount for b in entries)
+    return {
+        "total": total, "locked": locked, "deducted": deducted, "available": total - locked - deducted,
+        "total_allocation": total, "committed_amount": locked, "utilized_amount": deducted, "available_balance": total - locked - deducted
+    }
 
 
 @router.get("/department-committee")
-async def get_department_committee(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def get_department_committee(db: AsyncSession = Depends(get_db), user: User = Depends(require_own_department())):
     from app.models.user import Department
     if not user.department_id:
         return {}
@@ -130,7 +139,7 @@ async def get_department_committee(db: AsyncSession = Depends(get_db), user: Use
 
 
 @router.post("/department-committee")
-async def update_department_committee(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def update_department_committee(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(require_own_department())):
     from fastapi import HTTPException
     await db.refresh(user, ["role"])
     if not user.role or user.role.group_key != "hod":
@@ -237,7 +246,7 @@ async def get_all_faculties(db: AsyncSession = Depends(get_db), user: User = Dep
 
 
 @router.post("/files/{budget_id}/committee")
-async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(require_own_department())):
     from fastapi import HTTPException
     await db.refresh(user, ["role"])
     if not user.role or user.role.group_key != "hod":
@@ -270,14 +279,23 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     b.expert2_id = expert2_id
 
     # Update active PRs associated with this budget file to use the new committee
-    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
+    # Only update PRs that are in the "Administrative Approval" phase (or haven't started flow yet)
+    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
+    from app.models.budget import PhaseManager
+    from sqlalchemy import or_
     active_prs_res = await db.execute(
         select(PurchaseRequest)
         .join(PurchaseRequestItem, PurchaseRequest.id == PurchaseRequestItem.purchase_request_id)
+        .join(PurchaseRequestFlow, PurchaseRequest.id == PurchaseRequestFlow.purchase_request_id, isouter=True)
+        .join(PhaseManager, PurchaseRequestFlow.phase_id == PhaseManager.id, isouter=True)
         .where(
             and_(
                 PurchaseRequestItem.budget_file_id == budget_id,
-                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"])
+                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
+                or_(
+                    PhaseManager.phase_name == "Administrative Approval",
+                    PurchaseRequestFlow.id == None
+                )
             )
         )
     )
@@ -310,14 +328,23 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
     b.director_faculty_id = director_faculty_id
 
     # Update active PRs associated with this budget file to use the new director nominee
-    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
+    # Only update PRs that are in the "Administrative Approval" phase (or haven't started flow yet)
+    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
+    from app.models.budget import PhaseManager
+    from sqlalchemy import or_
     active_prs_res = await db.execute(
         select(PurchaseRequest)
         .join(PurchaseRequestItem, PurchaseRequest.id == PurchaseRequestItem.purchase_request_id)
+        .join(PurchaseRequestFlow, PurchaseRequest.id == PurchaseRequestFlow.purchase_request_id, isouter=True)
+        .join(PhaseManager, PurchaseRequestFlow.phase_id == PhaseManager.id, isouter=True)
         .where(
             and_(
                 PurchaseRequestItem.budget_file_id == budget_id,
-                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"])
+                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
+                or_(
+                    PhaseManager.phase_name == "Administrative Approval",
+                    PurchaseRequestFlow.id == None
+                )
             )
         )
     )

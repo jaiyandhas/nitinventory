@@ -255,13 +255,15 @@ export const SettingsPage: React.FC = () => {
       }
     }
 
-    if (data.tender_vendors_threshold !== undefined && data.tender_vendors_threshold !== '') {
-      payload.tender_vendors_threshold = Number(data.tender_vendors_threshold);
-      payload.tender_vendors_comparison = String(data.tender_vendors_comparison || '<=');
+    payload.condition_field = data.condition_field ? String(data.condition_field) : null;
+    if (payload.condition_field && data.condition_value !== undefined && data.condition_value !== '') {
+      payload.condition_value = Number(data.condition_value);
+      payload.condition_operator = String(data.condition_operator || '<');
     } else {
-      payload.tender_vendors_threshold = null;
-      payload.tender_vendors_comparison = null;
+      payload.condition_value = null;
+      payload.condition_operator = null;
     }
+    
     payload.skip_condition = data.skip_condition ? String(data.skip_condition) : null;
 
     createWfMutation.mutate(payload);
@@ -504,6 +506,10 @@ export const SettingsPage: React.FC = () => {
                                                 ? `Approver (if bids ${wf.tender_vendors_comparison || '<='} ${wf.tender_vendors_threshold})` 
                                                 : 'Approver (Ends Phase)'}
                                             </span>
+                                          ) : wf.user_type === 'partial_approver' ? (
+                                            <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold uppercase tracking-wider">
+                                              Partial Approver
+                                            </span>
                                           ) : ['purchase_initiator', 'da_assigner', 'verifier_da', 'tech_evaluation'].includes(wf.user_type) ? (
                                             <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold uppercase tracking-wider">
                                               Special: {wf.user_type}
@@ -536,7 +542,7 @@ export const SettingsPage: React.FC = () => {
                                             <div className="flex items-center gap-1">
                                               <span className="text-[10px] font-bold text-slate-400 uppercase">Action Type:</span>
                                               <select
-                                                value={wf.user_type === 'approver' ? 'approver' : 'verifier'}
+                                                value={wf.user_type}
                                                 onChange={(e) => {
                                                   const newAction = e.target.value;
                                                   updateWfMutation.mutate({ id: wf.id, data: { user_type: newAction } });
@@ -545,46 +551,63 @@ export const SettingsPage: React.FC = () => {
                                               >
                                                 <option value="verifier">Verifier</option>
                                                 <option value="approver">Approver</option>
+                                                <option value="partial_approver">Partial Approver</option>
                                               </select>
                                             </div>
 
-                                            {phase.phase_name === 'Tendering' && (
                                               <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
                                                 <div className="flex items-center gap-1">
-                                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Condition:</span>
+                                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Field:</span>
                                                   <select
-                                                    value={wf.tender_vendors_comparison || '<='}
+                                                    value={wf.condition_field || ''}
                                                     onChange={(e) => {
-                                                      const op = e.target.value;
-                                                      updateWfMutation.mutate({ id: wf.id, data: { tender_vendors_comparison: op } });
+                                                      const val = e.target.value;
+                                                      updateWfMutation.mutate({ id: wf.id, data: { condition_field: val || null } });
                                                     }}
                                                     className="text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:outline-none focus:border-[#1a3a6b]"
                                                   >
-                                                    <option value="<=">&lt;=</option>
-                                                    <option value=">=">&gt;=</option>
-                                                    <option value="<">&lt;</option>
-                                                    <option value=">">&gt;</option>
-                                                    <option value="==">==</option>
-                                                    <option value="!=">!=</option>
+                                                    <option value="">None</option>
+                                                    <option value="qualified_vendor_count">Qualified Vendors</option>
                                                   </select>
                                                 </div>
-                                                <div className="flex items-center gap-1">
-                                                  <input
-                                                    type="number"
-                                                    min="0"
-                                                    placeholder="None"
-                                                    value={wf.tender_vendors_threshold !== null && wf.tender_vendors_threshold !== undefined ? wf.tender_vendors_threshold : ''}
-                                                    onChange={(e) => {
-                                                      const val = e.target.value;
-                                                      const threshold = val === '' ? null : parseInt(val);
-                                                      const op = wf.tender_vendors_comparison || '<=';
-                                                      updateWfMutation.mutate({ id: wf.id, data: { tender_vendors_threshold: threshold, tender_vendors_comparison: threshold !== null ? op : null } });
-                                                    }}
-                                                    className="w-12 text-center text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:outline-none focus:border-[#1a3a6b]"
-                                                  />
-                                                </div>
+                                                {wf.condition_field && (
+                                                  <>
+                                                    <div className="flex items-center gap-1">
+                                                      <span className="text-[10px] font-bold text-slate-400 uppercase">Op:</span>
+                                                      <select
+                                                        value={wf.condition_operator || '<'}
+                                                        onChange={(e) => {
+                                                          const op = e.target.value;
+                                                          updateWfMutation.mutate({ id: wf.id, data: { condition_operator: op } });
+                                                        }}
+                                                        className="text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:outline-none focus:border-[#1a3a6b]"
+                                                      >
+                                                        <option value="<">&lt;</option>
+                                                        <option value="<=">&lt;=</option>
+                                                        <option value=">">&gt;</option>
+                                                        <option value=">=">&gt;=</option>
+                                                        <option value="==">==</option>
+                                                        <option value="!=">!=</option>
+                                                      </select>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                      <span className="text-[10px] font-bold text-slate-400 uppercase">Val:</span>
+                                                      <input
+                                                        type="number"
+                                                        min="0"
+                                                        placeholder="Value"
+                                                        value={wf.condition_value !== null && wf.condition_value !== undefined ? wf.condition_value : ''}
+                                                        onChange={(e) => {
+                                                          const val = e.target.value;
+                                                          const value = val === '' ? null : parseInt(val);
+                                                          updateWfMutation.mutate({ id: wf.id, data: { condition_value: value } });
+                                                        }}
+                                                        className="w-12 text-center text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:outline-none focus:border-[#1a3a6b]"
+                                                      />
+                                                    </div>
+                                                  </>
+                                                )}
                                               </div>
-                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -1127,7 +1150,7 @@ export const SettingsPage: React.FC = () => {
                 {wfAssigneeType !== 'tag' && (
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Action Type</label>
-                    <div className="flex gap-4 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                    <div className="flex flex-wrap gap-4 p-2 bg-slate-50 border border-slate-200 rounded-lg">
                       <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-semibold">
                         <input
                           type="radio"
@@ -1147,31 +1170,50 @@ export const SettingsPage: React.FC = () => {
                         />
                         Approver (Ends Phase)
                       </label>
+                      <label className="flex items-center gap-2 text-sm text-amber-700 font-bold cursor-pointer">
+                        <input
+                          type="radio"
+                          name="step_action"
+                          value="partial_approver"
+                          className="text-amber-600"
+                        />
+                        Partial Approver
+                      </label>
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Condition Operator</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Condition Field</label>
                     <select
-                      name="tender_vendors_comparison"
+                      name="condition_field"
                       className="input-field w-full text-xs"
                     >
-                      <option value="<=">&lt;= (Less than or equal)</option>
-                      <option value=">=">&gt;= (Greater than or equal)</option>
+                      <option value="">None</option>
+                      <option value="qualified_vendor_count">Qualified Vendors</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Operator</label>
+                    <select
+                      name="condition_operator"
+                      className="input-field w-full text-xs"
+                    >
                       <option value="<">&lt; (Less than)</option>
+                      <option value="<=">&lt;= (Less than or equal)</option>
                       <option value=">">&gt; (Greater than)</option>
+                      <option value=">=">&gt;= (Greater than or equal)</option>
                       <option value="==">== (Equal)</option>
                       <option value="!=">!= (Not equal)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Bidding Vendors Threshold</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Value</label>
                     <input
-                      name="tender_vendors_threshold"
+                      name="condition_value"
                       type="number"
                       min="0"
-                      placeholder="e.g. 3 (blank to disable condition)"
+                      placeholder="e.g. 3"
                       className="input-field w-full text-xs"
                     />
                   </div>

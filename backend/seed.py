@@ -3,7 +3,7 @@ IRIS database bootstrap: drop/create tables and seed demo data.
 Workflow definitions match NIT Tiruchirappalli procurement policy (3 categories × 4 procurement methods × 2 purchase types).
 """
 import asyncio
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import text, select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -74,6 +74,45 @@ async def create_tables():
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
                 responded_at TIMESTAMP WITHOUT TIME ZONE
             );
+        """))
+
+        # purchase_request_history frozen fields
+        await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_actor_name VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_designation VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_department VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_signature_path VARCHAR(500);"))
+
+        # pr_referrals query document field
+        await conn.execute(text("ALTER TABLE pr_referrals ADD COLUMN IF NOT EXISTS query_document_path VARCHAR(500);"))
+
+        # Rename budget_master columns safely
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='budget_master' AND column_name='total_cost') THEN
+                    ALTER TABLE budget_master RENAME COLUMN total_cost TO total_allocation;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='budget_master' AND column_name='locked_amount') THEN
+                    ALTER TABLE budget_master RENAME COLUMN locked_amount TO committed_amount;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='budget_master' AND column_name='deducted_amount') THEN
+                    ALTER TABLE budget_master RENAME COLUMN deducted_amount TO utilized_amount;
+                END IF;
+            END $$;
+        """))
+
+        # Add condition columns to workflow_hierarchies
+        await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS condition_field VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS condition_operator VARCHAR(20);"))
+        await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS condition_value INTEGER;"))
+
+        # Data migration for threshold rules
+        await conn.execute(text("""
+            UPDATE workflow_hierarchies 
+            SET condition_field = 'qualified_vendor_count', 
+                condition_operator = COALESCE(tender_vendors_comparison, '<'), 
+                condition_value = COALESCE(tender_vendors_threshold, 3) 
+            WHERE tender_vendors_threshold IS NOT NULL AND condition_field IS NULL;
         """))
     print("✓ Database tables verified/created")
 
@@ -269,11 +308,43 @@ async def seed():
                         "required": ["manufacturer_name", "justification_type"]
                     }
                 ),
+                ProcurementManager(
+                    name="Direct Purchase",
+                    description="Direct Purchase without bids (for low-value items under ₹25,000)",
+                    max_amount=25000.0,
+                    form_schema={
+                        "type": "object",
+                        "title": "Direct Purchase Details",
+                        "properties": {
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" }
+                        },
+                        "required": ["justification"]
+                    }
+                ),
             ]
             for p in procs:
                 db.add(p)
             await db.flush()
         else:
+            # Ensure Direct Purchase exists in the database
+            dp_check = await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Direct Purchase"))
+            dp = dp_check.scalar_one_or_none()
+            if not dp:
+                dp = ProcurementManager(
+                    name="Direct Purchase",
+                    description="Direct Purchase without bids (for low-value items under ₹25,000)",
+                    max_amount=25000.0,
+                    form_schema={
+                        "type": "object",
+                        "title": "Direct Purchase Details",
+                        "properties": {
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" }
+                        },
+                        "required": ["justification"]
+                    }
+                )
+                db.add(dp)
+                await db.flush()
             procs_res = await db.execute(select(ProcurementManager))
             procs = list(procs_res.scalars())
 
@@ -284,36 +355,66 @@ async def seed():
         if not has_cats:
             print("  Seeding purchase categories...")
             for proc in procs:
-                cat1 = PurchaseCategory(
-                    title=f"{proc.name}: Upto Rs. 1,00,000",
-                    min_amount=1,
-                    max_amount=100_000,
-                    is_active=True,
-                    procurement_id=proc.id
-                )
-                cat2 = PurchaseCategory(
-                    title=f"{proc.name}: Rs. 1,00,001 to Rs. 10,00,000",
-                    min_amount=100_001,
-                    max_amount=1_000_000,
-                    is_active=True,
-                    procurement_id=proc.id
-                )
-                cat3 = PurchaseCategory(
-                    title=f"{proc.name}: Rs. 10,00,001 to Rs. 30,00,000",
-                    min_amount=1_000_001,
-                    max_amount=3_000_000,
-                    is_active=True,
-                    procurement_id=proc.id
-                )
-                db.add_all([cat1, cat2, cat3])
-                await db.flush()
-                categories[proc.id] = {"cat1": cat1, "cat2": cat2, "cat3": cat3}
+                if proc.name == "Direct Purchase":
+                    cat1 = PurchaseCategory(
+                        title=f"{proc.name}: Upto Rs. 25,000",
+                        min_amount=1,
+                        max_amount=25000,
+                        is_active=True,
+                        procurement_id=proc.id
+                    )
+                    db.add(cat1)
+                    await db.flush()
+                    categories[proc.id] = {"cat1": cat1}
+                else:
+                    cat1 = PurchaseCategory(
+                        title=f"{proc.name}: Upto Rs. 1,00,000",
+                        min_amount=1,
+                        max_amount=100_000,
+                        is_active=True,
+                        procurement_id=proc.id
+                    )
+                    cat2 = PurchaseCategory(
+                        title=f"{proc.name}: Rs. 1,00,001 to Rs. 10,00,000",
+                        min_amount=100_001,
+                        max_amount=1_000_000,
+                        is_active=True,
+                        procurement_id=proc.id
+                    )
+                    cat3 = PurchaseCategory(
+                        title=f"{proc.name}: Rs. 10,00,001 to Rs. 30,00,000",
+                        min_amount=1_000_001,
+                        max_amount=3_000_000,
+                        is_active=True,
+                        procurement_id=proc.id
+                    )
+                    db.add_all([cat1, cat2, cat3])
+                    await db.flush()
+                    categories[proc.id] = {"cat1": cat1, "cat2": cat2, "cat3": cat3}
         else:
+            # Check and seed Direct Purchase category specifically if missing
+            dp_res = await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Direct Purchase"))
+            dp = dp_res.scalar_one_or_none()
+            if dp:
+                dp_cat_res = await db.execute(select(PurchaseCategory).where(PurchaseCategory.procurement_id == dp.id))
+                if not dp_cat_res.scalars().all():
+                    dp_cat = PurchaseCategory(
+                        title=f"{dp.name}: Upto Rs. 25,000",
+                        min_amount=1,
+                        max_amount=25000,
+                        is_active=True,
+                        procurement_id=dp.id
+                    )
+                    db.add(dp_cat)
+                    await db.flush()
+            
             cats_res = await db.execute(select(PurchaseCategory))
             for cat in cats_res.scalars():
                 if cat.procurement_id not in categories:
                     categories[cat.procurement_id] = {}
-                if cat.max_amount <= 100_000:
+                if cat.max_amount <= 25000 and cat.title.startswith("Direct Purchase"):
+                    categories[cat.procurement_id]["cat1"] = cat
+                elif cat.max_amount <= 100_000:
                     categories[cat.procurement_id]["cat1"] = cat
                 elif cat.max_amount <= 1_000_000:
                     categories[cat.procurement_id]["cat2"] = cat
@@ -380,72 +481,36 @@ async def seed():
         else:
             print("  All workflow hierarchies are already present.")
 
-        # 9. Budget Master Items
-        budget_check = await db.execute(select(BudgetMaster).limit(1))
-        has_budget = budget_check.scalar_one_or_none() is not None
-        if not has_budget and cse and fy:
-            print("  Seeding budget master items...")
-            budget_items = [
-                (
-                    "NITT/CSE/2026-27/001",
-                    "Lab Consumables Pack",
-                    "OPEX",
-                    "consumables",
-                    "CSE-CON-001",
-                    50_000,
-                    1,
-                    50_000,
-                ),
-                (
-                    "NITT/CSE/2026-27/001-B",
-                    "Office Stationery Kit",
-                    "OPEX",
-                    "consumables",
-                    "CSE-CON-001-B",
-                    30_000,
-                    1,
-                    30_000,
-                ),
-                (
-                    "NITT/CSE/2026-27/002",
-                    "Department Workstation",
-                    "CAPEX",
-                    "computer",
-                    "CSE-WS-002",
-                    450_000,
-                    2,
-                    900_000,
-                ),
-                (
-                    "NITT/CSE/2026-27/003",
-                    "HPC Cluster Expansion",
-                    "CAPEX",
-                    "computer",
-                    "CSE-HPC-003",
-                    1_200_000,
-                    2,
-                    2_400_000,
-                ),
-            ]
-            for file_no, item_name, exp_cat, cat, course, unit, qty, total in budget_items:
-                db.add(
-                    BudgetMaster(
-                        department_id=cse.id,
-                        financial_year_id=fy.id,
-                        expenditure_category=exp_cat,
-                        item_name=item_name,
-                        category=cat,
-                        course_code=course,
-                        unit_cost=float(unit),
-                        quantity=int(qty),
-                        total_cost=float(total),
-                        file_no=file_no,
-                        is_revision=False,
-                    )
-                )
-            await db.flush()
+        # 9. Clear and Reseed Transactional & Budget Data
+        print("🧹 Clearing previous transactional and budget data...")
+        tables_to_truncate = [
+            "asset_logs", "asset_movements", "assets", "payments", "discrepancies",
+            "stores_asset_logs", "dept_asset_logs", "delivery_items", "deliveries",
+            "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
+            "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
+            "technical_evaluations", "financial_evaluations", "commercial_evaluations",
+            "documents", "purchase_request_items", "purchase_requests", "budget_master"
+        ]
+        try:
+            await db.execute(text(f"TRUNCATE TABLE {', '.join(tables_to_truncate)} RESTART IDENTITY CASCADE;"))
+            print("✓ Transactional tables cleared successfully.")
+        except Exception as e:
+            print(f"⚠ Failed to truncate tables via cascade: {e}. Trying simple delete...")
+            for table in reversed(tables_to_truncate):
+                try:
+                    await db.execute(text(f"DELETE FROM {table};"))
+                    await db.execute(text(f"ALTER SEQUENCE IF EXISTS {table}_id_seq RESTART WITH 1;"))
+                except Exception as ex:
+                    print(f"  Could not clear {table}: {ex}")
 
-        # 10. Settings
+        # Update CSE department with committee experts
+        cse.expert1_id = users["faculty1.cse@nitt.edu"].id
+        cse.expert2_id = users["faculty2.cse@nitt.edu"].id
+        cse.director_faculty_id = users["faculty2.cse@nitt.edu"].id
+        db.add(cse)
+        await db.flush()
+
+        # Seed settings if not present
         settings_check = await db.execute(select(Settings).limit(1))
         has_settings = settings_check.scalar_one_or_none() is not None
         if not has_settings:
@@ -456,9 +521,502 @@ async def seed():
                 ("institution_short", "NIT Tiruchirappalli"),
             ]:
                 db.add(Settings(key_name=key, value=val))
+            await db.flush()
+
+        # Reseed 8 representative purchase requests at various stages of completion
+        print("🌱 Seeding 8 representative workflow-centric purchase requests...")
+        from app.models.purchase_request import (
+            PurchaseRequest,
+            PurchaseRequestItem,
+            PurchaseRequestFlow,
+            PurchaseRequestHistory,
+            RequestStatus,
+            CommercialEvaluation,
+            TechnicalEvaluation,
+            FinancialEvaluation,
+            PurchaseRequestAssignment,
+            BillPassing
+        )
+        from app.models.inventory import Delivery, DeliveryItem
+        from app.models.asset import Asset
+
+        faculty = users["faculty.cse@nitt.edu"]
+        faculty1 = users["faculty1.cse@nitt.edu"]
+        faculty2 = users["faculty2.cse@nitt.edu"]
+        hod = users["hod.cse@nitt.edu"]
+        dean = users["dean.pd@nitt.edu"]
+        director = users["director@nitt.edu"]
+        sp = users["sp.stores@nitt.edu"]
+        da = users["da.stores@nitt.edu"]
+
+        # Helper function to get Category ID
+        async def get_category(proc_id, amount):
+            res = await db.execute(
+                select(PurchaseCategory).where(
+                    PurchaseCategory.procurement_id == proc_id,
+                    PurchaseCategory.min_amount <= amount,
+                    PurchaseCategory.max_amount >= amount
+                )
+            )
+            return res.scalar_one()
+
+        # Helper function to create PR
+        async def create_seeded_pr(
+            icr_number, proc_manager, amount, current_status,
+            initiator, form_data, budget_item_name, budget_file_no,
+            flow_phase=None, flow_step_order=None, budget_deduct=False
+        ):
+            # Create a budget master file for this PR
+            bm = BudgetMaster(
+                department_id=cse.id,
+                financial_year_id=fy.id,
+                expenditure_category="CAPEX" if amount > 100000 else "OPEX",
+                item_name=budget_item_name,
+                category="computer" if "server" in budget_item_name.lower() or "workstation" in budget_item_name.lower() else "equipment",
+                course_code="CSE-SEED-" + icr_number.split("/")[-1],
+                unit_cost=float(amount),
+                quantity=1,
+                total_allocation=float(amount),
+                file_no=budget_file_no,
+                is_revision=False,
+                committed_amount=0.0 if budget_deduct else float(amount),
+                utilized_amount=float(amount) if budget_deduct else 0.0,
+                expert1_id=faculty1.id,
+                expert2_id=faculty2.id,
+                director_faculty_id=faculty2.id
+            )
+            db.add(bm)
+            await db.flush()
+
+            # Get Category
+            cat = await get_category(proc_manager.id, amount)
+
+            # Create PurchaseRequest
+            pr = PurchaseRequest(
+                icr_number=icr_number,
+                category_id=cat.id,
+                financial_year_id=fy.id,
+                initiator_id=initiator.id,
+                procurement_id=proc_manager.id,
+                purchase_type="department",
+                current_status=current_status,
+                amount=amount,
+                emd=2.0,
+                performance_security=3.0,
+                delivery_location="CSE Department, NIT Tiruchirappalli",
+                delivery_mode="Door delivery",
+                basis_of_estimate_details="Market survey and vendor quotations",
+                faculty1_id=faculty1.id,
+                faculty2_id=faculty2.id,
+                faculty3_id=faculty2.id,
+                form_data=form_data
+            )
+            db.add(pr)
+            await db.flush()
+
+            # Create PurchaseRequestItem
+            pri = PurchaseRequestItem(
+                purchase_request_id=pr.id,
+                budget_file_id=bm.id,
+                item_description=budget_item_name,
+                quantity=1,
+                estimated_total=amount,
+                requirement_type="Research",
+                availability="No",
+                site_readiness=True,
+                justification_for_procurement="This item is essential for departmental research lab infrastructure and student assignments.",
+                installation_required=False,
+                tech_specs_text="Standard specifications compliant with GFR 2017.",
+            )
+            db.add(pri)
+            await db.flush()
+
+            # Create initial submission history
+            h1 = PurchaseRequestHistory(
+                purchase_request_id=pr.id,
+                current_approver_id=initiator.id,
+                status="PR Submitted",
+                remarks="Auto-advanced (PI is first assignee)" if flow_phase else "Initial submission of Purchase Indent.",
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=initiator.name,
+                frozen_designation=initiator.designation,
+                frozen_department="Computer Science and Engineering",
+            )
+            db.add(h1)
+            await db.flush()
+
+            # Create flow record if active flow
+            if flow_phase:
+                flow = PurchaseRequestFlow(
+                    purchase_request_id=pr.id,
+                    phase_id=flow_phase.id,
+                    step_order=flow_step_order,
+                    rejected=False
+                )
+                db.add(flow)
+                await db.flush()
+                
+            return pr, bm
+
+        # Retrieve procurement methods
+        gem_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "GeM"))).scalar_one()
+        cppp_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "CPPP"))).scalar_one()
+        lt_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Limited Tender"))).scalar_one()
+        pac_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Proprietary Purchase"))).scalar_one()
+
+        # Retrieve phases
+        aa_phase = phases["AA"]
+        td_phase = phases["TD"]
+        te_phase = phases["TE"]
+        fs_phase = phases["FS"]
+        po_phase = phases["PO"]
+
+        # PR 1 (Request Stage): GeM procurement, status pr_submitted
+        pr1, bm1 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/001",
+            proc_manager=gem_proc,
+            amount=80000.0,
+            current_status="pr_submitted",
+            initiator=faculty,
+            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1001", "gem_nac_attached": True},
+            budget_item_name="GeM Consumables (Cat1)",
+            budget_file_no="NITT/CSE/2026-27/001",
+            flow_phase=None,
+            flow_step_order=None
+        )
+
+        # PR 2 (AA Stage): CPPP procurement, status in_progress, HOD approval step
+        pr2, bm2 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/002",
+            proc_manager=cppp_proc,
+            amount=750000.0,
+            current_status="in_progress",
+            initiator=faculty,
+            form_data={"tender_id": "CPPP/CSE/2026/02", "publication_date": "2026-05-01"},
+            budget_item_name="High-End Workstations (CPPP)",
+            budget_file_no="NITT/CSE/2026-27/002",
+            flow_phase=aa_phase,
+            flow_step_order=2
+        )
+
+        # PR 3 (Tendering Stage): Limited Tender, status in_progress, DA tender registration step
+        pr3, bm3 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/003",
+            proc_manager=lt_proc,
+            amount=450000.0,
+            current_status="in_progress",
+            initiator=faculty,
+            form_data={"invited_vendors": "Vendor Alpha, Vendor Beta, Vendor Gamma"},
+            budget_item_name="Lab Equipment Kits (LT)",
+            budget_file_no="NITT/CSE/2026-27/003",
+            flow_phase=td_phase,
+            flow_step_order=2
+        )
+        # History for PR 3
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved and forwarded to Dean."),
+            (dean, "Approved", "Administratively approved."),
+            (sp, "Forwarded to next phase", "Assigned to Dealing Assistant.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr3.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+                frozen_department="Computer Science and Engineering" if actor_user.department_id else None
+            ))
+        # Assignment for PR 3
+        db.add(PurchaseRequestAssignment(
+            purchase_request_id=pr3.id,
+            assigned_by_id=sp.id,
+            assigned_da_id=da.id,
+            status="pending"
+        ))
+
+        # PR 4 (Technical Evaluation Stage): Proprietary purchase, status in_progress, awaiting committee technical evaluation
+        pr4, bm4 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/004",
+            proc_manager=pac_proc,
+            amount=980000.0,
+            current_status="in_progress",
+            initiator=faculty,
+            form_data={
+                "manufacturer_name": "Keysight Technologies",
+                "manufacturer_address": "Bengaluru",
+                "justification_type": "sole_manufacturer",
+                "finance_concurrence_ref": "FC/2026/001"
+            },
+            budget_item_name="Keysight Spectrum Analyzer (PAC)",
+            budget_file_no="NITT/CSE/2026-27/004",
+            flow_phase=te_phase,
+            flow_step_order=1
+        )
+        pr4.tender_reference_number = "PAC/CSE/2026/04"
+        pr4.date_of_tender = date(2026, 5, 10)
+        pr4.date_of_tech_bid_opening = date(2026, 5, 20)
+        pr4.date_of_financial_bid_opening = date(2026, 5, 22)
+        pr4.te_initiated_at = datetime.utcnow()
+        db.add(pr4)
+        # Commercial evaluation for PR 4
+        db.add(CommercialEvaluation(
+            purchase_request_id=pr4.id,
+            vendor_name="Keysight Technologies India Pvt. Ltd.",
+            vendor_email="sales@keysight.com",
+            is_qualified=True,
+            remarks="OEM Manufacturer bid registered."
+        ))
+        # History for PR 4
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved by HOD."),
+            (dean, "Approved", "Approved by Dean P&D."),
+            (sp, "Forwarded to next phase", "Tender registration assigned."),
+            (da, "Tender Details Registered", "Tender details and OEM bidder registered.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr4.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+            ))
+
+        # PR 5 (Financial Sanction Stage): Limited Tender, status in_progress, awaiting initiator financial bid entries
+        pr5, bm5 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/005",
+            proc_manager=lt_proc,
+            amount=1500000.0,
+            current_status="in_progress",
+            initiator=faculty,
+            form_data={"invited_vendors": "Alpha Tech, Beta Eng, Gamma Systems"},
+            budget_item_name="GPU Server Nodes (LT)",
+            budget_file_no="NITT/CSE/2026-27/005",
+            flow_phase=fs_phase,
+            flow_step_order=1
+        )
+        pr5.tender_reference_number = "LTE/CSE/2026/05"
+        pr5.date_of_tender = date(2026, 5, 5)
+        pr5.date_of_tech_bid_opening = date(2026, 5, 15)
+        pr5.date_of_financial_bid_opening = date(2026, 5, 18)
+        db.add(pr5)
+        # Commercial evaluations for PR 5
+        db.add(CommercialEvaluation(purchase_request_id=pr5.id, vendor_name="Alpha Tech", vendor_email="info@alphatech.com", is_qualified=True))
+        db.add(CommercialEvaluation(purchase_request_id=pr5.id, vendor_name="Beta Eng", vendor_email="sales@betaeng.com", is_qualified=True))
+        # Technical evaluations for PR 5
+        db.add(TechnicalEvaluation(purchase_request_id=pr5.id, vendor_name="Alpha Tech", is_qualified=True, remarks="Complies with technical requirements"))
+        db.add(TechnicalEvaluation(purchase_request_id=pr5.id, vendor_name="Beta Eng", is_qualified=True, remarks="Complies with technical requirements"))
+        # History for PR 5
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved by HOD."),
+            (dean, "Approved", "Approved by Dean."),
+            (director, "Approved", "Approved by Director."),
+            (da, "Tender Details Registered", "Tender details and bidders registered."),
+            (hod, "Technical Evaluation Approved", "Committee signs TE phase."),
+            (faculty1, "Technical Evaluation Approved", "Expert 1 signs."),
+            (faculty2, "Technical Evaluation Approved", "Expert 2 signs."),
+            (dean, "Technical Evaluation Phase Completed", "Dean certifies TE phase completed.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr5.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+            ))
+
+        # PR 6 (Purchase Order Stage): GeM procurement, status in_progress, awaiting HOD PO signature
+        pr6, bm6 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/006",
+            proc_manager=gem_proc,
+            amount=600000.0,
+            current_status="in_progress",
+            initiator=faculty,
+            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1006"},
+            budget_item_name="Office Workstations (GeM)",
+            budget_file_no="NITT/CSE/2026-27/006",
+            flow_phase=po_phase,
+            flow_step_order=1
+        )
+        pr6.tender_reference_number = "GEM/CSE/2026/06"
+        pr6.date_of_tender = date(2026, 5, 1)
+        db.add(pr6)
+        # Commercial & Technical evaluations for PR 6
+        db.add(CommercialEvaluation(purchase_request_id=pr6.id, vendor_name="Alpha Technologies Pvt. Ltd.", is_qualified=True))
+        db.add(TechnicalEvaluation(purchase_request_id=pr6.id, vendor_name="Alpha Technologies Pvt. Ltd.", is_qualified=True))
+        # Financial evaluations L1 for PR 6
+        db.add(FinancialEvaluation(
+            purchase_request_id=pr6.id,
+            vendor_name="Alpha Technologies Pvt. Ltd.",
+            quoted_amount=550000.0,
+            ranking="L1",
+            is_awarded=True,
+            remarks="L1 bidder accepted."
+        ))
+        # History for PR 6
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved."),
+            (dean, "Approved", "Approved."),
+            (da, "Tender Details Registered", "Registered bid."),
+            (dean, "Technical Evaluation Phase Completed", "TE completed."),
+            (dean, "Financial Sanction Approved", "FS completed.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr6.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+            ))
+
+        # PR 7 (Delivery Stage): LPC procurement, status po_issued, awaiting GRN receipt logging
+        pr7, bm7 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/007",
+            proc_manager=lt_proc,
+            amount=50000.0,
+            current_status="po_issued",
+            initiator=faculty,
+            form_data={"invited_vendors": "Local Furniture Vendor"},
+            budget_item_name="LPC Lab Furniture",
+            budget_file_no="NITT/CSE/2026-27/007",
+            flow_phase=None,
+            flow_step_order=None
+        )
+        pr7.po_approved_at = datetime.utcnow()
+        db.add(pr7)
+        # History for PR 7
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved."),
+            (da, "PO Registered", "PO reference GEM-PO-1007 generated.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr7.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+            ))
+        # Pending delivery record for PR 7
+        d7 = Delivery(
+            po_id=pr7.id,
+            challan_number="CH-2026-77",
+            invoice_number="INV-2026-77",
+            department_id=cse.id,
+            status="pending",
+            created_at=datetime.utcnow()
+        )
+        db.add(d7)
+        await db.flush()
+        db.add(DeliveryItem(
+            delivery_id=d7.id,
+            name="LPC Lab Furniture",
+            category="furniture",
+            challan_quantity=1,
+            unit_price=50000.0
+        ))
+
+        # PR 8 (Asset Registration Stage): Proprietary purchase, status completed, with assets generated
+        pr8, bm8 = await create_seeded_pr(
+            icr_number="ICR/CSE/2026-27/008",
+            proc_manager=pac_proc,
+            amount=2400000.0,
+            current_status="completed",
+            initiator=faculty,
+            form_data={
+                "manufacturer_name": "Thermo Fisher Scientific",
+                "manufacturer_address": "Mumbai",
+                "justification_type": "sole_manufacturer"
+            },
+            budget_item_name="Mass Spectrometer System (PAC)",
+            budget_file_no="NITT/CSE/2026-27/008",
+            flow_phase=None,
+            flow_step_order=None,
+            budget_deduct=True
+        )
+        pr8.po_approved_at = datetime.utcnow()
+        db.add(pr8)
+        # History for PR 8
+        for actor_user, status_str, remarks_str in [
+            (hod, "Approved", "Approved by HOD."),
+            (dean, "Approved", "Approved by Dean P&D."),
+            (director, "Approved", "Approved by Director."),
+            (da, "Tender Details Registered", "Registered proprietary tender."),
+            (hod, "Technical Evaluation Approved", "TSC completed."),
+            (dean, "Financial Sanction Approved", "FS completed."),
+            (da, "PO Dispatched", "PO issued to Thermo Fisher."),
+            (hod, "Goods Received", "Delivered item received and logged in department."),
+            (da, "Bill Passed (PR Completed)", "Passed payment invoice.")
+        ]:
+            db.add(PurchaseRequestHistory(
+                purchase_request_id=pr8.id,
+                current_approver_id=actor_user.id,
+                status=status_str,
+                remarks=remarks_str,
+                acted_at=datetime.utcnow(),
+                frozen_actor_name=actor_user.name,
+                frozen_designation=actor_user.designation,
+            ))
+        # Verified delivery record for PR 8
+        d8 = Delivery(
+            po_id=pr8.id,
+            challan_number="CH-2026-88",
+            invoice_number="INV-2026-88",
+            department_id=cse.id,
+            status="verified",
+            received_date=datetime.utcnow(),
+            created_at=datetime.utcnow()
+        )
+        db.add(d8)
+        await db.flush()
+        di8 = DeliveryItem(
+            delivery_id=d8.id,
+            name="Mass Spectrometer System",
+            category="equipment",
+            challan_quantity=1,
+            unit_price=2400000.0
+        )
+        db.add(di8)
+        await db.flush()
+        # Bill passing certificate for PR 8
+        db.add(BillPassing(
+            purchase_request_id=pr8.id,
+            invoice_number="INV-2026-88",
+            invoice_date=datetime.utcnow(),
+            bill_amount=24.0,
+            gst_amount=4.32,
+            payment_terms="Immediate",
+            remarks="Equipment received and verified. Bill passed to finance.",
+            passed_by_id=da.id
+        ))
+        # Registered asset for PR 8
+        db.add(Asset(
+            asset_tag="NITT-CSE-2026-0001",
+            name="Mass Spectrometer System",
+            category="lab_equipment",
+            department_id=cse.id,
+            building="CSE Building",
+            room="Research Lab 2",
+            custodian="Dr. A. Kumar",
+            serial_number="MS-998877",
+            condition="working",
+            purchase_date=date(2026, 6, 1),
+            unit_cost=2400000.0,
+            delivery_item_id=di8.id,
+            created_at=datetime.utcnow()
+        ))
 
         await db.commit()
         print("✅ Database verification and seeding process completed successfully!")
+
 
 
 async def main():

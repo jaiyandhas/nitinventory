@@ -282,4 +282,4 @@ async def test_cancellation_permissions(db_session):
     with pytest.raises(HTTPException) as exc_info:
         await cancel_po(pr.id, body, db_session, user=other_user)
     assert exc_info.value.status_code == 403
-    assert "do not have permission" in exc_info.value.detail
+    assert "Access denied" in exc_info.value.detail

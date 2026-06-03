@@ -1,16 +1,66 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 import os
+import logging
+import json
+import contextvars
+import uuid
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.routers import auth, purchase_requests, budget, inventory, assets, admin
+from app.core.limiter import limiter
 
-limiter = Limiter(key_func=get_remote_address)
+request_id_contextvar = contextvars.ContextVar("request_id", default=None)
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+            "filename": record.filename,
+            "lineno": record.lineno,
+        }
+        request_id = request_id_contextvar.get(None)
+        if request_id:
+            log_record["request_id"] = request_id
+        return json.dumps(log_record)
+
+
+def setup_logging():
+    root_handler = logging.StreamHandler()
+    root_handler.setFormatter(JsonFormatter())
+    
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    root.addHandler(root_handler)
+    root.setLevel(logging.INFO)
+    
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+        logger = logging.getLogger(logger_name)
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+        logger.addHandler(root_handler)
+        logger.propagate = False
+
+
+setup_logging()
+
+
+class SecureStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Content-Disposition"] = "attachment"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 @asynccontextmanager
@@ -62,10 +112,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static storage for QR images and documents
+@app.middleware("http")
+async def log_requests_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    token = request_id_contextvar.set(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        request_id_contextvar.reset(token)
+
+
 storage_path = settings.STORAGE_PATH
 if os.path.exists(storage_path):
     app.mount("/storage", StaticFiles(directory=storage_path), name="storage")
+    app.mount("/static/uploads", SecureStaticFiles(directory=storage_path), name="static_uploads")
 
 # Include routers
 app.include_router(auth.router)

@@ -69,12 +69,12 @@ class BudgetMaster(Base):
     course_code: Mapped[str] = mapped_column(String(255), nullable=False)
     unit_cost: Mapped[float] = mapped_column(Float, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    total_cost: Mapped[float] = mapped_column(Float, nullable=False)
+    total_allocation: Mapped[float] = mapped_column("total_allocation", Float, nullable=False)
     file_no: Mapped[str] = mapped_column(String(64), nullable=False)
     is_revision: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Bug fix: track locked and deducted amounts
-    locked_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    deducted_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    # Bug fix: track committed and utilized amounts
+    committed_amount: Mapped[float] = mapped_column("committed_amount", Float, default=0.0)
+    utilized_amount: Mapped[float] = mapped_column("utilized_amount", Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     expert1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -89,8 +89,36 @@ class BudgetMaster(Base):
     director_faculty: Mapped[Optional["User"]] = relationship("User", foreign_keys=[director_faculty_id])  # type: ignore
 
     @property
+    def available_balance(self) -> float:
+        return self.total_allocation - self.committed_amount - self.utilized_amount
+
+    @property
+    def total_cost(self) -> float:
+        return self.total_allocation
+
+    @total_cost.setter
+    def total_cost(self, value: float) -> None:
+        self.total_allocation = value
+
+    @property
+    def locked_amount(self) -> float:
+        return self.committed_amount
+
+    @locked_amount.setter
+    def locked_amount(self, value: float) -> None:
+        self.committed_amount = value
+
+    @property
+    def deducted_amount(self) -> float:
+        return self.utilized_amount
+
+    @deducted_amount.setter
+    def deducted_amount(self, value: float) -> None:
+        self.utilized_amount = value
+
+    @property
     def available_amount(self) -> float:
-        return self.total_cost - self.locked_amount - self.deducted_amount
+        return self.available_balance
 
 
 class Settings(Base):

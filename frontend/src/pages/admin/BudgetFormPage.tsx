@@ -27,6 +27,8 @@ export const BudgetFormPage: React.FC = () => {
   const [newItemVal, setNewItemVal] = useState<string>('');
   const [showAddExp, setShowAddExp] = useState<boolean>(false);
   const [showAddItem, setShowAddItem] = useState<boolean>(false);
+  const [pendingCatType, setPendingCatType] = useState<'expenditure' | 'item' | null>(null);
+  const [pendingCatValue, setPendingCatValue] = useState<string>('');
 
   // Queries
   const { data: depts = [], isLoading: loadingDepts } = useQuery({
@@ -103,16 +105,28 @@ export const BudgetFormPage: React.FC = () => {
   // Mutations
   const addCategoryMutation = useMutation({
     mutationFn: (payload: { type: 'expenditure' | 'item'; value: string }) => adminApi.addCategory(payload),
-    onSuccess: (data) => {
+    onSuccess: (res) => {
+      // res is the full Axios response; extract .data to match how the query caches it
+      const updated = res.data;
       toast.success('Category added successfully');
-      queryClient.setQueryData(['budget_categories'], data);
+      queryClient.setQueryData(['budget_categories'], updated);
       setShowAddExp(false);
       setShowAddItem(false);
+      // Select the newly added value using the confirmed stored value
+      if (pendingCatType === 'expenditure' && pendingCatValue) {
+        setExpenditureCategory(pendingCatValue);
+      } else if (pendingCatType === 'item' && pendingCatValue) {
+        setCategory(pendingCatValue);
+      }
       setNewExpVal('');
       setNewItemVal('');
+      setPendingCatType(null);
+      setPendingCatValue('');
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to add category');
+      setPendingCatType(null);
+      setPendingCatValue('');
     },
   });
 
@@ -135,16 +149,20 @@ export const BudgetFormPage: React.FC = () => {
 
   const handleAddCustomExp = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newExpVal.trim()) return;
-    addCategoryMutation.mutate({ type: 'expenditure', value: newExpVal.trim() });
-    setExpenditureCategory(newExpVal.trim().toUpperCase());
+    const trimmed = newExpVal.trim();
+    if (!trimmed) return;
+    setPendingCatType('expenditure');
+    setPendingCatValue(trimmed);
+    addCategoryMutation.mutate({ type: 'expenditure', value: trimmed });
   };
 
   const handleAddCustomItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemVal.trim()) return;
-    addCategoryMutation.mutate({ type: 'item', value: newItemVal.trim() });
-    setCategory(newItemVal.trim());
+    const trimmed = newItemVal.trim();
+    if (!trimmed) return;
+    setPendingCatType('item');
+    setPendingCatValue(trimmed);
+    addCategoryMutation.mutate({ type: 'item', value: trimmed });
   };
 
   const handleSubmit = (e: React.FormEvent) => {

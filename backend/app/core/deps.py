@@ -46,10 +46,29 @@ def require_roles(*allowed_roles: str):
 
 
 def require_own_department():
-    """HOD-scope: ensures HOD can only access their own department's data."""
+    """Ensures user has a department assigned if they are department-scoped (hod, faculty),
+    or belongs to a cross-department administrative/procurement role.
+    """
     async def _checker(user=Depends(get_current_user)):
-        if user.role.group_key not in ("hod", "admin"):
+        group_key = user.role.group_key if user.role else None
+        role_value = user.role.value if user.role else None
+
+        allowed_groups = {
+            "hod", "faculty", "admin", "director", "dean", "dean_pd", 
+            "dean_approver", "apex_approver", "verifier_sp", "verifier_da", 
+            "verifier_general"
+        }
+        allowed_values = {
+            "superintendent", "consultant_sp", "assistant_registrar", 
+            "deputy_registrar", "dealing_assistant", "adpd"
+        }
+
+        if group_key not in allowed_groups and role_value not in allowed_values:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            
+        if group_key in ("hod", "faculty") and not user.department_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must have a department assigned")
+            
         return user
     return _checker
 

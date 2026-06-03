@@ -58,6 +58,16 @@ async def test_lpc_fields_persistency(db_session):
     db_session.add(flow)
     await db_session.flush()
 
+    from app.models.purchase_request import PurchaseRequestAssignment
+    assignment = PurchaseRequestAssignment(
+        purchase_request_id=pr.id,
+        assigned_by_id=faculty.id,
+        assigned_da_id=da_user.id,
+        status="active"
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
     payload = {
         "tender_reference_number": "NITT/LPC/2026",
         "date_of_tender": "2026-06-02",
@@ -143,6 +153,16 @@ async def test_bill_passing_lifecycle(db_session):
         current_status=RequestStatus.PO_ISSUED,
     )
     db_session.add(pr)
+    await db_session.flush()
+
+    from app.models.purchase_request import PurchaseRequestAssignment
+    assignment = PurchaseRequestAssignment(
+        purchase_request_id=pr.id,
+        assigned_by_id=faculty.id,
+        assigned_da_id=da_user.id,
+        status="active"
+    )
+    db_session.add(assignment)
     await db_session.flush()
 
     # 1. Calling without verified delivery should fail

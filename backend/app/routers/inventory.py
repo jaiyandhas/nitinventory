@@ -6,7 +6,7 @@ import os
 import uuid
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import get_current_user, require_roles, require_own_department
 from app.models.user import User
 from app.models.inventory import Delivery, DeliveryItem, DeptAssetLog, StoresAssetLog, Discrepancy, DiscrepancyStatus, DeliveryStatus
 from app.models.purchase_request import PurchaseRequest
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
 
 @router.get("/deliveries")
-async def list_deliveries(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def list_deliveries(db: AsyncSession = Depends(get_db), user: User = Depends(require_own_department())):
     query = select(Delivery).order_by(Delivery.created_at.desc())
     if user.role.group_key == "faculty":
         query = query.join(Delivery.purchase_request).where(PurchaseRequest.initiator_id == user.id)
@@ -47,7 +47,7 @@ async def list_deliveries(db: AsyncSession = Depends(get_db), user: User = Depen
 from sqlalchemy.orm import selectinload
 
 @router.get("/deliveries/{delivery_id}")
-async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(require_own_department())):
     result = await db.execute(
         select(Delivery)
         .options(
@@ -136,7 +136,7 @@ async def log_dept_receipt(
     delivery_id: int, item_id: int, body: dict,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles("hod")),
+    user: User = Depends(require_own_department()),
 ):
     """HOD logs physical receipt — IMMUTABLE after submit."""
     # Ensure delivery belongs to HOD's department
@@ -235,7 +235,7 @@ async def confirm_delivery(
     invoice_pdf: UploadFile = File(...),
     challan_pdf: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_own_department()),
 ):
     result = await db.execute(
         select(Delivery)

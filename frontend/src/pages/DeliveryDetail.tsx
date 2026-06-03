@@ -186,7 +186,7 @@ export const DeliveryDetailPage: React.FC = () => {
               <div className="flex flex-wrap gap-4">
                 {delivery.invoice_pdf_path && (
                   <a
-                    href={`/storage/${delivery.invoice_pdf_path}`}
+                    href={`/static/uploads/${delivery.invoice_pdf_path}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded text-blue-700 text-sm font-medium transition-colors"
@@ -197,7 +197,7 @@ export const DeliveryDetailPage: React.FC = () => {
                 )}
                 {delivery.challan_pdf_path && (
                   <a
-                    href={`/storage/${delivery.challan_pdf_path}`}
+                    href={`/static/uploads/${delivery.challan_pdf_path}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded text-blue-700 text-sm font-medium transition-colors"

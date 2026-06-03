@@ -1,9 +1,10 @@
 import json
 import io
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, Query
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.limiter import limiter
 from sqlalchemy import select, and_, delete, or_
 from sqlalchemy.orm import selectinload
 from typing import Optional
@@ -27,6 +28,91 @@ from app.schemas.pr_create import PRCreatePayload, PRItemCreate
 from datetime import timedelta, timezone
 
 router = APIRouter(prefix="/api/pr", tags=["purchase-requests"])
+
+# Roles/group_keys that can view any PR cross-department.
+# Includes apex leadership AND cross-department procurement staff.
+ADMIN_ROLES = {
+    # Admin / apex group keys
+    "admin", "director", "dean", "dean_pd", "dean_approver", "apex_approver",
+    # Procurement staff group keys (cross-department by nature)
+    "verifier_sp",      # Superintendent, Consultant S&P, AR, DR
+    "verifier_da",      # Dealing Assistant
+    "verifier_general", # Associate Dean P&D
+    # And their individual role values for belt-and-suspenders coverage
+    "superintendent", "consultant_sp", "assistant_registrar", "deputy_registrar",
+    "dealing_assistant", "adpd",
+}
+
+async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
+    # Admin bypass
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+    role_value = user.role.value if user.role else None
+    
+    if group_key in ADMIN_ROLES or role_value in ADMIN_ROLES:
+        return
+        
+    is_direct_actor = False
+    if pr.initiator_id == user.id or user.id in (pr.faculty1_id, pr.faculty2_id, pr.faculty3_id, pr.nominee_id):
+        is_direct_actor = True
+        
+    if not is_direct_actor:
+        from app.models.purchase_request import PurchaseRequestAssignment
+        da_check = await db.execute(
+            select(PurchaseRequestAssignment).where(
+                and_(
+                    PurchaseRequestAssignment.purchase_request_id == pr.id,
+                    PurchaseRequestAssignment.assigned_da_id == user.id
+                )
+            )
+        )
+        if da_check.scalar_one_or_none():
+            is_direct_actor = True
+            
+    if not is_direct_actor:
+        from app.models.purchase_request import PRReferral
+        ref_check = await db.execute(
+            select(PRReferral).where(
+                and_(
+                    PRReferral.purchase_request_id == pr.id,
+                    PRReferral.referred_to_id == user.id,
+                    PRReferral.status == "pending"
+                )
+            )
+        )
+        if ref_check.scalar_one_or_none():
+            is_direct_actor = True
+            
+    if not is_direct_actor:
+        await db.refresh(pr, ["flow"])
+        if pr.flow:
+            step_res = await db.execute(
+                select(WorkFlowHierarchy).where(
+                    and_(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                        WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                        WorkFlowHierarchy.step_order == pr.flow.step_order,
+                        WorkFlowHierarchy.is_enabled == True,
+                    )
+                )
+            )
+            step = step_res.scalar_one_or_none()
+            if step and step.user_type == "user" and step.user_id == user.id:
+                is_direct_actor = True
+            
+    await db.refresh(pr, ["initiator"])
+    pr_dept_id = pr.initiator.department_id if pr.initiator else None
+    # Same-department check: both must have a non-None department that matches.
+    is_same_dept = (pr_dept_id is not None and pr_dept_id == user.department_id)
+
+    if not (is_same_dept or is_direct_actor):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: you are not associated with this purchase request"
+        )
+
 
 
 def to_local_time(dt: Optional[datetime]) -> Optional[datetime]:
@@ -107,7 +193,7 @@ async def _persist_pr(
     budget_by_id: dict[int, BudgetMaster] = {}
     total_amount = 0.0
     for fid in selected_file_ids:
-        bm_result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == fid))
+        bm_result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == fid).with_for_update())
         bm = bm_result.scalar_one_or_none()
         if not bm:
             raise HTTPException(status_code=404, detail=f"Budget file {fid} not found")
@@ -122,10 +208,10 @@ async def _persist_pr(
         item_qty = item_data.quantity if item_data.quantity is not None else 1
         item_est_total = item_qty * bm.unit_cost
         
-        if item_est_total > bm.available_amount:
+        if item_est_total > bm.available_balance:
             raise HTTPException(
                 status_code=400,
-                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{bm.available_amount:,.2f}."
+                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{bm.available_balance:,.2f}."
             )
         total_amount += item_est_total
 
@@ -303,6 +389,7 @@ async def _persist_pr(
 
 
 @router.post("/")
+@limiter.limit("20/minute")
 async def create_pr(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -331,15 +418,17 @@ async def create_pr(
 
 @router.get("/")
 async def list_prs(
+    skip: int = 0,
+    limit: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """List PRs filtered by role scope."""
-    query = select(PurchaseRequest).order_by(PurchaseRequest.created_at.desc())
+    base_query = select(PurchaseRequest)
     group = user.role.group_key if user.role else None
 
     if group == "faculty":
-        query = query.where(
+        base_query = base_query.where(
             or_(
                 PurchaseRequest.initiator_id == user.id,
                 PurchaseRequest.faculty1_id == user.id,
@@ -349,19 +438,106 @@ async def list_prs(
         )
     elif group == "hod":
         # HOD sees all PRs from their department
-        query = query.join(User, PurchaseRequest.initiator_id == User.id).where(
+        base_query = base_query.join(User, PurchaseRequest.initiator_id == User.id).where(
             User.department_id == user.department_id
         )
-    # admin, verifiers, apex, dean see all
+
+    # Get total count
+    from sqlalchemy import func
+    count_query = select(func.count(PurchaseRequest.id))
+    if group == "faculty":
+        count_query = count_query.where(
+            or_(
+                PurchaseRequest.initiator_id == user.id,
+                PurchaseRequest.faculty1_id == user.id,
+                PurchaseRequest.faculty2_id == user.id,
+                PurchaseRequest.faculty3_id == user.id,
+            )
+        )
+    elif group == "hod":
+        count_query = count_query.join(User, PurchaseRequest.initiator_id == User.id).where(
+            User.department_id == user.department_id
+        )
+    
+    total = await db.scalar(count_query) or 0
+
+    query = base_query.options(
+        selectinload(PurchaseRequest.initiator),
+        selectinload(PurchaseRequest.purchase_category),
+        selectinload(PurchaseRequest.procurement),
+        selectinload(PurchaseRequest.flow),
+        selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
+        selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
+        selectinload(PurchaseRequest.history)
+    ).order_by(PurchaseRequest.created_at.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
     prs = result.scalars().all()
 
     serialized = []
     for pr in prs:
-        await db.refresh(pr, ["initiator", "purchase_category", "procurement"])
-        serialized.append(_serialize_pr(pr))
-    return serialized
+        flow_data = None
+        if pr.flow:
+            res = await db.execute(
+                select(WorkFlowHierarchy).options(
+                    selectinload(WorkFlowHierarchy.role),
+                    selectinload(WorkFlowHierarchy.user)
+                ).where(
+                    and_(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                        WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                        WorkFlowHierarchy.step_order == pr.flow.step_order,
+                        WorkFlowHierarchy.is_enabled == True,
+                    )
+                )
+            )
+            step = res.scalar_one_or_none()
+            phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
+            phase_name = phase_res.scalar_one_or_none()
+            if step:
+                flow_data = {
+                    "phase_id": pr.flow.phase_id,
+                    "phase_name": phase_name,
+                    "step_order": pr.flow.step_order,
+                    "expected_group": step.user_group,
+                    "expected_role_id": step.role_id,
+                    "expected_role_name": step.role.name if step.role else (step.user_group.replace("_", " ").title() if step.user_group else None),
+                    "expected_user_id": step.user_id,
+                    "expected_user_name": step.user.name if step.user else None,
+                    "step_type": step.user_type,
+                }
+        
+        referrals_data = []
+        for ref in pr.referrals:
+            referrals_data.append({
+                "id": ref.id,
+                "status": ref.status,
+                "referred_to": {"id": ref.referred_to.id} if ref.referred_to else None,
+                "referred_by": {"id": ref.referred_by.id} if ref.referred_by else None,
+            })
+
+        history_data = []
+        for h in pr.history:
+            history_data.append({
+                "id": h.id,
+                "status": h.status,
+                "approver_id": h.current_approver_id,
+                "acted_at": h.acted_at.isoformat() + "Z" if h.acted_at else None,
+            })
+
+        pr_dict = _serialize_pr(pr)
+        pr_dict["flow"] = flow_data
+        pr_dict["referrals"] = referrals_data
+        pr_dict["history"] = history_data
+        pr_dict["te_initiated_at"] = pr.te_initiated_at.isoformat() + "Z" if pr.te_initiated_at else None
+        pr_dict["faculty1_id"] = pr.faculty1_id
+        pr_dict["faculty2_id"] = pr.faculty2_id
+        pr_dict["faculty3_id"] = pr.faculty3_id
+        
+        serialized.append(pr_dict)
+    return {"items": serialized, "total": total}
 
 
 @router.get("/faculties")
@@ -405,8 +581,25 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     result = await db.execute(
         select(PurchaseRequest)
         .options(
+            selectinload(PurchaseRequest.initiator).selectinload(User.department),
+            selectinload(PurchaseRequest.purchase_category),
+            selectinload(PurchaseRequest.procurement),
+            selectinload(PurchaseRequest.items).selectinload(PurchaseRequestItem.budget_file),
+            selectinload(PurchaseRequest.history),
+            selectinload(PurchaseRequest.flow),
+            selectinload(PurchaseRequest.technical_evaluations),
+            selectinload(PurchaseRequest.financial_evaluations),
+            selectinload(PurchaseRequest.commercial_evaluations),
+            selectinload(PurchaseRequest.assignments),
+            selectinload(PurchaseRequest.documents),
+            selectinload(PurchaseRequest.faculty1),
+            selectinload(PurchaseRequest.faculty2),
+            selectinload(PurchaseRequest.faculty3),
+            selectinload(PurchaseRequest.aa_approver),
+            selectinload(PurchaseRequest.bill_passing),
+            selectinload(PurchaseRequest.deliveries),
             selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
-            selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
+            selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to)
         )
         .where(PurchaseRequest.id == pr_id)
     )
@@ -414,52 +607,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
 
-    await db.refresh(pr, ["initiator", "purchase_category", "procurement", "items", "history", "flow",
-                          "technical_evaluations", "financial_evaluations", "commercial_evaluations", "assignments", "documents",
-                          "faculty1", "faculty2", "faculty3", "aa_approver", "bill_passing", "deliveries", "referrals"])
-
-    # BOLA check: department-scope check
-    group = user.role.group_key if user.role else None
-    is_expected_user = False
-    if pr.flow:
-        res = await db.execute(
-            select(WorkFlowHierarchy).where(
-                and_(
-                    WorkFlowHierarchy.category_id == pr.category_id,
-                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
-                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
-                    WorkFlowHierarchy.phase_id == pr.flow.phase_id,
-                    WorkFlowHierarchy.step_order == pr.flow.step_order,
-                    WorkFlowHierarchy.is_enabled == True,
-                )
-            )
-        )
-        step = res.scalar_one_or_none()
-        if step and step.user_type == "user" and step.user_id == user.id:
-            is_expected_user = True
-
-    # Check active referral for this user
-    is_consulted = False
-    referral_check = await db.execute(
-        select(PRReferral).where(
-            and_(
-                PRReferral.purchase_request_id == pr.id,
-                PRReferral.referred_to_id == user.id,
-                PRReferral.status == "pending"
-            )
-        )
-    )
-    if referral_check.scalar_one_or_none():
-        is_consulted = True
-
-    if not is_expected_user and not is_consulted:
-        allowed_nominees = {pr.faculty1_id, pr.faculty2_id, pr.faculty3_id}
-        if user.id not in allowed_nominees:
-            if group == "faculty" and pr.initiator_id != user.id:
-                raise HTTPException(status_code=403, detail="Access denied")
-            if group == "hod":
-                if pr.initiator.department_id != user.department_id:
-                    raise HTTPException(status_code=403, detail="Access denied")
+    await check_pr_access(pr, user, db)
                            
     expected_group = None
     expected_role_id = None
@@ -493,24 +641,36 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         phase_name = phase_res.scalar_one_or_none()
 
         # Get threshold and comparison if exists in the current phase
+        from sqlalchemy import or_
         threshold_res = await db.execute(
-            select(WorkFlowHierarchy.tender_vendors_threshold, WorkFlowHierarchy.tender_vendors_comparison)
+            select(
+                WorkFlowHierarchy.condition_field,
+                WorkFlowHierarchy.condition_operator,
+                WorkFlowHierarchy.condition_value,
+                WorkFlowHierarchy.tender_vendors_threshold,
+                WorkFlowHierarchy.tender_vendors_comparison
+            )
             .where(
                 and_(
                     WorkFlowHierarchy.category_id == pr.category_id,
                     WorkFlowHierarchy.procurement_id == pr.procurement_id,
                     WorkFlowHierarchy.purchase_type == pr.purchase_type,
                     WorkFlowHierarchy.phase_id == pr.flow.phase_id,
-                    WorkFlowHierarchy.tender_vendors_threshold != None,
+                    or_(
+                        WorkFlowHierarchy.condition_field != None,
+                        WorkFlowHierarchy.tender_vendors_threshold != None,
+                    )
                 )
             )
             .limit(1)
         )
         row = threshold_res.first()
-        tender_vendors_threshold = row[0] if row else None
-        tender_vendors_comparison = row[1] if row else None
+        condition_field = row[0] if row else None
+        condition_operator = row[1] if row else None
+        condition_value = row[2] if row else None
+        tender_vendors_threshold = row[3] if row else None
+        tender_vendors_comparison = row[4] if row else None
 
-    await db.refresh(pr.initiator, ["department"])
     dept = pr.initiator.department
 
     # Gather user IDs for batch loading (prevents N+1 queries)
@@ -533,7 +693,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     if user_ids:
         users_res = await db.execute(
             select(User)
-            .options(selectinload(User.role))
+            .options(selectinload(User.role), selectinload(User.department))
             .where(User.id.in_(list(user_ids)))
         )
         for u in users_res.scalars().all():
@@ -554,13 +714,25 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             )
             if has_specific_entry:
                 continue
-        actor_name = ""
-        actor_role_name = ""
+        actor_name = h.frozen_actor_name or ""
+        actor_role_name = h.frozen_designation or ""
+        actor_dept_name = h.frozen_department or ""
+        frozen_sig = h.frozen_signature_path
+        if frozen_sig and not frozen_sig.startswith("/storage/") and not frozen_sig.startswith("http"):
+            frozen_sig = f"/storage/{frozen_sig}"
+            
         if h.current_approver_id:
             actor = users_by_id.get(h.current_approver_id)
             if actor:
-                actor_name = actor.name
-                actor_role_name = actor.role.name if actor.role else ""
+                if not actor_name:
+                    actor_name = actor.name
+                if not actor_role_name:
+                    actor_role_name = actor.role.name if actor.role else ""
+                if not actor_dept_name:
+                    actor_dept_name = actor.department.name if actor.department else ""
+                if not frozen_sig and actor.signature_path:
+                    frozen_sig = f"/storage/{actor.signature_path}"
+                    
         history.append({
             "id": h.id,
             "status": h.status,
@@ -569,6 +741,10 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "approver_id": h.current_approver_id,
             "actor_name": actor_name,
             "actor_role_name": actor_role_name,
+            "frozen_actor_name": actor_name,
+            "frozen_designation": actor_role_name,
+            "frozen_department": actor_dept_name,
+            "frozen_signature_path": frozen_sig,
         })
 
     assignments_list = []
@@ -653,8 +829,32 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             )
             budget_file = budget_file_res.scalar_one_or_none()
 
+    # Split-demand detection logic
+    is_potential_split = False
+    if pr.procurement and pr.procurement.max_amount is not None:
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        split_prs_res = await db.execute(
+            select(PurchaseRequest)
+            .join(User, PurchaseRequest.initiator_id == User.id)
+            .where(
+                and_(
+                    PurchaseRequest.id != pr.id,
+                    PurchaseRequest.category_id == pr.category_id,
+                    PurchaseRequest.initiator_id == pr.initiator_id,
+                    User.department_id == pr.initiator.department_id,
+                    PurchaseRequest.created_at >= thirty_days_ago,
+                    PurchaseRequest.current_status != "rejected",
+                )
+            )
+        )
+        split_prs = split_prs_res.scalars().all()
+        combined_total = pr.amount + sum(sp.amount for sp in split_prs)
+        if combined_total > pr.procurement.max_amount:
+            is_potential_split = True
+
     return {
         **_serialize_pr(pr),
+        "is_potential_split": is_potential_split,
         "initiator_id": pr.initiator_id,
         "faculty1_id": pr.faculty1_id,
         "faculty2_id": pr.faculty2_id,
@@ -744,6 +944,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 "referred_by": {"id": ref.referred_by.id, "name": ref.referred_by.name, "email": ref.referred_by.email} if ref.referred_by else None,
                 "referred_to": {"id": ref.referred_to.id, "name": ref.referred_to.name, "email": ref.referred_to.email} if ref.referred_to else None,
                 "query": ref.query,
+                "query_document_path": ref.query_document_path,
                 "response": ref.response,
                 "response_document_path": ref.response_document_path,
                 "status": ref.status,
@@ -765,8 +966,12 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "expected_user_id": expected_user_id,
             "expected_user_name": expected_user_name,
             "workflow_step_id": step.id if step else None,
+            "step_type": step.user_type if step else None,
             "tender_vendors_threshold": tender_vendors_threshold,
             "tender_vendors_comparison": tender_vendors_comparison,
+            "condition_field": condition_field,
+            "condition_operator": condition_operator,
+            "condition_value": condition_value,
         } if pr.flow else None,
         "commercial_evaluations": commercial_evaluations,
         "technical_evaluations": technical_evaluations,
@@ -777,7 +982,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 "id": doc.id,
                 "doc_key": doc.doc_key,
                 "original_name": doc.doc_value.get("original_name"),
-                "path": f"/storage/{doc.doc_value.get('path')}" if doc.doc_value.get("path") else None,
+                "path": f"/static/uploads/{doc.doc_value.get('path')}" if doc.doc_value.get("path") else None,
                 "uploaded_by_id": doc.uploaded_by_id,
                 "updated_at": doc.updated_at.isoformat() + "Z" if doc.updated_at else None,
             }
@@ -809,6 +1014,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await check_pr_access(pr, user, db)
     await verify_no_active_referral(pr.id, db)
 
     await db.refresh(user, ["role"])
@@ -839,30 +1045,40 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                 is_hod_step = (step.user_group == "hod") or (step.role and step.role.group_key == "hod")
                 
             if (phase and phase.phase_name == "Administrative Approval") or is_hod_step:
-                # Auto-assign from budget file nominees if present, else fallback to department
-                budget_file = None
-                await db.refresh(pr, ["items"])
-                if pr.items:
-                    budget_file_id = pr.items[0].budget_file_id
-                    if budget_file_id:
-                        budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
-                        budget_file = budget_res.scalar_one_or_none()
-
-                if budget_file and (budget_file.expert1_id or budget_file.expert2_id or budget_file.director_faculty_id):
-                    pr.faculty1_id = budget_file.expert1_id
-                    pr.faculty2_id = budget_file.expert2_id
-                    pr.faculty3_id = budget_file.director_faculty_id
+                # Prioritize overrides passed in the request body
+                body_faculty1 = body.get("faculty1_id")
+                body_faculty2 = body.get("faculty2_id")
+                body_faculty3 = body.get("faculty3_id")
+                
+                if body_faculty1 and body_faculty2 and body_faculty3:
+                    pr.faculty1_id = body_faculty1
+                    pr.faculty2_id = body_faculty2
+                    pr.faculty3_id = body_faculty3
                 else:
-                    await db.refresh(pr, ["initiator"])
-                    await db.refresh(pr.initiator, ["department"])
-                    dept = pr.initiator.department
-                    if dept:
-                        pr.faculty1_id = dept.expert1_id
-                        pr.faculty2_id = dept.expert2_id
-                        pr.faculty3_id = dept.director_faculty_id
+                    # Auto-assign from budget file nominees if present, else fallback to department
+                    budget_file = None
+                    await db.refresh(pr, ["items"])
+                    if pr.items:
+                        budget_file_id = pr.items[0].budget_file_id
+                        if budget_file_id:
+                            budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
+                            budget_file = budget_res.scalar_one_or_none()
+ 
+                    if budget_file and (budget_file.expert1_id or budget_file.expert2_id or budget_file.director_faculty_id):
+                        pr.faculty1_id = budget_file.expert1_id
+                        pr.faculty2_id = budget_file.expert2_id
+                        pr.faculty3_id = budget_file.director_faculty_id
+                    else:
+                        await db.refresh(pr, ["initiator"])
+                        await db.refresh(pr.initiator, ["department"])
+                        dept = pr.initiator.department
+                        if dept:
+                            pr.faculty1_id = dept.expert1_id
+                            pr.faculty2_id = dept.expert2_id
+                            pr.faculty3_id = dept.director_faculty_id
                 if not pr.faculty1_id or not pr.faculty2_id or not pr.faculty3_id:
                     raise HTTPException(status_code=400, detail="The purchase committee has not been fully configured yet by HOD and Director (either on the budget file or globally for the department). HOD must nominate Expert 1 & 2 and Director must nominate Faculty representative.")
-
+ 
     flow_engine = FlowEngineService(db, background_tasks)
     try:
         await flow_engine.advance(pr, user, remarks, body.get("status"))
@@ -872,8 +1088,8 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
+ 
+ 
 @router.post("/{pr_id}/reject")
 async def reject_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     reason = body.get("reason")
@@ -883,6 +1099,7 @@ async def reject_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, d
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await check_pr_access(pr, user, db)
     await verify_no_active_referral(pr.id, db)
     flow_engine = FlowEngineService(db, background_tasks)
     try:
@@ -893,8 +1110,8 @@ async def reject_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, d
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
+ 
+ 
 @router.post("/{pr_id}/send-back")
 async def send_back_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     reason = body.get("reason")
@@ -904,6 +1121,7 @@ async def send_back_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await check_pr_access(pr, user, db)
     await verify_no_active_referral(pr.id, db)
     flow_engine = FlowEngineService(db)
     try:
@@ -1195,6 +1413,7 @@ async def get_send_back_candidates(pr_id: int, db: AsyncSession = Depends(get_db
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
     flow_engine = FlowEngineService(db)
     candidates = await flow_engine.get_send_back_candidates(pr)
     return [
@@ -1219,6 +1438,7 @@ async def assign_da(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
     
     await verify_current_user_group_for_pr(pr, user, db, "assign-da")
 
@@ -1263,6 +1483,7 @@ async def add_tender_details(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
     
     await verify_current_user_group_for_pr(pr, user, db, "tender-details")
 
@@ -1402,6 +1623,13 @@ async def add_technical_eval(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
+
+    # Eagerly load initiator (and its department) so verify_current_user_group_for_pr
+    # doesn't trigger lazy-load MissingGreenlet errors in async context
+    await db.refresh(pr, ["initiator", "flow"])
+    if pr.initiator:
+        await db.refresh(pr.initiator, ["department"])
 
     await verify_current_user_group_for_pr(pr, user, db, "technical-eval")
 
@@ -1485,6 +1713,7 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
     
     await verify_current_user_group_for_pr(pr, user, db, "financial-bids")
 
@@ -1531,6 +1760,7 @@ async def award_bid(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), 
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
 
     # Verify the user is the initiator (Faculty)
     if pr.initiator_id != user.id:
@@ -1581,11 +1811,18 @@ async def award_bid(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), 
 
 
 @router.get("/{pr_id}/print")
-async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def print_pr(
+    pr_id: int,
+    module: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     await db.refresh(pr, [
         "initiator",
@@ -1618,6 +1855,88 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
     import io
     import os
     from app.core.config import settings
+
+    # Resolve HOD
+    hod_user = None
+    if pr.initiator and pr.initiator.department_id:
+        from app.models.user import RoleManager
+        hod_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(
+                and_(
+                    User.department_id == pr.initiator.department_id,
+                    RoleManager.group_key == "hod"
+                )
+            )
+        )
+        hod_user = hod_res.scalar_one_or_none()
+
+    # Helper to find frozen signature from history for a given user ID
+    def find_frozen_signature(user_id: int, status_filter=None):
+        if not user_id:
+            return None, None
+        sorted_hist = sorted(pr.history, key=lambda x: x.acted_at or datetime.min, reverse=True)
+        for h in sorted_hist:
+            if h.current_approver_id == user_id:
+                if status_filter is None or h.status in status_filter:
+                    if h.frozen_signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, h.frozen_signature_path)}", h.acted_at
+                    # Fallback to dynamic for legacy entries
+                    elif user_id == pr.initiator_id and pr.initiator and pr.initiator.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, pr.initiator.signature_path)}", h.acted_at
+                    elif user_id == pr.faculty1_id and pr.faculty1 and pr.faculty1.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, pr.faculty1.signature_path)}", h.acted_at
+                    elif user_id == pr.faculty2_id and pr.faculty2 and pr.faculty2.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, pr.faculty2.signature_path)}", h.acted_at
+                    elif user_id == pr.faculty3_id and pr.faculty3 and pr.faculty3.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, pr.faculty3.signature_path)}", h.acted_at
+                    elif user_id == pr.aa_approver_id and pr.aa_approver and pr.aa_approver.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, pr.aa_approver.signature_path)}", h.acted_at
+                    elif hod_user and user_id == hod_user.id and hod_user.signature_path:
+                        return f"file://{os.path.join(settings.STORAGE_PATH, hod_user.signature_path)}", h.acted_at
+        return None, None
+
+    # Resolve signatures (frozen or fallback)
+    initiator_sig, initiator_date = find_frozen_signature(pr.initiator_id)
+    faculty1_sig, faculty1_date = find_frozen_signature(pr.faculty1_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
+    faculty2_sig, faculty2_date = find_frozen_signature(pr.faculty2_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
+    faculty3_sig, faculty3_date = find_frozen_signature(pr.faculty3_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
+    hod_sig, hod_date = find_frozen_signature(hod_user.id if hod_user else None)
+    aa_sig, aa_date = find_frozen_signature(pr.aa_approver_id)
+
+    # Find Dean/Registrar/Director/Audit from history
+    dean_sig = None
+    dean_date = None
+    director_sig = None
+    director_date = None
+    dr_ar_sp_sig = None
+    dr_ar_fa_sig = None
+    ia_sig = None
+
+    for h in pr.history:
+        if h.current_approver_id:
+            actor_res = await db.execute(
+                select(User)
+                .options(selectinload(User.role))
+                .where(User.id == h.current_approver_id)
+            )
+            actor = actor_res.scalar_one_or_none()
+            if actor and actor.role:
+                sig_url = f"file://{os.path.join(settings.STORAGE_PATH, h.frozen_signature_path)}" if h.frozen_signature_path else (f"file://{os.path.join(settings.STORAGE_PATH, actor.signature_path)}" if actor.signature_path else None)
+                if actor.role.group_key == "dean_approver":
+                    dean_sig = sig_url
+                    dean_date = h.acted_at
+                elif actor.role.group_key == "apex_approver":
+                    director_sig = sig_url
+                    director_date = h.acted_at
+                elif actor.role.value in ("superintendent", "consultant_sp") or actor.role.group_key == "verifier_sp":
+                    dr_ar_sp_sig = sig_url
+                elif actor.role.value in ("deputy_registrar", "assistant_registrar"):
+                    dr_ar_fa_sig = sig_url
+                elif actor.role.value == "internal_audit" or "audit" in actor.role.name.lower():
+                    ia_sig = sig_url
+
     history_serialized = []
     # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
     for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
@@ -1633,10 +1952,12 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
             )
             if has_specific_entry:
                 continue
-        actor_name = "System"
+        actor_name = h.frozen_actor_name or "System"
+        designation = h.frozen_designation or "-"
         signature_url = None
-        designation = "-"
-        if h.current_approver_id:
+        if h.frozen_signature_path:
+            signature_url = f"file://{os.path.join(settings.STORAGE_PATH, h.frozen_signature_path)}"
+        elif h.current_approver_id:
             actor_res = await db.execute(
                 select(User)
                 .options(selectinload(User.role))
@@ -1664,21 +1985,55 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
     local_created_at = to_local_time(pr.created_at)
     local_aa_approved_at = to_local_time(pr.aa_approved_at)
 
+    # Date formatted strings
+    pr_created_at_str = local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-"
+    pr_aa_approved_at_str = local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-"
+    initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y") if initiator_date else "-"
+    faculty1_date_str = to_local_time(faculty1_date).strftime("%d/%m/%Y") if faculty1_date else "-"
+    faculty2_date_str = to_local_time(faculty2_date).strftime("%d/%m/%Y") if faculty2_date else "-"
+    faculty3_date_str = to_local_time(faculty3_date).strftime("%d/%m/%Y") if faculty3_date else "-"
+    hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y") if hod_date else "-"
+    aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y") if aa_date else "-"
+    dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y") if dean_date else "-"
+    director_date_str = to_local_time(director_date).strftime("%d/%m/%Y") if director_date else "-"
+
     templates = Jinja2Templates(directory="app/templates")
     html_content = templates.get_template("administrative_approval.html").render({
         "pr": pr,
+        "module": module,
         "history_serialized": history_serialized,
         "storage_dir": settings.STORAGE_PATH,
-        "pr_created_at_str": local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-",
-        "pr_aa_approved_at_str": local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-",
+        "pr_created_at_str": pr_created_at_str,
+        "pr_aa_approved_at_str": pr_aa_approved_at_str,
+        "initiator_sig": initiator_sig,
+        "initiator_date_str": initiator_date_str,
+        "faculty1_sig": faculty1_sig,
+        "faculty1_date_str": faculty1_date_str,
+        "faculty2_sig": faculty2_sig,
+        "faculty2_date_str": faculty2_date_str,
+        "faculty3_sig": faculty3_sig,
+        "faculty3_date_str": faculty3_date_str,
+        "hod_sig": hod_sig,
+        "hod_date_str": hod_date_str,
+        "aa_sig": aa_sig,
+        "aa_date_str": aa_date_str,
+        "dean_sig": dean_sig,
+        "dean_date_str": dean_date_str,
+        "director_sig": director_sig,
+        "director_date_str": director_date_str,
+        "dr_ar_sp_sig": dr_ar_sp_sig,
+        "dr_ar_fa_sig": dr_ar_fa_sig,
+        "ia_sig": ia_sig,
+        "hod_user": hod_user,
     })
 
     try:
         pdf_bytes = weasyprint.HTML(string=html_content, base_url=settings.STORAGE_PATH).write_pdf()
+        filename_prefix = f"module_{module}" if module else "administrative_approval"
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="administrative_approval_pr_{pr_id}.pdf"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename_prefix}_pr_{pr_id}.pdf"'}
         )
     except Exception as e:
         import logging
@@ -1703,6 +2058,8 @@ async def cancel_po(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     if pr.current_status != RequestStatus.PO_ISSUED:
         raise HTTPException(
@@ -1761,7 +2118,7 @@ async def cancel_po(
         await db.execute(
             update(BudgetMaster)
             .where(BudgetMaster.id == budget_file_id)
-            .values(deducted_amount=func.greatest(0.0, BudgetMaster.deducted_amount - delta))
+            .values(utilized_amount=func.greatest(0.0, BudgetMaster.utilized_amount - delta))
             .execution_options(synchronize_session=False)
         )
 
@@ -1799,6 +2156,8 @@ async def add_bill_passing(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
+
+    await check_pr_access(pr, user, db)
 
     # Check user role group is verifier_da or admin
     await db.refresh(user, ["role"])
@@ -1879,6 +2238,8 @@ async def cancel_tender(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     if pr.current_status in (RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED, RequestStatus.COMPLETED):
         raise HTTPException(
@@ -1963,6 +2324,8 @@ async def reinitiate_pr(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Original purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     if pr.current_status != RequestStatus.CANCELLED:
         raise HTTPException(
@@ -2078,11 +2441,18 @@ async def reinitiate_pr(
 
 
 @router.post("/{pr_id}/refer")
-async def refer_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def refer_pr(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     # Validate that the user is the currently expected approver of the active step
     await verify_current_user_group_for_pr(pr, user, db)
@@ -2098,6 +2468,21 @@ async def refer_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), u
     )
     if active_ref.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="This purchase request is already referred for consultation")
+
+    content_type = request.headers.get("content-type", "")
+    query_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        query_file = form.get("query_document")
+        if query_file and not getattr(query_file, "filename", None):
+            query_file = None
+    else:
+        body = await request.json()
 
     referred_to_id = body.get("referred_to_id")
     query = body.get("query")
@@ -2120,6 +2505,16 @@ async def refer_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), u
         status="pending"
     )
     db.add(referral)
+    await db.flush()
+
+    # Save document if uploaded
+    doc_path = None
+    if query_file:
+        from app.services.document_service import DocumentService
+        doc_svc = DocumentService(db)
+        doc_record = await doc_svc.save_upload(pr, f"referral_{referral.id}_query", query_file, user.id)
+        doc_path = f"/static/uploads/{doc_record.doc_value.get('path')}"
+        referral.query_document_path = doc_path
 
     history = PurchaseRequestHistory(
         purchase_request_id=pr.id,
@@ -2145,6 +2540,8 @@ async def respond_referral(
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
 
     # Fetch active pending referral for this user on this PR
     ref_res = await db.execute(
@@ -2185,7 +2582,7 @@ async def respond_referral(
         from app.services.document_service import DocumentService
         doc_svc = DocumentService(db)
         doc_record = await doc_svc.save_upload(pr, f"referral_{referral.id}_response", response_file, user.id)
-        doc_path = f"/storage/{doc_record.doc_value.get('path')}"
+        doc_path = f"/static/uploads/{doc_record.doc_value.get('path')}"
 
     # Update referral record
     referral.response = response_text.strip()

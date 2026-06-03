@@ -6,17 +6,15 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, set_auth_cookie, clear_auth_cookie, get_password_hash
 from app.core.deps import get_current_user
 from app.models.user import User, RoleManager, Department
 from app.core.config import settings
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 def process_signature_image(content: bytes) -> bytes:
@@ -66,13 +64,14 @@ async def public_roles(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/register")
+@limiter.limit("20/minute")
 async def register(
+    request: Request,
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
     designation: str = Form(...),
     gender: str = Form(...),
-    role_id: int = Form(...),
     department_id: int = Form(...),
     signature: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db)
@@ -82,10 +81,12 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
         
-    role_res = await db.execute(select(RoleManager).where(RoleManager.id == role_id))
+    role_res = await db.execute(select(RoleManager).where(RoleManager.value == "pending_faculty"))
     role = role_res.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=400, detail="Invalid role selected")
+        role = RoleManager(name="Pending Faculty", value="pending_faculty", group_key="faculty")
+        db.add(role)
+        await db.flush()
         
     dept_res = await db.execute(select(Department).where(Department.id == department_id))
     dept = dept_res.scalar_one_or_none()
@@ -98,7 +99,7 @@ async def register(
         hashed_password=get_password_hash(password),
         designation=designation,
         gender=gender,
-        role_id=role_id,
+        role_id=role.id,
         department_id=department_id,
         is_active=True,
         is_approved=False,
@@ -168,7 +169,7 @@ async def update_profile(
 
 
 @router.post("/login")
-@limiter.limit("5000/minute")
+@limiter.limit("30/minute")
 async def login(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     email = data.get("email", "").strip().lower()
@@ -199,6 +200,7 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
         "email": user.email,
         "designation": user.designation,
         "role_id": user.role_id,
+        "department_id": user.department_id,
         "is_approved": user.is_approved,
         "signature_path": f"/storage/{user.signature_path}" if user.signature_path else None,
         "role": {"group_key": user.role.group_key, "name": user.role.name} if user.role else None,
@@ -227,6 +229,7 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
         "designation": full_user.designation,
         "gender": full_user.gender,
         "role_id": full_user.role_id,
+        "department_id": full_user.department_id,
         "is_approved": full_user.is_approved,
         "signature_path": f"/storage/{full_user.signature_path}" if full_user.signature_path else None,
         "role": {"group_key": full_user.role.group_key, "name": full_user.role.name, "value": full_user.role.value} if full_user.role else None,

@@ -39,6 +39,7 @@ export interface ProcurementMethod {
   id: number;
   name: string;
   description?: string;
+  max_amount?: number;
 }
 
 export interface BudgetFile {
@@ -47,16 +48,22 @@ export interface BudgetFile {
   category: string;
   file_no: string;
   total_cost: number;
+  total_allocation?: number;
   available_amount: number;
+  available_balance?: number;
   unit_cost: number;
   quantity: number;
 }
 
 export interface BudgetOverview {
   total: number;
+  total_allocation?: number;
   locked: number;
+  committed_amount?: number;
   deducted: number;
+  utilized_amount?: number;
   available: number;
+  available_balance?: number;
 }
 
 export interface PRHistory {
@@ -65,6 +72,10 @@ export interface PRHistory {
   remarks?: string;
   acted_at?: string;
   approver_id?: number;
+  frozen_actor_name?: string;
+  frozen_designation?: string;
+  frozen_department?: string;
+  frozen_signature_path?: string;
 }
 
 export interface PRFlow {
@@ -78,8 +89,13 @@ export interface PRFlow {
   expected_user_id?: number;
   expected_user_name?: string;
   workflow_step_id?: number;
+  /** The user_type of the current step (e.g. 'verifier', 'approver', 'partial_approver') */
+  step_type?: string | null;
   tender_vendors_threshold?: number | null;
   tender_vendors_comparison?: string | null;
+  condition_field?: string | null;
+  condition_operator?: string | null;
+  condition_value?: number | null;
 }
 
 export interface PRItem {
@@ -87,6 +103,11 @@ export interface PRItem {
   item_description: string;
   estimated_total: number;
   quantity?: number;
+  requirement_type?: string;
+  tech_specs_text?: string;
+  installation_required?: boolean;
+  warranty?: number;
+  delivery_period?: number;
 }
 
 export type PRStatus =
@@ -105,9 +126,11 @@ export interface PurchaseRequest {
   amount: number;
   purchase_type: string;
   created_at: string;
-  initiator?: { id: number; name: string; email: string };
+  is_potential_split?: boolean;
+  initiator?: { id: number; name: string; email: string; department?: { id: number; name: string; short_code: string } };
   category?: PurchaseCategory;
   procurement?: ProcurementMethod;
+  form_data?: Record<string, any> | null;
   emd?: number;
   performance_security?: number;
   is_item_split?: boolean;
@@ -201,6 +224,7 @@ export interface PRReferral {
   referred_by: { id: number; name: string; email: string } | null;
   referred_to: { id: number; name: string; email: string } | null;
   query: string;
+  query_document_path: string | null;
   response: string | null;
   response_document_path: string | null;
   status: string;

@@ -168,6 +168,12 @@ class PurchaseRequestHistory(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     acted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Frozen actor details for immutable snapshots
+    frozen_actor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    frozen_designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    frozen_department: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    frozen_signature_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="history")
     current_approver: Mapped[Optional["User"]] = relationship("User")  # type: ignore
 
@@ -265,6 +271,9 @@ class WorkFlowHierarchy(Base):
     tender_vendors_threshold: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tender_vendors_comparison: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     skip_condition: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    condition_field: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    condition_operator: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    condition_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User")  # type: ignore
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")  # type: ignore
@@ -357,6 +366,7 @@ class PRReferral(Base):
     referred_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     referred_to_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     query: Mapped[str] = mapped_column(Text, nullable=False)
+    query_document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     response_document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)

@@ -18,6 +18,9 @@ import { DeliveryDetailPage } from './pages/DeliveryDetail';
 import { AssetDetailPage } from './pages/AssetDetail';
 import { AnalyticsPage } from './pages/Placeholders';
 import { ProfilePage } from './pages/ProfilePage';
+import { FormsDashboardPage } from './pages/FormsDashboard';
+
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[] }> = ({ children, roles }) => {
   const { user, loading } = useAuth();
@@ -28,7 +31,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[] }> 
   );
   if (!user) return <Navigate to="/login" replace />;
   if (roles && user.role && !roles.includes(user.role.group_key)) return <Navigate to="/dashboard" replace />;
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return <DashboardLayout><ErrorBoundary>{children}</ErrorBoundary></DashboardLayout>;
 };
 
 const App: React.FC = () => {
@@ -44,13 +47,14 @@ const App: React.FC = () => {
     <BrowserRouter>
       <Routes>
         {/* Public routes */}
-        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage />} />
-        <Route path="/public/asset/:tag" element={<AssetPublicPage />} />
+        <Route path="/login" element={<ErrorBoundary>{user ? <Navigate to="/dashboard" replace /> : <LoginPage />}</ErrorBoundary>} />
+        <Route path="/register" element={<ErrorBoundary>{user ? <Navigate to="/dashboard" replace /> : <RegisterPage />}</ErrorBoundary>} />
+        <Route path="/public/asset/:tag" element={<ErrorBoundary><AssetPublicPage /></ErrorBoundary>} />
 
         {/* Protected routes */}
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/pr" element={<ProtectedRoute><PRListPage /></ProtectedRoute>} />
+        <Route path="/forms" element={<ProtectedRoute><FormsDashboardPage /></ProtectedRoute>} />
         <Route path="/pr/create" element={<ProtectedRoute roles={['faculty', 'hod']}><NewPRPage /></ProtectedRoute>} />
         <Route path="/pr/:id" element={<ProtectedRoute><PRDetailPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

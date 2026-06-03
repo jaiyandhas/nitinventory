@@ -25,7 +25,7 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
           <section key={fid} className="card p-6 space-y-5">
             <h3 className="text-lg font-bold text-[#1a3a6b] border-b border-slate-200 pb-2">
               {index + 1}) {file.file_no} — {file.item_name}
-              <span className="ml-2 text-sm font-normal text-slate-500">({formatCurrency(file.total_cost)})</span>
+              <span className="ml-2 text-sm font-normal text-slate-500">({formatCurrency(file.total_allocation ?? file.total_cost)})</span>
             </h3>
 
             {/* Budget Details Card */}
@@ -39,25 +39,25 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                 <span className="font-bold text-sm text-slate-800">{formatCurrency(file.unit_cost)}</span>
               </div>
               <div>
-                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Available Budget</span>
-                <span className="font-bold text-sm text-emerald-700">{formatCurrency(file.available_amount)}</span>
+                <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Available Balance</span>
+                <span className="font-bold text-sm text-emerald-700">{formatCurrency(file.available_balance ?? file.available_amount)}</span>
               </div>
               <div>
                 <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Max Purchase Qty</span>
                 <span className="font-bold text-sm text-blue-700">
-                  {Math.floor(file.available_amount / file.unit_cost)}
+                  {Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost)}
                 </span>
               </div>
             </div>
 
             {/* Warning banner if budget is exhausted */}
-            {Math.floor(file.available_amount / file.unit_cost) <= 0 && (
+            {Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 && (
               <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 text-sm space-y-1">
                 <div className="font-semibold flex items-center gap-1.5 text-red-900">
                   <span>⚠️</span> Budget Exhausted
                 </div>
                 <p className="text-xs text-red-700">
-                  The available budget for this file ({formatCurrency(file.available_amount)}) is less than the unit cost ({formatCurrency(file.unit_cost)}). No units can be purchased.
+                  The available budget for this file ({formatCurrency(file.available_balance ?? file.available_amount)}) is less than the unit cost ({formatCurrency(file.unit_cost)}). No units can be purchased.
                 </p>
               </div>
             )}
@@ -67,16 +67,16 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                 <label className="label">Quantity to Purchase *</label>
                 <input
                   type="number"
-                  min={Math.floor(file.available_amount / file.unit_cost) <= 0 ? 0 : 1}
-                  max={Math.floor(file.available_amount / file.unit_cost)}
-                  required={Math.floor(file.available_amount / file.unit_cost) > 0}
-                  disabled={Math.floor(file.available_amount / file.unit_cost) <= 0}
+                  min={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? 0 : 1}
+                  max={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost)}
+                  required={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) > 0}
+                  disabled={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0}
                   className="input-field disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed"
-                  value={Math.floor(file.available_amount / file.unit_cost) <= 0 ? '0' : item.quantity}
+                  value={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? '0' : item.quantity}
                   onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
-                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(Math.floor(file.available_amount / file.unit_cost) <= 0 ? '0' : item.quantity) || 0) * file.unit_cost)}</strong>
+                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? '0' : item.quantity) || 0) * file.unit_cost)}</strong>
                 </span>
               </div>
 

@@ -22,6 +22,10 @@ def test_safe_eval_logical():
     assert safe_eval("pr.amount > 100000 and pr.purchase_type == 'department'", context) is True
     assert safe_eval("pr.amount > 200000 or pr.purchase_type == 'department'", context) is True
     assert safe_eval("not (pr.amount < 100000)", context) is True
+    
+    # Test short-circuiting
+    assert safe_eval("pr.amount < 100000 and pr.non_existent_field == 'test'", context) is False
+    assert safe_eval("pr.amount > 100000 or pr.non_existent_field == 'test'", context) is True
 
 def test_safe_eval_subscript_and_attributes():
     context = {"pr": DummyPR(150000.0, "department", {"gem_nac_attached": True, "vendor_count": 3})}

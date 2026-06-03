@@ -1,6 +1,6 @@
 import React from 'react';
 import { Award } from 'lucide-react';
-import { PurchaseRequest } from '../../types';
+import { PurchaseRequest } from '../../../types';
 
 interface PRItemsTableProps {
   pr: PurchaseRequest;
@@ -24,7 +24,7 @@ const getDocLabel = (docKey: string): string => {
 
 export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }) => {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-left">
       {/* Items */}
       {pr.items && pr.items.length > 0 && (
         <div className="card">
@@ -84,7 +84,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
         (pr.technical_evaluations && pr.technical_evaluations.length > 0) ||
         (pr.financial_evaluations && pr.financial_evaluations.length > 0)) && (
         <div className="card p-6 space-y-6">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2">Registered Vendors & Evaluations</h3>
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2">Registered Vendors &amp; Evaluations</h3>
           
           {pr.commercial_evaluations && pr.commercial_evaluations.length > 0 && (
             <div>
@@ -310,71 +310,6 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Procurement Mode Form Details */}
-      {pr.form_data && Object.keys(pr.form_data).length > 0 && (
-        <div className="card p-6 bg-white border border-slate-200 shadow-sm space-y-4 text-left">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2 flex items-center gap-2">
-            <span className="w-1.5 h-3 bg-[#1a3a6b] rounded-xs"></span>
-            Procurement Method Form Data ({pr.procurement?.name || 'Details'})
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(pr.form_data).map(([key, val]) => {
-              if (val === undefined || val === null || val === '') return null;
-              
-              // Human readable labels
-              const labels: Record<string, string> = {
-                gem_link: 'GeM Bid / RA Link',
-                gem_nac_attached: 'GeM Non-Availability Certificate (NAC) Attached?',
-                tender_id: 'CPPP Tender ID',
-                publication_date: 'Publication Date (CPPP)',
-                invited_vendors: 'Invited Vendors',
-                manufacturer_name: 'OEM Manufacturer Name',
-                manufacturer_address: 'OEM Address',
-                justification_type: 'PAC Justification Basis',
-                finance_concurrence_ref: 'Finance Concurrence Reference',
-              };
-
-              const label = labels[key] || key.replace(/_/g, ' ').toUpperCase();
-              
-              // Values formatting
-              let displayVal = String(val);
-              if (typeof val === 'boolean') {
-                displayVal = val ? 'Yes' : 'No';
-              } else if (key === 'justification_type') {
-                const map: Record<string, string> = {
-                  sole_manufacturer: 'Sole Manufacturer',
-                  no_alternative: 'No Alternative Product Acceptable',
-                  similar_unavailable: 'Similar Product Unavailable',
-                };
-                displayVal = map[val] || val;
-              }
-
-              return (
-                <div key={key} className="space-y-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    {label}
-                  </span>
-                  {key === 'gem_link' ? (
-                    <a
-                      href={displayVal.startsWith('http') ? displayVal : `https://${displayVal}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                    >
-                      {displayVal}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-800 break-words">
-                      {displayVal}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>

@@ -24,12 +24,10 @@ export const RegisterPage: React.FC = () => {
   const [designation, setDesignation] = useState('');
   const [gender, setGender] = useState('Male');
   const [deptId, setDeptId] = useState('');
-  const [roleId, setRoleId] = useState('');
   const [signature, setSignature] = useState<File | null>(null);
   const [sigPreview, setSigPreview] = useState<string | null>(null);
 
   const [departments, setDepartments] = useState<Dept[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -39,16 +37,10 @@ export const RegisterPage: React.FC = () => {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const [deptsRes, rolesRes] = await Promise.all([
-          authApi.departments(),
-          authApi.roles(),
-        ]);
+        const deptsRes = await authApi.departments();
         setDepartments(deptsRes.data);
-        // Only show appropriate onboarding roles (like HOD, Faculty) for security
-        // and filter out admin/apex if needed, but let's show all selectable roles
-        setRoles(rolesRes.data);
       } catch (err: unknown) {
-        toast.error('Failed to load department and role options');
+        toast.error('Failed to load department options');
       }
     };
     fetchOptions();
@@ -76,10 +68,6 @@ export const RegisterPage: React.FC = () => {
       toast.error('Please select a department');
       return;
     }
-    if (!roleId) {
-      toast.error('Please select a system role');
-      return;
-    }
     if (!signature) {
       toast.error('Please upload your digital signature image');
       return;
@@ -93,7 +81,6 @@ export const RegisterPage: React.FC = () => {
       formData.append('password', password);
       formData.append('designation', designation);
       formData.append('gender', gender);
-      formData.append('role_id', deptId ? roleId : ''); // backend takes int
       formData.append('department_id', deptId);
       formData.append('signature', signature);
 
@@ -214,7 +201,7 @@ export const RegisterPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="label">Gender</label>
                 <select
@@ -242,25 +229,6 @@ export const RegisterPage: React.FC = () => {
                       {d.short_code} - {d.name}
                     </option>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="label">System Role</label>
-                <select
-                  value={roleId}
-                  onChange={(e) => setRoleId(e.target.value)}
-                  className="input-field"
-                  required
-                >
-                  <option value="">Select Role</option>
-                  {roles
-                    .filter((r) => r.group_key !== 'admin') // admin can't be onboarded from public page
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
                 </select>
               </div>
             </div>

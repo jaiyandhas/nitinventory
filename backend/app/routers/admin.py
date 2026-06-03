@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.limiter import limiter
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 from datetime import datetime
@@ -16,6 +17,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
 DeanOrAdminDep = Depends(require_roles("admin", "dean_approver"))
+DeanBudgetDep = Depends(require_roles("dean_approver"))
 BudgetViewDep = Depends(require_roles("admin", "dean_approver", "hod", "faculty"))
 
 
@@ -418,7 +420,15 @@ async def update_setting(key: str, body: dict, db: AsyncSession = Depends(get_db
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/budget")
-async def list_budget(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
+async def list_budget(
+    skip: int = 0,
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+    _=BudgetViewDep
+):
+    # Get total count
+    total = await db.scalar(select(func.count(BudgetMaster.id))) or 0
+
     result = await db.execute(
         select(BudgetMaster)
         .options(
@@ -427,13 +437,22 @@ async def list_budget(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
             selectinload(BudgetMaster.director_faculty)
         )
         .order_by(BudgetMaster.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     entries = result.scalars().all()
-    return [
+    items = [
         {
-            "id": b.id, "item_name": b.item_name, "total_cost": b.total_cost,
-            "locked_amount": b.locked_amount, "deducted_amount": b.deducted_amount,
-            "available_amount": b.available_amount, "department_id": b.department_id,
+            "id": b.id, "item_name": b.item_name,
+            "total_cost": b.total_allocation,
+            "total_allocation": b.total_allocation,
+            "locked_amount": b.committed_amount,
+            "committed_amount": b.committed_amount,
+            "deducted_amount": b.utilized_amount,
+            "utilized_amount": b.utilized_amount,
+            "available_amount": b.available_balance,
+            "available_balance": b.available_balance,
+            "department_id": b.department_id,
             "financial_year_id": b.financial_year_id, "expenditure_category": b.expenditure_category,
             "category": b.category, "unit_cost": b.unit_cost, "quantity": b.quantity,
             "file_no": b.file_no,
@@ -446,6 +465,7 @@ async def list_budget(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
         }
         for b in entries
     ]
+    return {"items": items, "total": total}
 
 
 @router.get("/budget/summary")
@@ -579,7 +599,8 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "category": b.category,
         "unit_cost": b.unit_cost,
         "quantity": b.quantity,
-        "total_cost": b.total_cost,
+        "total_cost": b.total_allocation,
+        "total_allocation": b.total_allocation,
         "file_no": b.file_no,
         "expert1_id": b.expert1_id,
         "expert2_id": b.expert2_id,
@@ -588,7 +609,7 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
 
 
 @router.post("/budget")
-async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
     b = BudgetMaster(
         department_id=int(body["department_id"]),
         financial_year_id=int(body["financial_year_id"]),
@@ -608,7 +629,7 @@ async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanOr
 
 
 @router.put("/budget/{b_id}")
-async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
 
     result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == b_id))
     b = result.scalar_one_or_none()
@@ -634,7 +655,7 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
 
 
 @router.delete("/budget/clear")
-async def clear_all_budgets(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def clear_all_budgets(db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
     """Deletes all budget master entries to start fresh. Skips any budgets linked to active PR items."""
     from app.models.purchase_request import PurchaseRequestItem
     from sqlalchemy import delete
@@ -752,6 +773,9 @@ async def list_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "tender_vendors_threshold": w.tender_vendors_threshold,
             "tender_vendors_comparison": w.tender_vendors_comparison,
             "skip_condition": w.skip_condition,
+            "condition_field": w.condition_field,
+            "condition_operator": w.condition_operator,
+            "condition_value": w.condition_value,
         }
         for w in entries
     ]
@@ -776,7 +800,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         role_id = None
         user_group = None
     else:
-        if user_type not in ["verifier", "approver"]:
+        if user_type not in ["verifier", "approver", "partial_approver"]:
             user_type = "verifier"
         user_id = None
         if role_id:
@@ -784,7 +808,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
             role_obj = role_res.scalar_one_or_none()
             if role_obj:
                 user_group = role_obj.group_key
-
+                
     purchase_type = body.get("purchase_type", "department")
     wf = WorkFlowHierarchy(
         category_id=body["category_id"],
@@ -800,6 +824,9 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         tender_vendors_threshold=body.get("tender_vendors_threshold"),
         tender_vendors_comparison=body.get("tender_vendors_comparison"),
         skip_condition=body.get("skip_condition"),
+        condition_field=body.get("condition_field"),
+        condition_operator=body.get("condition_operator"),
+        condition_value=body.get("condition_value"),
     )
     db.add(wf)
     await db.commit()
@@ -823,7 +850,7 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         elif wf.user_type == "user":
             wf.role_id = None
             wf.user_group = None
-        elif wf.user_type not in ["verifier", "approver"]:
+        elif wf.user_type not in ["verifier", "approver", "partial_approver"]:
             pass
     if "user_id" in body:
         wf.user_id = body["user_id"]
@@ -839,7 +866,7 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
             if role_obj:
                 wf.user_group = role_obj.group_key
                 wf.user_id = None
-                if wf.user_type not in ["verifier", "approver"]:
+                if wf.user_type not in ["verifier", "approver", "partial_approver"]:
                     wf.user_type = "verifier"
         else:
             wf.role_id = None
@@ -847,7 +874,7 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         wf.user_group = body["user_group"]
         wf.user_id = None
         wf.role_id = None
-        if wf.user_type not in ["verifier", "approver"]:
+        if wf.user_type not in ["verifier", "approver", "partial_approver"]:
             wf.user_type = "verifier"
     if "is_enabled" in body:
         wf.is_enabled = bool(body["is_enabled"])
@@ -858,6 +885,12 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         wf.tender_vendors_comparison = body["tender_vendors_comparison"]
     if "skip_condition" in body:
         wf.skip_condition = body["skip_condition"]
+    if "condition_field" in body:
+        wf.condition_field = body["condition_field"]
+    if "condition_operator" in body:
+        wf.condition_operator = body["condition_operator"]
+    if "condition_value" in body:
+        wf.condition_value = body["condition_value"]
     await db.commit()
     return {"message": "Workflow updated"}
 
@@ -1091,7 +1124,7 @@ async def reject_user(user_id: int, db: AsyncSession = Depends(get_db), _=AdminD
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/budget/import-template")
-async def download_budget_template(_=DeanOrAdminDep):
+async def download_budget_template(_=DeanBudgetDep):
     import io
     import csv
     from fastapi.responses import StreamingResponse
@@ -1112,11 +1145,13 @@ async def download_budget_template(_=DeanOrAdminDep):
 
 
 @router.post("/budget/import")
+@limiter.limit("10/minute")
 async def import_budget_csv(
+    request: Request,
     file: UploadFile,
     financial_year_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db),
-    _=DeanOrAdminDep
+    _=DeanBudgetDep
 ):
     import io
     import csv
@@ -1163,6 +1198,33 @@ async def import_budget_csv(
     cat_idx = find_idx(["purchase category", "category", "type"])
     course_idx = find_idx(["course code", "course"])
     fy_idx = find_idx(["financial year", "fy", "financial_year"])
+
+    # Extract unique department codes/names from CSV and validate they exist
+    csv_depts = set()
+    for row in rows[1:]:
+        if not row or not any(row):
+            continue
+        if dept_idx < len(row):
+            dept_code = str(row[dept_idx]).strip().lower()
+            if dept_code:
+                csv_depts.add(dept_code)
+
+    unrecognized_depts = []
+    for dept_code in csv_depts:
+        dept_res = await db.execute(
+            select(Department).where(
+                (func.lower(Department.short_code) == dept_code) | 
+                (func.lower(Department.name) == dept_code)
+            )
+        )
+        if not dept_res.scalar_one_or_none():
+            unrecognized_depts.append(dept_code.upper())
+
+    if unrecognized_depts:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unrecognized departments in CSV: {', '.join(unrecognized_depts)}"
+        )
 
     # Resolve financial year from form param if provided
     financial_year = None
@@ -1279,9 +1341,7 @@ async def import_budget_csv(
                 )
                 dept = dept_res.scalar_one_or_none()
                 if not dept:
-                    dept = Department(name=dept_code, short_code=dept_code)
-                    db.add(dept)
-                    await db.flush()
+                    raise HTTPException(status_code=422, detail=f"Department {dept_code} not found")
                 depts_cache[dept_key] = dept.id
             dept_id = depts_cache[dept_key]
 
@@ -1333,3 +1393,54 @@ async def import_budget_csv(
         "imported": success_count,
         "errors": errors
     }
+
+
+@router.patch("/users/{user_id}/role")
+async def update_user_role(user_id: int, body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    role_id = body.get("role_id")
+    if not role_id:
+        raise HTTPException(status_code=400, detail="role_id is required")
+        
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    u = user_res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    role_res = await db.execute(select(RoleManager).where(RoleManager.id == role_id))
+    role = role_res.scalar_one_or_none()
+    if not role:
+        raise HTTPException(status_code=400, detail="Invalid role selected")
+        
+    u.role_id = role_id
+    await db.commit()
+    return {"message": "User role updated successfully"}
+
+
+@router.post("/purchase-requests/{pr_id}/force-advance")
+async def force_advance_pr(
+    pr_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("admin"))
+):
+    remarks = body.get("remarks")
+    if not remarks or not remarks.strip():
+        raise HTTPException(status_code=400, detail="Remarks are mandatory for force-advancing")
+        
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+        
+    from app.services.flow_engine import FlowEngineService
+    flow_engine = FlowEngineService(db)
+    
+    try:
+        await flow_engine.force_advance(pr, user, remarks)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    return {"message": "Purchase request force-advanced successfully"}
+

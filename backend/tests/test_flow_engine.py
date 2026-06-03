@@ -103,64 +103,87 @@ async def test_workflow_flow_engine_lifecycle(db_session):
 
 @pytest.mark.asyncio
 async def test_director_tender_approval_conditional_skipping(db_session):
-    """Test that Director tender approval step is conditionally skipped based on the number of commercial evaluation vendors."""
+    """Test the partial_approver (Dean) → conditional Director step logic.
+
+    Step layout (cat2/cat3 TD):
+      step 5  — AR (approver)
+      step 6  — Dean P&D (partial_approver) ← NEW
+      step 7  — Director (conditional: qualified_vendor_count < 3)
+
+    When ≥3 qualified vendors:
+      - AR advances to Dean (step 6)
+      - _check_partial_approver_auto_advance returns True → auto-bypass Dean
+      - Dean is skipped; Director (step 7) condition is also false → None → TE phase
+
+    When <3 qualified vendors:
+      - AR advances to Dean (step 6)
+      - _check_partial_approver_auto_advance returns False → Dean must act
+      - Dean approves → Director (step 7) fires
+    """
     from app.models.purchase_request import CommercialEvaluation
     flow_service = FlowEngineService(db_session)
-    
+
     # Load test users
     faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
     faculty = faculty_res.scalar_one()
-    
-    # 1. Create a PR under Category 2
+
     pr = PurchaseRequest(
         amount=250000.0,
         purchase_type="department",
         initiator_id=faculty.id,
-        category_id=2, # category_id 2 corresponds to cat2
+        category_id=2,
         financial_year_id=1,
         procurement_id=1,
         current_status="draft",
     )
     db_session.add(pr)
     await db_session.flush()
-    
-    # Initialize workflow
+
     await flow_service.initialize(pr, faculty)
     await db_session.refresh(pr)
-    
-    # Fetch Phase TD (Tendering)
+
     phase_td_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Tendering"))
     phase_td = phase_td_res.scalar_one()
-    
-    # Case A: 3 or fewer commercial vendors (should require step 6, Director approval)
-    for i in range(3):
-        ce = CommercialEvaluation(
-            purchase_request_id=pr.id,
-            vendor_name=f"Vendor {i}",
-            is_qualified=True,
-        )
-        db_session.add(ce)
+
+    # ── Case A: <3 qualified vendors ──────────────────────────────────────────
+    # AR (step 5) should advance to Dean (step 6, partial_approver).
+    # The partial_approver helper should return False (Director WILL fire).
+    for i in range(2):
+        db_session.add(CommercialEvaluation(
+            purchase_request_id=pr.id, vendor_name=f"Vendor {i}", is_qualified=True,
+        ))
     await db_session.flush()
-    
-    # At step 5 (Assistant Registrar), the next step in TD phase should be step 6 (Director)
+
+    # Step after AR (5) is the Dean partial_approver at step 6
     next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step == 6
-    
-    # Case B: 4 or more commercial vendors (should skip step 6, Director approval, returning None)
+    assert next_step == 6, f"Expected step 6 (Dean partial_approver) after AR, got {next_step}"
+
+    # Dean partial_approver should NOT auto-advance (Director IS needed)
+    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=6)
+    assert not should_auto, "Dean should NOT auto-advance when <3 qualified vendors (Director needed)"
+
+    # Step after Dean (6) is Director at step 7 (condition true, < 3 vendors)
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=6)
+    assert next_step == 7, f"Expected step 7 (Director) after Dean when <3 vendors, got {next_step}"
+
+    # ── Case B: ≥3 qualified vendors ─────────────────────────────────────────
+    # Dean partial_approver SHOULD auto-advance (Director step NOT needed).
     from sqlalchemy import delete
     await db_session.execute(delete(CommercialEvaluation).where(CommercialEvaluation.purchase_request_id == pr.id))
     for i in range(4):
-        ce = CommercialEvaluation(
-            purchase_request_id=pr.id,
-            vendor_name=f"Vendor {i}",
-            is_qualified=True,
-        )
-        db_session.add(ce)
+        db_session.add(CommercialEvaluation(
+            purchase_request_id=pr.id, vendor_name=f"Vendor {i}", is_qualified=True,
+        ))
     await db_session.flush()
-    
-    # At step 5 (Assistant Registrar), the next step in TD phase should be None (skipped step 6)
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step is None
+
+    # Dean partial_approver SHOULD auto-advance (Director NOT needed)
+    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=6)
+    assert should_auto, "Dean SHOULD auto-advance when ≥3 qualified vendors (Director not needed)"
+
+    # Step after Dean (6) when condition false: Director (7) is skipped → None → next phase
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=6)
+    assert next_step is None, f"Expected None (Director skipped) after Dean when ≥3 vendors, got {next_step}"
+
 
 
 @pytest.mark.asyncio

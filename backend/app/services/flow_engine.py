@@ -79,8 +79,44 @@ class FlowEngineService:
         steps = result.scalars().all()
         
         for step in steps:
-            if step.tender_vendors_threshold is not None:
-                # Tender details (commercial evaluations) count check
+            if step.condition_field:
+                val = None
+                if step.condition_field == "qualified_vendor_count":
+                    # During Tendering (TD) phase: count qualified CommercialEvaluations
+                    # (vendors shortlisted by the DA). TechnicalEvaluations don't exist yet
+                    # at this stage and would always be 0, causing the Director step to
+                    # incorrectly fire every time.
+                    # During TE/FS phases: count qualified TechnicalEvaluations instead.
+                    await self.db.refresh(pr, ["commercial_evaluations", "technical_evaluations"])
+                    if phase.phase_name == "Tendering":
+                        val = sum(1 for ce in pr.commercial_evaluations if ce.is_qualified)
+                    else:
+                        val = sum(1 for te in pr.technical_evaluations if te.is_qualified)
+                
+                if val is not None:
+                    op = step.condition_operator or "<"
+                    threshold = step.condition_value if step.condition_value is not None else 3
+                    
+                    is_met = False
+                    if op == "<=":
+                        is_met = (val <= threshold)
+                    elif op == ">=":
+                        is_met = (val >= threshold)
+                    elif op == "<":
+                        is_met = (val < threshold)
+                    elif op == ">":
+                        is_met = (val > threshold)
+                    elif op == "==":
+                        is_met = (val == threshold)
+                    elif op == "!=":
+                        is_met = (val != threshold)
+                    else:
+                        is_met = (val < threshold)
+                    
+                    if not is_met:
+                        continue
+            elif step.tender_vendors_threshold is not None:
+                # Legacy fallback
                 await self.db.refresh(pr, ["commercial_evaluations"])
                 vendor_count = len(pr.commercial_evaluations)
                 
@@ -120,7 +156,66 @@ class FlowEngineService:
             
         return None
 
+    async def _check_partial_approver_auto_advance(
+        self, pr: PurchaseRequest, phase: PhaseManager, partial_step_order: int
+    ) -> bool:
+        """Return True when a partial_approver step should be automatically skipped.
+
+        A partial_approver step guards exactly one conditional step that
+        immediately follows it.  If that conditional step's condition evaluates
+        to False (meaning the conditional step will be skipped anyway) the
+        partial_approver has nothing to gate-keep and is auto-advanced.
+
+        If the conditional step will fire (condition is True), the
+        partial_approver must stay as the active step and the assigned user
+        must manually approve — at which point they act as a standard verifier
+        before the conditional step fires.
+        """
+        # Find the immediately next step after the partial_approver
+        result = await self.db.execute(
+            select(WorkFlowHierarchy).where(
+                and_(
+                    self._wf_filters(pr, phase.id),
+                    WorkFlowHierarchy.step_order > partial_step_order,
+                )
+            ).order_by(WorkFlowHierarchy.step_order).limit(1)
+        )
+        guarded_step = result.scalar_one_or_none()
+
+        if not guarded_step or not guarded_step.condition_field:
+            # Nothing conditional follows — partial_approver must act as a verifier
+            return False
+
+        # Evaluate the guarded step's condition using the same logic as
+        # _get_next_step_in_phase to keep them in sync.
+        val = None
+        if guarded_step.condition_field == "qualified_vendor_count":
+            await self.db.refresh(pr, ["commercial_evaluations", "technical_evaluations"])
+            if phase.phase_name == "Tendering":
+                val = sum(1 for ce in pr.commercial_evaluations if ce.is_qualified)
+            else:
+                val = sum(1 for te in pr.technical_evaluations if te.is_qualified)
+
+        if val is None:
+            return False  # Unknown field — fail-secure, require manual approval
+
+        op = guarded_step.condition_operator or "<"
+        threshold = guarded_step.condition_value if guarded_step.condition_value is not None else 3
+
+        condition_met = False
+        if op == "<=":  condition_met = (val <= threshold)
+        elif op == ">=": condition_met = (val >= threshold)
+        elif op == "<":  condition_met = (val < threshold)
+        elif op == ">": condition_met = (val > threshold)
+        elif op == "==": condition_met = (val == threshold)
+        elif op == "!=": condition_met = (val != threshold)
+
+        # Auto-advance when the guarded conditional step would NOT fire
+        return not condition_met
+
+
     async def _get_next_valid_phase(self, pr: PurchaseRequest, current_phase: PhaseManager) -> Optional[PhaseManager]:
+
         """Next phase that has at least one enabled workflow step (skips TD/TE/FS when undefined)."""
         result = await self.db.execute(
             select(PhaseManager).where(
@@ -138,12 +233,46 @@ class FlowEngineService:
 
     async def _add_history(self, pr: PurchaseRequest, user: User, status: str, remarks: Optional[str] = None):
         """Append an entry tracking history actions into the purchase request timeline."""
+        import os
+        import uuid
+        import shutil
+        from app.core.config import settings
+
+        # Freeze user details
+        frozen_actor_name = user.name
+        frozen_designation = user.designation
+        
+        # Load department if not loaded
+        await self.db.refresh(user, ["department"])
+        frozen_department = user.department.name if user.department else None
+
+        # Snapshot signature image
+        frozen_sig_path = None
+        if user.signature_path:
+            src_abs = os.path.join(settings.STORAGE_PATH, user.signature_path)
+            if os.path.exists(src_abs):
+                dest_dir = os.path.join(settings.STORAGE_PATH, "signatures", "snapshots")
+                os.makedirs(dest_dir, exist_ok=True)
+                ext = os.path.splitext(user.signature_path)[1].lower() or ".png"
+                filename = f"{uuid.uuid4().hex}{ext}"
+                dest_rel = os.path.join("signatures", "snapshots", filename)
+                dest_abs = os.path.join(settings.STORAGE_PATH, dest_rel)
+                try:
+                    shutil.copy2(src_abs, dest_abs)
+                    frozen_sig_path = dest_rel
+                except Exception:
+                    pass
+
         history = PurchaseRequestHistory(
             purchase_request_id=pr.id,
             current_approver_id=user.id,
             status=status,
             remarks=remarks,
             acted_at=datetime.utcnow(),
+            frozen_actor_name=frozen_actor_name,
+            frozen_designation=frozen_designation,
+            frozen_department=frozen_department,
+            frozen_signature_path=frozen_sig_path,
         )
         self.db.add(history)
 
@@ -238,16 +367,20 @@ class FlowEngineService:
             hod = hod_res.scalar_one_or_none()
             hod_id = hod.id if hod else None
 
-            dept = pr.initiator.department if pr.initiator else None
-            if dept:
-                await self.db.refresh(dept)
-            expert1_id = dept.expert1_id if dept else None
-            expert2_id = dept.expert2_id if dept else None
-            director_faculty_id = dept.director_faculty_id if dept else None
+            expert1_id = pr.faculty1_id
+            expert2_id = pr.faculty2_id
+            director_faculty_id = pr.faculty3_id
 
-            committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
-            if any(x is None for x in committee_ids):
+            raw_committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
+            if any(x is None for x in raw_committee_ids):
                 raise ValueError("The department purchase committee is not fully formed or configured yet.")
+            # De-duplicate while preserving order (same person may fill multiple roles)
+            seen_ids: set = set()
+            committee_ids: list = []
+            for cid in raw_committee_ids:
+                if cid not in seen_ids:
+                    committee_ids.append(cid)
+                    seen_ids.add(cid)
 
             # Must be one of the committee members
             if user.id not in committee_ids:
@@ -261,6 +394,13 @@ class FlowEngineService:
                 if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
                 and (h.acted_at is None or h.acted_at >= since)
             }
+
+            # DEBUG — remove after TE investigation
+            import sys
+            print(f"[TE DEBUG] PR#{pr.id} user={user.id}({user.name}) te_initiated_at={pr.te_initiated_at} since={since}", file=sys.stderr, flush=True)
+            print(f"[TE DEBUG] committee_ids={committee_ids} approved_ids={approved_ids}", file=sys.stderr, flush=True)
+            for h in pr.history:
+                print(f"[TE DEBUG]   history: approver={h.current_approver_id} status={h.status!r} acted_at={h.acted_at}", file=sys.stderr, flush=True)
 
             pending_index = None
             for idx, cid in enumerate(committee_ids):
@@ -414,11 +554,9 @@ class FlowEngineService:
             hod = hod_res.scalar_one_or_none()
             hod_id = hod.id if hod else None
 
-            await self.db.refresh(pr.initiator, ["department"])
-            dept = pr.initiator.department
-            expert1_id = dept.expert1_id if dept else None
-            expert2_id = dept.expert2_id if dept else None
-            director_faculty_id = dept.director_faculty_id if dept else None
+            expert1_id = pr.faculty1_id
+            expert2_id = pr.faculty2_id
+            director_faculty_id = pr.faculty3_id
 
             required_ids = {hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id}
             
@@ -445,6 +583,47 @@ class FlowEngineService:
                 pr.current_status = RequestStatus.IN_PROGRESS
                 if not is_tech_eval_step:
                     await self._add_history(pr, acted_by, status or "Forwarded", remarks)
+
+                # ── PARTIAL APPROVER AUTO-ADVANCE ──────────────────────────────
+                # If we just landed on a partial_approver step and the conditional
+                # step it guards will NOT fire, skip it immediately.
+                new_step_def = await self._get_step_def(pr, current_phase.id, next_step)
+
+                if new_step_def and new_step_def.user_type == "partial_approver":
+                    should_skip = await self._check_partial_approver_auto_advance(
+                        pr, current_phase, next_step
+                    )
+                    if should_skip:
+                        await self._add_history(
+                            pr, acted_by,
+                            "Auto-forwarded — partial approver bypassed (conditional step not applicable)",
+                            None,
+                        )
+                        # Advance from the partial_approver position; the
+                        # conditional step immediately after it will also be
+                        # skipped by _get_next_step_in_phase (condition false).
+                        next_after = await self._get_next_step_in_phase(
+                            pr, current_phase, next_step
+                        )
+                        if next_after is not None:
+                            flow.step_order = next_after
+                        else:
+                            # All remaining steps in this phase are skipped —
+                            # move to the next valid phase.
+                            next_phase = await self._get_next_valid_phase(pr, current_phase)
+                            if next_phase:
+                                flow.phase_id = next_phase.id
+                                flow.step_order = 1
+                                pr.current_status = RequestStatus.IN_PROGRESS
+                                if next_phase.phase_name == "Technical Evaluation":
+                                    pr.te_initiated_at = datetime.utcnow()
+                                await self._add_history(
+                                    pr, acted_by,
+                                    "Forwarded to next phase (partial approver auto-advanced)",
+                                    None,
+                                )
+                # ── END PARTIAL APPROVER ────────────────────────────────────────
+
             else:
                 if current_phase.phase_name == "Administrative Approval":
                     pr.aa_approved_at = datetime.utcnow()
@@ -646,3 +825,55 @@ class FlowEngineService:
             ).order_by(WorkFlowHierarchy.step_order)
         )
         return result.scalars().all()
+
+    async def force_advance(self, pr: PurchaseRequest, acted_by: User, remarks: str) -> PurchaseRequest:
+        """Bypass standard checks and force advance the PR to the next step or phase."""
+        flow = await self._get_current_flow(pr)
+        if not flow:
+            raise ValueError(f"No active flow for PR #{pr.id}")
+            
+        result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
+        current_phase = result.scalar_one()
+
+        current_step = flow.step_order
+        next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
+
+        hist_status = "Force Advanced by Admin"
+
+        if next_step is not None:
+            flow.step_order = next_step
+            pr.current_status = RequestStatus.IN_PROGRESS
+            await self._add_history(pr, acted_by, hist_status, remarks)
+        else:
+            if current_phase.phase_name == "Administrative Approval":
+                pr.aa_approved_at = datetime.utcnow()
+                pr.aa_approver_id = acted_by.id
+            elif current_phase.phase_name == "Technical Evaluation":
+                pr.te_approved_at = datetime.utcnow()
+            elif current_phase.phase_name == "Financial Sanction":
+                pr.fs_approved_at = datetime.utcnow()
+
+            next_phase = await self._get_next_valid_phase(pr, current_phase)
+            if next_phase:
+                flow.phase_id = next_phase.id
+                flow.step_order = 1
+                pr.current_status = RequestStatus.IN_PROGRESS
+                if next_phase.phase_name == "Technical Evaluation":
+                    pr.te_initiated_at = datetime.utcnow()
+                await self._add_history(pr, acted_by, f"{hist_status} to {next_phase.phase_name}", remarks)
+            else:
+                pr.current_status = RequestStatus.PO_ISSUED
+                pr.po_approved_at = datetime.utcnow()
+                await self._add_history(pr, acted_by, "Force Completed by Admin", remarks)
+                await self.db.delete(flow)
+
+                from app.services.grn_service import GrnService
+                grn_svc = GrnService(self.db)
+                await grn_svc.create_delivery(pr)
+
+                from app.services.budget_service import BudgetService
+                budget_svc = BudgetService(self.db)
+                await budget_svc.deduct_amount(pr)
+
+        await self.db.flush()
+        return pr

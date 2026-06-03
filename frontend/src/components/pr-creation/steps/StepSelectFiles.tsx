@@ -48,7 +48,7 @@ export const StepSelectFiles: React.FC<Props> = ({
           {budgetFiles
             .filter((f) => !usedElsewhere.has(f.id) || f.id === current)
             .map((f) => {
-              const isExhausted = f.available_amount < f.unit_cost;
+              const isExhausted = (f.available_balance ?? f.available_amount) < f.unit_cost;
               return (
                 <option key={f.id} value={f.id} disabled={isExhausted}>
                   {f.file_no} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}

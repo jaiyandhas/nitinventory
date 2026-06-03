@@ -39,7 +39,7 @@ export const authApi = {
 
 // Purchase Requests
 export const prApi = {
-  list: () => api.get('/pr/'),
+  list: (params?: { skip?: number; limit?: number }) => api.get('/pr/', { params }),
   get: (id: number) => api.get(`/pr/${id}`),
   create: (data: object) => api.post('/pr/', data),
   createWithFiles: (formData: FormData) =>
@@ -69,7 +69,8 @@ export const prApi = {
     api.post(`/pr/${id}/cancel-tender`, { reason, reinitiation_method: reinitiationMethod }),
   reinitiatePr: (id: number) => api.post(`/pr/${id}/reinitiate`),
   billPassing: (id: number, data: any) => api.post(`/pr/${id}/bill-passing`, data),
-  referPr: (id: number, data: { referred_to_id: number; query: string }) => api.post(`/pr/${id}/refer`, data),
+  referPr: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/refer`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   respondReferral: (id: number, formData: FormData) =>
     api.post(`/pr/${id}/refer/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
@@ -112,7 +113,7 @@ export const inventoryApi = {
 
 // Assets
 export const assetsApi = {
-  list: () => api.get('/assets/'),
+  list: (params?: { skip?: number; limit?: number }) => api.get('/assets/', { params }),
   get: (id: number) => api.get(`/assets/${id}`),
   create: (data: object) => api.post('/assets/', data),
   importCsv: (formData: FormData) =>
@@ -136,7 +137,7 @@ export const adminApi = {
   createFinancialYear: (data: object) => api.post('/admin/financial-years', data),
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
-  budget: () => api.get('/admin/budget'),
+  budget: (params?: { skip?: number; limit?: number }) => api.get('/admin/budget', { params }),
   createBudget: (data: object) => api.post('/admin/budget', data),
   updateBudget: (id: number, data: object) => api.put(`/admin/budget/${id}`, data),
   workflows: () => api.get('/admin/workflows'),
@@ -169,4 +170,6 @@ export const adminApi = {
   addCategory: (data: { type: 'expenditure' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
   getNextFileNumber: (params: { department_id: number; expenditure_category: string; financial_year_id: number }) =>
     api.get('/admin/budget/next-file-number', { params }),
+  forceAdvancePr: (prId: number, remarks: string) =>
+    api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),
 };

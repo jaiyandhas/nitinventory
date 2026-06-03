@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Check, ShieldAlert, Settings, Users, Award, X } from 'lucide-react';
-import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../types';
+import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { budgetApi } from '../../services/api';
+import { budgetApi } from '../../../services/api';
 import toast from 'react-hot-toast';
 
 interface PRHeaderProps {
@@ -216,7 +216,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
       </div>
 
       {/* Metadata Cards */}
-      <div className="card p-6 grid grid-cols-2 gap-6">
+      <div className="card p-6 grid grid-cols-2 gap-6 text-left">
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Amount</div>
           <div className="text-lg font-bold text-[#1a3a6b]">{formatCurrency(pr.amount)}</div>
@@ -240,7 +240,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             <div className="text-sm font-bold text-blue-800">
               Phase {pr.flow.phase_id}: {pr.flow.phase_name || 'N/A'} (Step {pr.flow.step_order})
             </div>
-            <div className="text-xs font-medium text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+            <div className="text-xs font-medium text-slate-500 mt-1 flex flex-wrap items-center gap-1.5 text-left">
               <span>Pending with:</span>
               {isAdmin && pr.flow.workflow_step_id ? (
                 <select
