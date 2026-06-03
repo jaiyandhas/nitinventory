@@ -510,6 +510,35 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         tender_vendors_threshold = row[0] if row else None
         tender_vendors_comparison = row[1] if row else None
 
+    await db.refresh(pr.initiator, ["department"])
+    dept = pr.initiator.department
+
+    # Gather user IDs for batch loading (prevents N+1 queries)
+    user_ids = set()
+    for h in pr.history:
+        if h.current_approver_id:
+            user_ids.add(h.current_approver_id)
+    for a in pr.assignments:
+        if a.assigned_da_id:
+            user_ids.add(a.assigned_da_id)
+    if dept:
+        if dept.expert1_id:
+            user_ids.add(dept.expert1_id)
+        if dept.expert2_id:
+            user_ids.add(dept.expert2_id)
+        if dept.director_faculty_id:
+            user_ids.add(dept.director_faculty_id)
+
+    users_by_id = {}
+    if user_ids:
+        users_res = await db.execute(
+            select(User)
+            .options(selectinload(User.role))
+            .where(User.id.in_(list(user_ids)))
+        )
+        for u in users_res.scalars().all():
+            users_by_id[u.id] = u
+
     history = []
     # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
     for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
@@ -528,10 +557,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         actor_name = ""
         actor_role_name = ""
         if h.current_approver_id:
-            actor_res = await db.execute(
-                select(User).options(selectinload(User.role)).where(User.id == h.current_approver_id)
-            )
-            actor = actor_res.scalar_one_or_none()
+            actor = users_by_id.get(h.current_approver_id)
             if actor:
                 actor_name = actor.name
                 actor_role_name = actor.role.name if actor.role else ""
@@ -549,8 +575,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     for a in pr.assignments:
         da_name = ""
         if a.assigned_da_id:
-            da_res = await db.execute(select(User.name).where(User.id == a.assigned_da_id))
-            da_name = da_res.scalar_one_or_none() or ""
+            da_user = users_by_id.get(a.assigned_da_id)
+            da_name = da_user.name if da_user else ""
         assignments_list.append({
             "id": a.id,
             "assigned_da_id": a.assigned_da_id,
@@ -608,22 +634,9 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     )
     hod = hod_res.scalar_one_or_none()
     
-    await db.refresh(pr.initiator, ["department"])
-    dept = pr.initiator.department
-    
-    expert1 = None
-    expert2 = None
-    director_faculty = None
-    if dept:
-        if dept.expert1_id:
-            expert1_res = await db.execute(select(User).where(User.id == dept.expert1_id))
-            expert1 = expert1_res.scalar_one_or_none()
-        if dept.expert2_id:
-            expert2_res = await db.execute(select(User).where(User.id == dept.expert2_id))
-            expert2 = expert2_res.scalar_one_or_none()
-        if dept.director_faculty_id:
-            director_faculty_res = await db.execute(select(User).where(User.id == dept.director_faculty_id))
-            director_faculty = director_faculty_res.scalar_one_or_none()
+    expert1 = users_by_id.get(dept.expert1_id) if dept and dept.expert1_id else None
+    expert2 = users_by_id.get(dept.expert2_id) if dept and dept.expert2_id else None
+    director_faculty = users_by_id.get(dept.director_faculty_id) if dept and dept.director_faculty_id else None
 
     budget_file = None
     if pr.items:
