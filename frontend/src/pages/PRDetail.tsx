@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, 
-  RotateCcw, ShieldAlert, Search
+  RotateCcw, ShieldAlert, Search, Users, FileText
 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { prApi, budgetApi, adminApi } from '../services/api';
@@ -131,7 +131,10 @@ export const PRDetailPage: React.FC = () => {
     }
   }
 
-  const isActionable = canActOn && !['po_issued', 'rejected', 'cancelled', 'completed'].includes(pr.current_status);
+  const activeReferralForUser = pr.referrals?.find((ref: any) => ref.referred_to?.id === user?.id && ref.status === 'pending');
+  const anyPendingReferral = pr.referrals?.find((ref: any) => ref.status === 'pending');
+
+  const isActionable = (canActOn || !!activeReferralForUser || !!anyPendingReferral) && !['po_issued', 'rejected', 'cancelled', 'completed'].includes(pr.current_status);
 
   const formatCurrency = (n?: number) => {
     if (n === undefined || n === null || isNaN(n)) return '₹0.00L';
@@ -161,13 +164,64 @@ export const PRDetailPage: React.FC = () => {
           />
 
           {/* Action area */}
-          {isActionable && (
+          {(isActionable || ['po_issued', 'cancelled'].includes(pr.current_status)) && (
             <PRActionPanel
               pr={pr}
               user={user}
               refetch={refetch}
               faculties={faculties}
             />
+          )}
+
+          {/* Consultation History */}
+          {pr.referrals && pr.referrals.length > 0 && (
+            <div className="card p-6 bg-white border border-slate-200 shadow-sm space-y-4 text-left">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Users size={18} className="text-blue-600" /> Consultation History
+              </h3>
+              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                {pr.referrals.map((ref: any) => (
+                  <div key={ref.id} className="border-l-2 border-blue-400 pl-4 py-2 space-y-2 text-left bg-slate-50/50 p-3 rounded-r-lg">
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <div>
+                        <span className="font-semibold text-slate-700">{ref.referred_by?.name}</span> asked <span className="font-semibold text-slate-700">{ref.referred_to?.name}</span>
+                      </div>
+                      <span>{new Date(ref.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div className="text-xs text-slate-700 bg-white p-2.5 border border-slate-100 rounded shadow-xs">
+                      <span className="font-semibold text-slate-500">Query: </span>
+                      {ref.query}
+                    </div>
+                    {ref.status === 'pending' ? (
+                      <div className="text-xs text-amber-600 font-semibold italic flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        Awaiting response...
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="text-xs text-slate-800 bg-emerald-50/50 p-2.5 border border-emerald-100 rounded">
+                          <span className="font-semibold text-emerald-700">Opinion: </span>
+                          {ref.response}
+                        </div>
+                        {ref.response_document_path && (
+                          <a
+                            href={ref.response_document_path}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                          >
+                            <FileText size={14} /> Download Opinion Report (PDF)
+                          </a>
+                        )}
+                        <div className="text-[10px] text-slate-400">
+                          Responded on: {new Date(ref.responded_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 

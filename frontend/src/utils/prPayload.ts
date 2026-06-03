@@ -76,6 +76,7 @@ export function buildPRCreateFormData(
         tech_specs_text: item.tech_specs_text,
       };
     }),
+    form_data: common.form_data || {},
   };
 
   const form = new FormData();

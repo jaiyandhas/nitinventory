@@ -180,6 +180,18 @@ async def test_technical_evaluation_committee_signatures(db_session):
     
     hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
     hod = hod_res.scalar_one()
+
+    vg_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    vg = vg_res.scalar_one()
+    
+    # Configure department committee
+    from app.models.user import Department
+    dept_res = await db_session.execute(select(Department).where(Department.id == faculty.department_id))
+    dept = dept_res.scalar_one()
+    dept.expert1_id = faculty1.id
+    dept.expert2_id = faculty2.id
+    dept.director_faculty_id = vg.id
+    await db_session.flush()
     
     # Fetch Phase TE (Technical Evaluation)
     phase_te_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation"))
@@ -196,7 +208,7 @@ async def test_technical_evaluation_committee_signatures(db_session):
         current_status="draft",
         faculty1_id=faculty1.id,
         faculty2_id=faculty2.id,
-        faculty3_id=hod.id,
+        faculty3_id=vg.id,
     )
     db_session.add(pr)
     await db_session.flush()
@@ -211,7 +223,18 @@ async def test_technical_evaluation_committee_signatures(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # First sign: Initiator
+    # First sign: HOD (first signer)
+    await flow_service.advance(pr, hod, remarks="HOD tech eval sign")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr, ["history"])
+    assert flow.step_order == 1
+    
+    # Check that HOD has a signature history log
+    hod_history = [h for h in pr.history if h.current_approver_id == hod.id]
+    assert len(hod_history) == 1
+    assert hod_history[0].status == "Technical Evaluation Approved"
+    
+    # Second sign: Initiator (faculty)
     await flow_service.advance(pr, faculty, remarks="Initiator tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
@@ -222,24 +245,24 @@ async def test_technical_evaluation_committee_signatures(db_session):
     assert len(initiator_history) == 1
     assert initiator_history[0].status == "Technical Evaluation Completed"
     
-    # Second sign: Faculty 1
+    # Third sign: Faculty 1
     await flow_service.advance(pr, faculty1, remarks="Faculty 1 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Third sign: Faculty 2
+    # Fourth sign: Faculty 2
     await flow_service.advance(pr, faculty2, remarks="Faculty 2 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Fourth sign: HOD (Faculty 3 nominee)
-    await flow_service.advance(pr, hod, remarks="Faculty 3 tech eval sign")
+    # Fifth sign: VG (Director Nominee)
+    await flow_service.advance(pr, vg, remarks="VG tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     
-    # Now all 4 should have signed, and flow step order should have advanced to step 2 (HOD review)
+    # Now all 5 should have signed, and flow step order should have advanced to step 2 (HOD review)
     assert flow.step_order == 2
     
     # Verify no redundant "Forwarded" or "Forwarded to next phase" status exists in the history logs for TE step 1
@@ -264,6 +287,18 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     
     hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
     hod = hod_res.scalar_one()
+
+    vg_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    vg = vg_res.scalar_one()
+    
+    # Configure department committee
+    from app.models.user import Department
+    dept_res = await db_session.execute(select(Department).where(Department.id == faculty.department_id))
+    dept = dept_res.scalar_one()
+    dept.expert1_id = faculty1.id
+    dept.expert2_id = faculty2.id
+    dept.director_faculty_id = vg.id
+    await db_session.flush()
     
     # Fetch Phase TE (Technical Evaluation)
     phase_te_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation"))
@@ -280,7 +315,7 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
         current_status="draft",
         faculty1_id=faculty1.id,
         faculty2_id=faculty2.id,
-        faculty3_id=hod.id,
+        faculty3_id=vg.id,
     )
     db_session.add(pr)
     await db_session.flush()
@@ -294,11 +329,12 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # Sign all 4 to advance to step 2
+    # Sign all 5 in order to advance to step 2
+    await flow_service.advance(pr, hod, remarks="HOD sign")
     await flow_service.advance(pr, faculty, remarks="PI sign")
     await flow_service.advance(pr, faculty1, remarks="F1 sign")
     await flow_service.advance(pr, faculty2, remarks="F2 sign")
-    await flow_service.advance(pr, hod, remarks="F3 sign")
+    await flow_service.advance(pr, vg, remarks="VG sign")
     await db_session.refresh(flow)
     assert flow.step_order == 2
     
@@ -309,9 +345,12 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     assert flow.step_order == 1
     assert pr.te_initiated_at is not None
     
-    # Now verify that a single member's approval does NOT advance the PR
-    # Sign only Faculty 1
-    await flow_service.advance(pr, faculty1, remarks="New F1 sign")
+    # Verify that signing out of order (e.g. Faculty 1 signing first) raises ValueError
+    with pytest.raises(ValueError, match="It is not your turn to sign"):
+        await flow_service.advance(pr, faculty1, remarks="Out of order F1 sign")
+        
+    # Sign in correct turn: HOD
+    await flow_service.advance(pr, hod, remarks="New HOD sign")
     await db_session.refresh(flow)
     assert flow.step_order == 1  # Should stay on step 1 since others haven't signed this round!
 

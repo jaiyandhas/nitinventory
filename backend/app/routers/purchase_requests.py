@@ -16,7 +16,7 @@ from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestItem, PurchaseRequestHistory,
     PurchaseRequestAssignment, TechnicalEvaluation, FinancialEvaluation,
     CommercialEvaluation, Document, WorkFlowHierarchy, RequestStatus, AssignmentStatus,
-    VendorMaster
+    VendorMaster, PRReferral
 )
 from app.models.budget import BudgetMaster, PurchaseCategory, ProcurementManager, PhaseManager, FinancialYear
 from app.services.flow_engine import FlowEngineService
@@ -67,6 +67,8 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
             "requirement_type": pr.purchase_category.requirement_type,
         } if pr.purchase_category else None,
         "procurement": {"id": pr.procurement.id, "name": pr.procurement.name} if pr.procurement else None,
+        "form_data": pr.form_data,
+        "parent_pr_id": pr.parent_pr_id,
     }
 
 
@@ -184,6 +186,14 @@ async def _persist_pr(
     if not procurement:
         raise HTTPException(status_code=400, detail="Invalid procurement method")
 
+    # Validate dynamic form_data if procurement method has a schema
+    if procurement.form_schema:
+        from app.services.evaluator import validate_json_schema
+        try:
+            validate_json_schema(payload.form_data or {}, procurement.form_schema)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     if procurement.max_amount is not None and total_amount > procurement.max_amount:
         raise HTTPException(
             status_code=400,
@@ -230,6 +240,7 @@ async def _persist_pr(
         is_training_required=payload.training_required,
         training_type=payload.training_type,
         training_vendor=payload.training_vendor,
+        form_data=payload.form_data,
     )
     db.add(pr)
     await db.flush()
@@ -391,16 +402,23 @@ async def list_vendors(db: AsyncSession = Depends(get_db), user: User = Depends(
 
 @router.get("/{pr_id}")
 async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    result = await db.execute(
+        select(PurchaseRequest)
+        .options(
+            selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
+            selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
+        )
+        .where(PurchaseRequest.id == pr_id)
+    )
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
 
     await db.refresh(pr, ["initiator", "purchase_category", "procurement", "items", "history", "flow",
                           "technical_evaluations", "financial_evaluations", "commercial_evaluations", "assignments", "documents",
-                          "faculty1", "faculty2", "faculty3", "aa_approver"])
+                          "faculty1", "faculty2", "faculty3", "aa_approver", "bill_passing", "deliveries", "referrals"])
 
-    # BOLA fix: department-scope check
+    # BOLA check: department-scope check
     group = user.role.group_key if user.role else None
     is_expected_user = False
     if pr.flow:
@@ -420,7 +438,21 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         if step and step.user_type == "user" and step.user_id == user.id:
             is_expected_user = True
 
-    if not is_expected_user:
+    # Check active referral for this user
+    is_consulted = False
+    referral_check = await db.execute(
+        select(PRReferral).where(
+            and_(
+                PRReferral.purchase_request_id == pr.id,
+                PRReferral.referred_to_id == user.id,
+                PRReferral.status == "pending"
+            )
+        )
+    )
+    if referral_check.scalar_one_or_none():
+        is_consulted = True
+
+    if not is_expected_user and not is_consulted:
         allowed_nominees = {pr.faculty1_id, pr.faculty2_id, pr.faculty3_id}
         if user.id not in allowed_nominees:
             if group == "faculty" and pr.initiator_id != user.id:
@@ -450,7 +482,6 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         )
         step = res.scalar_one_or_none()
         if step:
-            from sqlalchemy.orm import selectinload
             await db.refresh(step, ["role", "user"])
             expected_group = step.user_group
             expected_role_id = step.role_id
@@ -461,9 +492,9 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
         phase_name = phase_res.scalar_one_or_none()
 
-        # Get threshold if exists in the current phase
+        # Get threshold and comparison if exists in the current phase
         threshold_res = await db.execute(
-            select(WorkFlowHierarchy.tender_vendors_threshold)
+            select(WorkFlowHierarchy.tender_vendors_threshold, WorkFlowHierarchy.tender_vendors_comparison)
             .where(
                 and_(
                     WorkFlowHierarchy.category_id == pr.category_id,
@@ -477,6 +508,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         )
         row = threshold_res.first()
         tender_vendors_threshold = row[0] if row else None
+        tender_vendors_comparison = row[1] if row else None
 
     history = []
     # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
@@ -496,7 +528,6 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         actor_name = ""
         actor_role_name = ""
         if h.current_approver_id:
-            from sqlalchemy.orm import selectinload
             actor_res = await db.execute(
                 select(User).options(selectinload(User.role)).where(User.id == h.current_approver_id)
             )
@@ -555,9 +586,59 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "ranking": fe.ranking,
             "is_awarded": fe.is_awarded,
             "remarks": fe.remarks,
+            "unit_price": fe.unit_price,
+            "taxes": fe.taxes,
+            "delivery_period": fe.delivery_period,
+            "warranty": fe.warranty,
         }
         for fe in pr.financial_evaluations
     ]
+
+    # Load HOD and department committee
+    from app.models.user import RoleManager
+    hod_res = await db.execute(
+        select(User)
+        .join(RoleManager, User.role_id == RoleManager.id)
+        .where(
+            and_(
+                User.department_id == pr.initiator.department_id,
+                RoleManager.group_key == "hod"
+            )
+        )
+    )
+    hod = hod_res.scalar_one_or_none()
+    
+    await db.refresh(pr.initiator, ["department"])
+    dept = pr.initiator.department
+    
+    expert1 = None
+    expert2 = None
+    director_faculty = None
+    if dept:
+        if dept.expert1_id:
+            expert1_res = await db.execute(select(User).where(User.id == dept.expert1_id))
+            expert1 = expert1_res.scalar_one_or_none()
+        if dept.expert2_id:
+            expert2_res = await db.execute(select(User).where(User.id == dept.expert2_id))
+            expert2 = expert2_res.scalar_one_or_none()
+        if dept.director_faculty_id:
+            director_faculty_res = await db.execute(select(User).where(User.id == dept.director_faculty_id))
+            director_faculty = director_faculty_res.scalar_one_or_none()
+
+    budget_file = None
+    if pr.items:
+        first_item = pr.items[0]
+        if first_item.budget_file_id:
+            budget_file_res = await db.execute(
+                select(BudgetMaster)
+                .options(
+                    selectinload(BudgetMaster.expert1),
+                    selectinload(BudgetMaster.expert2),
+                    selectinload(BudgetMaster.director_faculty),
+                )
+                .where(BudgetMaster.id == first_item.budget_file_id)
+            )
+            budget_file = budget_file_res.scalar_one_or_none()
 
     return {
         **_serialize_pr(pr),
@@ -570,6 +651,25 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "faculty2": {"id": pr.faculty2.id, "name": pr.faculty2.name, "email": pr.faculty2.email} if pr.faculty2 else None,
         "faculty3": {"id": pr.faculty3.id, "name": pr.faculty3.name, "email": pr.faculty3.email} if pr.faculty3 else None,
         "aa_approver": {"id": pr.aa_approver.id, "name": pr.aa_approver.name, "email": pr.aa_approver.email} if pr.aa_approver else None,
+        "budget_file": {
+            "id": budget_file.id,
+            "file_no": budget_file.file_no,
+            "department_id": budget_file.department_id,
+            "expert1_id": budget_file.expert1_id,
+            "expert2_id": budget_file.expert2_id,
+            "director_faculty_id": budget_file.director_faculty_id,
+            "expert1": {"id": budget_file.expert1.id, "name": budget_file.expert1.name, "email": budget_file.expert1.email} if budget_file.expert1 else None,
+            "expert2": {"id": budget_file.expert2.id, "name": budget_file.expert2.name, "email": budget_file.expert2.email} if budget_file.expert2 else None,
+            "director_faculty": {"id": budget_file.director_faculty.id, "name": budget_file.director_faculty.name, "email": budget_file.director_faculty.email} if budget_file.director_faculty else None,
+        } if budget_file else None,
+        "hod_id": hod.id if hod else None,
+        "expert1_id": dept.expert1_id if dept else None,
+        "expert2_id": dept.expert2_id if dept else None,
+        "director_faculty_id": dept.director_faculty_id if dept else None,
+        "hod": {"id": hod.id, "name": hod.name, "email": hod.email} if hod else None,
+        "expert1": {"id": expert1.id, "name": expert1.name, "email": expert1.email} if expert1 else None,
+        "expert2": {"id": expert2.id, "name": expert2.name, "email": expert2.email} if expert2 else None,
+        "director_faculty": {"id": director_faculty.id, "name": director_faculty.name, "email": director_faculty.email} if director_faculty else None,
         "emd": pr.emd,
         "performance_security": pr.performance_security,
         "is_item_split": pr.is_item_split,
@@ -586,6 +686,59 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "delivery_location": pr.delivery_location,
         "delivery_mode": pr.delivery_mode,
         "basis_of_estimate": pr.basis_of_estimate_details,
+        # LPC & Single Bid
+        "lpc_remarks": pr.lpc_remarks,
+        "lpc_committee_members": pr.lpc_committee_members,
+        "lpc_minutes_reference": pr.lpc_minutes_reference,
+        "single_bid_justification": pr.single_bid_justification,
+        # Bill Passing
+        "bill_passing": {
+            "id": pr.bill_passing.id,
+            "invoice_number": pr.bill_passing.invoice_number,
+            "invoice_date": pr.bill_passing.invoice_date.isoformat() if pr.bill_passing.invoice_date else None,
+            "challan_number": pr.bill_passing.challan_number,
+            "challan_date": pr.bill_passing.challan_date.isoformat() if pr.bill_passing.challan_date else None,
+            "bill_amount": pr.bill_passing.bill_amount,
+            "gst_amount": pr.bill_passing.gst_amount,
+            "payment_terms": pr.bill_passing.payment_terms,
+            "passed_by_id": pr.bill_passing.passed_by_id,
+            "remarks": pr.bill_passing.remarks,
+        } if pr.bill_passing else None,
+        # Deliveries
+        "deliveries": [
+            {
+                "id": d.id,
+                "status": d.status,
+                "challan_number": d.challan_number,
+                "invoice_number": d.invoice_number,
+                "received_date": d.received_date.isoformat() if d.received_date else None,
+                "created_at": d.created_at.isoformat() + "Z" if d.created_at else None,
+                "items": [
+                    {
+                        "id": item.id,
+                        "name": item.name,
+                        "challan_quantity": item.challan_quantity,
+                        "unit_price": item.unit_price,
+                    }
+                    for item in d.items
+                ]
+            }
+            for d in pr.deliveries
+        ],
+        "referrals": [
+            {
+                "id": ref.id,
+                "referred_by": {"id": ref.referred_by.id, "name": ref.referred_by.name, "email": ref.referred_by.email} if ref.referred_by else None,
+                "referred_to": {"id": ref.referred_to.id, "name": ref.referred_to.name, "email": ref.referred_to.email} if ref.referred_to else None,
+                "query": ref.query,
+                "response": ref.response,
+                "response_document_path": ref.response_document_path,
+                "status": ref.status,
+                "created_at": ref.created_at.isoformat() + "Z" if ref.created_at else None,
+                "responded_at": ref.responded_at.isoformat() + "Z" if ref.responded_at else None,
+            }
+            for ref in pr.referrals
+        ],
         "history": history,
         "items": [{"id": i.id, "item_description": i.item_description, "estimated_total": i.estimated_total, "quantity": i.quantity} for i in pr.items],
         "flow": {
@@ -600,6 +753,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "expected_user_name": expected_user_name,
             "workflow_step_id": step.id if step else None,
             "tender_vendors_threshold": tender_vendors_threshold,
+            "tender_vendors_comparison": tender_vendors_comparison,
         } if pr.flow else None,
         "commercial_evaluations": commercial_evaluations,
         "technical_evaluations": technical_evaluations,
@@ -619,6 +773,20 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     }
 
 
+async def verify_no_active_referral(pr_id: int, db: AsyncSession):
+    from app.models.purchase_request import PRReferral
+    referral_check = await db.execute(
+        select(PRReferral).where(
+            and_(
+                PRReferral.purchase_request_id == pr_id,
+                PRReferral.status == "pending"
+            )
+        )
+    )
+    if referral_check.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Cannot perform workflow action. Awaiting opinion from consulted user.")
+
+
 @router.post("/{pr_id}/advance")
 async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     remarks = body.get("remarks")
@@ -628,6 +796,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await verify_no_active_referral(pr.id, db)
 
     await db.refresh(user, ["role"])
     if user.role and user.role.group_key == "hod":
@@ -657,18 +826,29 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                 is_hod_step = (step.user_group == "hod") or (step.role and step.role.group_key == "hod")
                 
             if (phase and phase.phase_name == "Administrative Approval") or is_hod_step:
-                faculty1_id = body.get("faculty1_id") or pr.faculty1_id
-                faculty2_id = body.get("faculty2_id") or pr.faculty2_id
-                faculty3_id = body.get("faculty3_id") or pr.faculty3_id
-                if not faculty1_id or not faculty2_id or not faculty3_id:
-                    raise HTTPException(status_code=400, detail="HOD must assign Faculty 1, Faculty 2, and Director Nominee committee members to approve this request.")
-                if len({faculty1_id, faculty2_id, faculty3_id}) < 3:
-                    raise HTTPException(status_code=400, detail="All 3 committee members must be different.")
-                if pr.initiator_id in {faculty1_id, faculty2_id, faculty3_id}:
-                    raise HTTPException(status_code=400, detail="The purchase request initiator cannot be assigned as a committee nominee.")
-                pr.faculty1_id = faculty1_id
-                pr.faculty2_id = faculty2_id
-                pr.faculty3_id = faculty3_id
+                # Auto-assign from budget file nominees if present, else fallback to department
+                budget_file = None
+                await db.refresh(pr, ["items"])
+                if pr.items:
+                    budget_file_id = pr.items[0].budget_file_id
+                    if budget_file_id:
+                        budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
+                        budget_file = budget_res.scalar_one_or_none()
+
+                if budget_file and (budget_file.expert1_id or budget_file.expert2_id or budget_file.director_faculty_id):
+                    pr.faculty1_id = budget_file.expert1_id
+                    pr.faculty2_id = budget_file.expert2_id
+                    pr.faculty3_id = budget_file.director_faculty_id
+                else:
+                    await db.refresh(pr, ["initiator"])
+                    await db.refresh(pr.initiator, ["department"])
+                    dept = pr.initiator.department
+                    if dept:
+                        pr.faculty1_id = dept.expert1_id
+                        pr.faculty2_id = dept.expert2_id
+                        pr.faculty3_id = dept.director_faculty_id
+                if not pr.faculty1_id or not pr.faculty2_id or not pr.faculty3_id:
+                    raise HTTPException(status_code=400, detail="The purchase committee has not been fully configured yet by HOD and Director (either on the budget file or globally for the department). HOD must nominate Expert 1 & 2 and Director must nominate Faculty representative.")
 
     flow_engine = FlowEngineService(db, background_tasks)
     try:
@@ -690,6 +870,7 @@ async def reject_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, d
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await verify_no_active_referral(pr.id, db)
     flow_engine = FlowEngineService(db, background_tasks)
     try:
         await flow_engine.reject(pr, user, reason)
@@ -710,6 +891,7 @@ async def send_back_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found")
+    await verify_no_active_referral(pr.id, db)
     flow_engine = FlowEngineService(db)
     try:
         await flow_engine.send_back(pr, user, body["to_step"], reason)
@@ -814,9 +996,55 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         return
 
     elif step.user_type == "tech_evaluation":
-        allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
-        if user.id not in allowed_ids:
-            raise HTTPException(status_code=403, detail="Only the purchase initiator or purchase committee nominees can perform technical evaluation")
+        from app.models.user import RoleManager
+        hod_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(
+                and_(
+                    User.department_id == pr.initiator.department_id,
+                    RoleManager.group_key == "hod"
+                )
+            )
+        )
+        hod = hod_res.scalar_one_or_none()
+        hod_id = hod.id if hod else None
+
+        await db.refresh(pr.initiator, ["department"])
+        dept = pr.initiator.department
+        expert1_id = dept.expert1_id if dept else None
+        expert2_id = dept.expert2_id if dept else None
+        director_faculty_id = dept.director_faculty_id if dept else None
+
+        committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
+        if any(x is None for x in committee_ids):
+            raise HTTPException(status_code=400, detail="The department purchase committee is not fully formed/configured yet by HOD and Director. Please contact them.")
+
+        # Must be one of the committee members
+        if user.id not in committee_ids:
+            raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
+
+        # Check sequential signing order
+        since = pr.te_initiated_at or pr.created_at or datetime.min
+        await db.refresh(pr, ["history"])
+        approved_ids = {
+            h.current_approver_id for h in pr.history 
+            if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+            and (h.acted_at is None or h.acted_at >= since)
+        }
+
+        pending_index = None
+        for idx, cid in enumerate(committee_ids):
+            if cid not in approved_ids:
+                pending_index = idx
+                break
+
+        if pending_index is not None:
+            current_turn_id = committee_ids[pending_index]
+            if user.id != current_turn_id:
+                turn_user_res = await db.execute(select(User.name).where(User.id == current_turn_id))
+                turn_user_name = turn_user_res.scalar_one_or_none() or "Another member"
+                raise HTTPException(status_code=403, detail=f"It is not your turn to sign/approve. The next signer is {turn_user_name}.")
         return
 
     # Route action-specific checks (e.g. data uploads)
@@ -853,9 +1081,32 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
     )
 
     if action_type == "technical-eval" and (group == "faculty" or step.user_type == "tech_evaluation" or user.id == pr.initiator_id):
-        allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
-        if user.id not in allowed_ids:
-            raise HTTPException(status_code=403, detail="Only the purchase initiator or purchase committee nominees can perform technical evaluation")
+        from app.models.user import RoleManager
+        hod_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(
+                and_(
+                    User.department_id == pr.initiator.department_id,
+                    RoleManager.group_key == "hod"
+                )
+            )
+        )
+        hod = hod_res.scalar_one_or_none()
+        hod_id = hod.id if hod else None
+
+        await db.refresh(pr.initiator, ["department"])
+        dept = pr.initiator.department
+        expert1_id = dept.expert1_id if dept else None
+        expert2_id = dept.expert2_id if dept else None
+        director_faculty_id = dept.director_faculty_id if dept else None
+
+        committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
+        if any(x is None for x in committee_ids):
+            raise HTTPException(status_code=400, detail="The department purchase committee is not fully formed/configured yet by HOD and Director. Please contact them.")
+
+        if user.id not in committee_ids:
+            raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
         if phase_name != "Technical Evaluation":
             raise HTTPException(status_code=403, detail="Technical evaluations can only be registered during Technical Evaluation phase")
         if step.user_type != "tech_evaluation" and step.user_type != "purchase_initiator" and expected != "faculty":
@@ -1046,6 +1297,11 @@ async def add_tender_details(
     if body.get("vendor_list_link"):
         pr.vendor_list_link = body.get("vendor_list_link")
 
+    # LPC fields
+    pr.lpc_remarks = body.get("lpc_remarks")
+    pr.lpc_committee_members = body.get("lpc_committee_members")
+    pr.lpc_minutes_reference = body.get("lpc_minutes_reference")
+
     # Document upload handling
     doc_svc = DocumentService(db)
     if draft_file:
@@ -1222,6 +1478,9 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
     # Clear previous financial evaluations
     await db.execute(delete(FinancialEvaluation).where(FinancialEvaluation.purchase_request_id == pr.id))
 
+    # Save single bid justification if provided
+    pr.single_bid_justification = body.get("single_bid_justification")
+
     vendors_input = body.get("vendors", [])
     # Sort vendors by quoted_amount ascending
     vendors_sorted = sorted(vendors_input, key=lambda x: float(x.get("quoted_amount", 0)))
@@ -1234,6 +1493,10 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
             ranking=f"L{idx+1}",
             remarks=vendor.get("remarks"),
             is_awarded=False,
+            unit_price=float(vendor["unit_price"]) if vendor.get("unit_price") is not None else None,
+            taxes=float(vendor.get("taxes") or 0.0),
+            delivery_period=int(vendor["delivery_period"]) if vendor.get("delivery_period") is not None else None,
+            warranty=int(vendor["warranty"]) if vendor.get("warranty") is not None else None,
         )
         db.add(fa)
 
@@ -1324,7 +1587,9 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
         "faculty1",
         "faculty2",
         "faculty3",
-        "aa_approver"
+        "aa_approver",
+        "bill_passing",
+        "deliveries"
     ])
     if pr.initiator:
         await db.refresh(pr.initiator, ["department"])
@@ -1409,3 +1674,521 @@ async def print_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = 
             content=html_content,
             status_code=200
         )
+
+
+@router.post("/{pr_id}/cancel-po")
+async def cancel_po(
+    pr_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Cancel PO for a purchase request and rollback deducted budget amount."""
+    result = await db.execute(
+        select(PurchaseRequest).where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    if pr.current_status != RequestStatus.PO_ISSUED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only purchase requests in PO_ISSUED status can have their PO cancelled"
+        )
+
+    # Verify permission: initiator, department HOD, or admin
+    is_initiator = pr.initiator_id == user.id
+    await db.refresh(user, ["role"])
+    is_admin = user.role.group_key == "admin"
+    
+    await db.refresh(pr, ["initiator"])
+    is_hod = user.role.group_key == "hod" and user.department_id == pr.initiator.department_id
+
+    if not (is_initiator or is_hod or is_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to cancel this PO"
+        )
+
+    reason = body.get("reason")
+    reinitiation_method = body.get("reinitiation_method", "none")
+    reallocated_amount = float(body.get("reallocated_amount", 0.0))
+
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=400, detail="Reason for cancellation is required")
+
+    from app.models.purchase_request import POCancellation
+    po_cancel = POCancellation(
+        purchase_request_id=pr.id,
+        reason=reason,
+        reinitiation_method=reinitiation_method,
+        reallocated_amount=reallocated_amount,
+        cancelled_by_id=user.id,
+        cancelled_at=datetime.utcnow()
+    )
+    db.add(po_cancel)
+
+    # Rollback budget: decrement deducted_amount in BudgetMaster
+    from app.models.purchase_request import PurchaseRequestItem
+    item_res = await db.execute(
+        select(PurchaseRequestItem).where(PurchaseRequestItem.purchase_request_id == pr.id)
+    )
+    items = item_res.scalars().all()
+    
+    from collections import defaultdict
+    deltas = defaultdict(float)
+    for item in items:
+        if item.budget_file_id is not None:
+            deltas[item.budget_file_id] += item.estimated_total
+
+    from app.models.budget import BudgetMaster
+    from sqlalchemy import update, func
+    for budget_file_id, delta in deltas.items():
+        await db.execute(
+            update(BudgetMaster)
+            .where(BudgetMaster.id == budget_file_id)
+            .values(deducted_amount=func.greatest(0.0, BudgetMaster.deducted_amount - delta))
+            .execution_options(synchronize_session=False)
+        )
+
+    # Log action to PR history
+    from app.models.purchase_request import PurchaseRequestHistory
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="PO Cancelled",
+        remarks=f"Method: {reinitiation_method}. Reason: {reason}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    # Delete active workflow flow
+    from app.models.purchase_request import PurchaseRequestFlow
+    await db.execute(
+        delete(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
+    )
+
+    pr.current_status = RequestStatus.CANCELLED
+    await db.commit()
+
+    return {"message": "Purchase Order cancelled and budget refunded successfully"}
+
+
+@router.post("/{pr_id}/bill-passing")
+async def add_bill_passing(
+    pr_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+
+    # Check user role group is verifier_da or admin
+    await db.refresh(user, ["role"])
+    group = user.role.group_key if user.role else None
+    if group not in ("verifier_da", "admin"):
+        raise HTTPException(status_code=403, detail="Only Dealing Assistants and Admins can pass bills")
+
+    if pr.current_status != RequestStatus.PO_ISSUED:
+        raise HTTPException(status_code=400, detail="Bills can only be passed for PO Issued requests")
+
+    # Verify that there is at least one verified delivery for this PO
+    from app.models.inventory import Delivery, DeliveryStatus
+    delivery_res = await db.execute(
+        select(Delivery).where(
+            and_(
+                Delivery.po_id == pr.id,
+                Delivery.status == DeliveryStatus.VERIFIED
+            )
+        )
+    )
+    verified_delivery = delivery_res.scalar_one_or_none()
+    if not verified_delivery:
+        raise HTTPException(status_code=400, detail="Cannot pass bill. Delivery must be verified first.")
+
+    # Save BillPassing record
+    from app.models import BillPassing
+    from datetime import date
+    invoice_date_str = body.get("invoice_date")
+    challan_date_str = body.get("challan_date")
+
+    invoice_date_val = datetime.strptime(invoice_date_str, "%Y-%m-%d").date() if invoice_date_str else date.today()
+    challan_date_val = datetime.strptime(challan_date_str, "%Y-%m-%d").date() if challan_date_str else None
+
+    # Clear previous bill passing if exists
+    await db.execute(delete(BillPassing).where(BillPassing.purchase_request_id == pr.id))
+
+    bp = BillPassing(
+        purchase_request_id=pr.id,
+        invoice_number=body["invoice_number"],
+        invoice_date=invoice_date_val,
+        challan_number=body.get("challan_number"),
+        challan_date=challan_date_val,
+        bill_amount=float(body["bill_amount"]),
+        gst_amount=float(body.get("gst_amount") or 0.0),
+        payment_terms=body.get("payment_terms"),
+        passed_by_id=user.id,
+        remarks=body.get("remarks"),
+    )
+    db.add(bp)
+
+    # Set PR status to completed
+    pr.current_status = RequestStatus.COMPLETED
+
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Bill Passed (PR Completed)",
+        remarks=body.get("remarks") or f"Bill passed for Invoice No: {body['invoice_number']}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Bill passed successfully. Purchase Request is now completed."}
+
+
+@router.post("/{pr_id}/cancel-tender")
+async def cancel_tender(
+    pr_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Cancel tender process for a purchase request and unlock budget."""
+    result = await db.execute(
+        select(PurchaseRequest).where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    if pr.current_status in (RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED, RequestStatus.COMPLETED):
+        raise HTTPException(
+            status_code=400,
+            detail="Only active in-progress purchase requests can have their tender process cancelled"
+        )
+
+    # Verify permission: initiator, department HOD, or admin
+    is_initiator = pr.initiator_id == user.id
+    await db.refresh(user, ["role"])
+    is_admin = user.role.group_key == "admin"
+    
+    await db.refresh(pr, ["initiator"])
+    is_hod = user.role.group_key == "hod" and user.department_id == pr.initiator.department_id
+
+    if not (is_initiator or is_hod or is_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to cancel this tender"
+        )
+
+    reason = body.get("reason")
+    reinitiation_method = body.get("reinitiation_method", "none")
+
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=400, detail="Reason for cancellation is required")
+
+    from app.models.purchase_request import TenderCancellation
+    tender_cancel = TenderCancellation(
+        purchase_request_id=pr.id,
+        reason=reason,
+        reinitiation_method=reinitiation_method,
+        cancelled_by_id=user.id,
+        cancelled_at=datetime.utcnow()
+    )
+    db.add(tender_cancel)
+
+    # Rollback budget: release the locked_amount
+    from app.services.budget_service import BudgetService
+    budget_svc = BudgetService(db)
+    await budget_svc.unlock_amount(pr)
+
+    # Log action to PR history
+    from app.models.purchase_request import PurchaseRequestHistory
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Tender Cancelled",
+        remarks=f"Method: {reinitiation_method}. Reason: {reason}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    # Delete active workflow flow
+    from app.models.purchase_request import PurchaseRequestFlow
+    await db.execute(
+        delete(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
+    )
+
+    pr.current_status = RequestStatus.CANCELLED
+    await db.commit()
+
+    return {"message": "Tender process cancelled and budget released successfully"}
+
+
+@router.post("/{pr_id}/reinitiate")
+async def reinitiate_pr(
+    pr_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-initiate a cancelled purchase request by cloning items and metadata into a new workflow."""
+    result = await db.execute(
+        select(PurchaseRequest)
+        .options(
+            selectinload(PurchaseRequest.items),
+            selectinload(PurchaseRequest.initiator)
+        )
+        .where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Original purchase request not found")
+
+    if pr.current_status != RequestStatus.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only cancelled purchase requests can be re-initiated"
+        )
+
+    # Verify permission: initiator, department HOD, or admin
+    is_initiator = pr.initiator_id == user.id
+    await db.refresh(user, ["role"])
+    is_admin = user.role.group_key == "admin"
+    is_hod = user.role.group_key == "hod" and user.department_id == pr.initiator.department_id
+
+    if not (is_initiator or is_hod or is_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to re-initiate this request"
+        )
+
+    # Create new cloned purchase request
+    new_pr = PurchaseRequest(
+        category_id=pr.category_id,
+        financial_year_id=pr.financial_year_id,
+        initiator_id=pr.initiator_id,
+        nominee_id=pr.nominee_id,
+        procurement_id=pr.procurement_id,
+        purchase_type=pr.purchase_type,
+        amount=pr.amount,
+        emd=pr.emd,
+        performance_security=pr.performance_security,
+        current_status=RequestStatus.PR_SUBMITTED,
+        basis_of_estimate_details=pr.basis_of_estimate_details,
+        delivery_mode=pr.delivery_mode,
+        delivery_location=pr.delivery_location,
+        is_service_center_in_south=pr.is_service_center_in_south,
+        service_center_south_desc=pr.service_center_south_desc,
+        is_quantity_split=pr.is_quantity_split,
+        quantity_split_details=pr.quantity_split_details,
+        is_item_split=pr.is_item_split,
+        item_split_justification=pr.item_split_justification,
+        exemption=pr.exemption,
+        exemption_remarks=pr.exemption_remarks,
+        is_training_required=pr.is_training_required,
+        training_type=pr.training_type,
+        training_vendor=pr.training_vendor,
+        training_comments=pr.training_comments,
+        form_data=pr.form_data,
+        parent_pr_id=pr.id,
+    )
+    db.add(new_pr)
+    await db.flush()
+
+    # Clone items
+    for item in pr.items:
+        new_item = PurchaseRequestItem(
+            purchase_request_id=new_pr.id,
+            budget_file_id=item.budget_file_id,
+            item_description=item.item_description,
+            quantity=item.quantity,
+            estimated_total=item.estimated_total,
+            charges=item.charges,
+            requirement_type=item.requirement_type,
+            availability=item.availability,
+            availability_remarks=item.availability_remarks,
+            site_readiness=item.site_readiness,
+            site_readiness_remarks=item.site_readiness_remarks,
+            warranty=item.warranty,
+            delivery_period=item.delivery_period,
+            present_stock=item.present_stock,
+            justification_for_procurement=item.justification_for_procurement,
+            previous_file_no_reference=item.previous_file_no_reference,
+            installation_required=item.installation_required,
+            tech_specs_text=item.tech_specs_text,
+            gem_link=item.gem_link,
+        )
+        db.add(new_item)
+    await db.flush()
+
+    # Clone documents (e.g. tech specs, quotations)
+    from app.models.purchase_request import Document
+    doc_res = await db.execute(select(Document).where(Document.purchase_request_id == pr.id))
+    docs = doc_res.scalars().all()
+    for doc in docs:
+        new_doc = Document(
+            purchase_request_id=new_pr.id,
+            doc_key=doc.doc_key,
+            doc_value=doc.doc_value,
+            uploaded_by_id=doc.uploaded_by_id,
+        )
+        db.add(new_doc)
+
+    # Set cloned ICR number
+    from app.models.budget import FinancialYear
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == new_pr.financial_year_id))
+    fy = fy_res.scalar_one()
+    
+    await db.refresh(pr.initiator, ["department"])
+    dept_code = pr.initiator.department.short_code if pr.initiator.department else "GEN"
+    new_pr.icr_number = f"ICR/S&P/{fy.label}/{dept_code}/{new_pr.id}"
+
+    # Initialize new workflow using FlowEngineService (locks budget, triggers step 1)
+    from app.services.flow_engine import FlowEngineService
+    flow_engine = FlowEngineService(db, background_tasks)
+    await flow_engine.initialize(new_pr, pr.initiator)
+    
+    await db.commit()
+
+    return {
+        "message": "Purchase request re-initiated successfully",
+        "id": new_pr.id,
+        "icr_number": new_pr.icr_number
+    }
+
+
+@router.post("/{pr_id}/refer")
+async def refer_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    # Validate that the user is the currently expected approver of the active step
+    await verify_current_user_group_for_pr(pr, user, db)
+
+    # Check if there is already an active pending referral
+    active_ref = await db.execute(
+        select(PRReferral).where(
+            and_(
+                PRReferral.purchase_request_id == pr.id,
+                PRReferral.status == "pending"
+            )
+        )
+    )
+    if active_ref.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="This purchase request is already referred for consultation")
+
+    referred_to_id = body.get("referred_to_id")
+    query = body.get("query")
+    if not referred_to_id:
+        raise HTTPException(status_code=400, detail="referred_to_id is required")
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Consultation query is required")
+
+    # Validate referred_to user
+    target_res = await db.execute(select(User).where(User.id == referred_to_id))
+    target_user = target_res.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=400, detail="Selected consultation user not found")
+
+    referral = PRReferral(
+        purchase_request_id=pr.id,
+        referred_by_id=user.id,
+        referred_to_id=referred_to_id,
+        query=query.strip(),
+        status="pending"
+    )
+    db.add(referral)
+
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Referred for Consultation",
+        remarks=f"Referred to {target_user.name} ({target_user.email}) for opinion. Query: {query}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Purchase request referred for consultation successfully", "referral_id": referral.id}
+
+
+@router.post("/{pr_id}/refer/respond")
+async def respond_referral(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    # Fetch active pending referral for this user on this PR
+    ref_res = await db.execute(
+        select(PRReferral).where(
+            and_(
+                PRReferral.purchase_request_id == pr.id,
+                PRReferral.referred_to_id == user.id,
+                PRReferral.status == "pending"
+            )
+        )
+    )
+    referral = ref_res.scalar_one_or_none()
+    if not referral:
+        raise HTTPException(status_code=403, detail="You do not have a pending consultation request for this purchase request")
+
+    content_type = request.headers.get("content-type", "")
+    response_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        response_file = form.get("response_document")
+        if response_file and not getattr(response_file, "filename", None):
+            response_file = None
+    else:
+        body = await request.json()
+
+    response_text = body.get("response")
+    if not response_text or not response_text.strip():
+        raise HTTPException(status_code=400, detail="Response comments are required")
+
+    # Save document if uploaded
+    doc_path = None
+    if response_file:
+        from app.services.document_service import DocumentService
+        doc_svc = DocumentService(db)
+        doc_record = await doc_svc.save_upload(pr, f"referral_{referral.id}_response", response_file, user.id)
+        doc_path = f"/storage/{doc_record.doc_value.get('path')}"
+
+    # Update referral record
+    referral.response = response_text.strip()
+    referral.response_document_path = doc_path
+    referral.status = "responded"
+    referral.responded_at = datetime.utcnow()
+
+    # Log history
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Consultation Response Submitted",
+        remarks=f"Opinion provided by {user.name}: {response_text.strip()}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Consultation response submitted successfully"}

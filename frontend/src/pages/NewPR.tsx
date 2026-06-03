@@ -135,6 +135,7 @@ export const NewPRPage: React.FC = () => {
             common={wizard.common}
             facultyOptions={facultyOptions}
             procurementName={procurementMethod?.name ?? ''}
+            formSchema={procurementMethod?.form_schema}
             onUpdate={wizard.updateCommon}
           />
         )}

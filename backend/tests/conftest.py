@@ -23,7 +23,7 @@ def event_loop():
 async def setup_test_database():
     """Create tables and run seed script once for the test session."""
     # Create test engine and sessionmaker inside the active event loop
-    test_engine = create_async_engine(os.environ["DATABASE_URL"], echo=False)
+    test_engine = create_async_engine(os.environ["DATABASE_URL"], echo=True)
     TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False, class_=AsyncSession)
     
     # Monkeypatch the database module
@@ -44,8 +44,8 @@ async def setup_test_database():
     yield
     
     # Clean up at the end of session
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # async with test_engine.begin() as conn:
+    #     await conn.run_sync(Base.metadata.drop_all)
     await test_engine.dispose()
 
 @pytest_asyncio.fixture

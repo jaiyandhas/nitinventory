@@ -417,16 +417,46 @@
     </table>
     {% endif %}
 
+    {% if pr.lpc_remarks %}
+    <div class="section-title">Limited Purchase Committee Approval (Module 5)</div>
+    <table class="details-table">
+        <tr>
+            <th style="width: 25%">LPC Committee Members</th>
+            <td style="width: 25%">{{ pr.lpc_committee_members or 'N/A' }}</td>
+            <th style="width: 25%">Minutes Reference</th>
+            <td style="width: 25%">{{ pr.lpc_minutes_reference or 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>LPC Remarks / Decision</th>
+            <td colspan="3" style="font-style: italic;">{{ pr.lpc_remarks }}</td>
+        </tr>
+    </table>
+    {% endif %}
+
+    {% if pr.single_bid_justification %}
+    <div class="section-title">Single Bid Justification (Module 13)</div>
+    <table class="details-table">
+        <tr>
+            <th style="width: 25%">Justification</th>
+            <td colspan="3" style="font-style: italic;">{{ pr.single_bid_justification }}</td>
+        </tr>
+    </table>
+    {% endif %}
+
     {% if pr.financial_evaluations %}
-    <div class="section-title">Financial Bids & Rankings</div>
+    <div class="section-title">Price Comparative Statement (Module 11)</div>
     <table class="data-table">
         <thead>
             <tr>
-                <th style="width: 8%">S.No</th>
-                <th style="width: 40%">Vendor Name</th>
-                <th style="width: 22%">Quoted Amount</th>
-                <th style="width: 12%">Rank</th>
-                <th style="width: 18%">Remarks</th>
+                <th style="width: 5%">S.No</th>
+                <th style="width: 25%">Vendor Name</th>
+                <th style="width: 12%">Unit Price</th>
+                <th style="width: 10%">Taxes</th>
+                <th style="width: 15%">Total Quoted</th>
+                <th style="width: 10%">Delivery</th>
+                <th style="width: 10%">Warranty</th>
+                <th style="width: 5%">Rank</th>
+                <th style="width: 8%">Remarks</th>
             </tr>
         </thead>
         <tbody>
@@ -437,15 +467,82 @@
                 <td>{{ loop.index }}</td>
                 <td class="bold">
                     {{ fe.vendor_name }}
-                    {% if is_l1 %} <span style="color: green; font-size: 8pt;">(L1 - Preferred)</span>{% endif %}
-                    {% if fe.is_awarded %} <span style="color: #1a3a6b; font-weight: bold; font-size: 8.5pt;">[★ AWARDED/SELECTED]</span>{% endif %}
+                    {% if is_l1 %} <span style="color: green; font-size: 7.5pt;">(L1)</span>{% endif %}
+                    {% if fe.is_awarded %} <span style="color: #1a3a6b; font-weight: bold; font-size: 7.5pt;">[★ AWARDED]</span>{% endif %}
                 </td>
+                <td>₹{{ "%.2f"|format(fe.unit_price) if fe.unit_price is not none else "-" }} L</td>
+                <td>{{ "%.1f"|format(fe.taxes) if fe.taxes is not none else "0" }}%</td>
                 <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(fe.quoted_amount) if fe.quoted_amount is not none else "0.00" }} Lakhs</td>
+                <td>{{ fe.delivery_period if fe.delivery_period is not none else "-" }} weeks</td>
+                <td>{{ fe.warranty if fe.warranty is not none else "-" }} months</td>
                 <td class="bold" style="color: {{ 'green' if is_l1 else 'orange' if is_l2 else 'black' }}">{{ fe.ranking }}</td>
                 <td>{{ fe.remarks or '-' }}</td>
             </tr>
             {% endfor %}
         </tbody>
+    </table>
+    {% endif %}
+
+    {% if pr.technical_evaluations and pr.financial_evaluations %}
+    <div class="section-title">Techno-Commercial Comparative Statement (Module 12)</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 5%">S.No</th>
+                <th style="width: 25%">Vendor Name</th>
+                <th style="width: 20%">Technical Status</th>
+                <th style="width: 15%">Financial Bid</th>
+                <th style="width: 10%">Rank</th>
+                <th style="width: 25%">Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for te in pr.technical_evaluations %}
+            {% set fe = pr.financial_evaluations|selectattr("vendor_name", "equalto", te.vendor_name)|first %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="bold">{{ te.vendor_name }}</td>
+                <td class="bold" style="color: {{ 'green' if te.is_qualified else 'red' }};">
+                    {{ 'QUALIFIED' if te.is_qualified else 'DISQUALIFIED' }}
+                </td>
+                <td class="bold" style="color: #1a3a6b;">
+                    {% if te.is_qualified and fe %}
+                        ₹{{ "%.2f"|format(fe.quoted_amount) }} Lakhs
+                    {% else %}
+                        N/A (Disqualified)
+                    {% endif %}
+                </td>
+                <td class="bold">
+                    {{ fe.ranking if (te.is_qualified and fe) else '-' }}
+                </td>
+                <td>{{ te.remarks or (fe.remarks if fe else '-') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if pr.bill_passing %}
+    <div class="section-title">Purchase Bill Passing Certificate (Module 7)</div>
+    <table class="details-table">
+        <tr>
+            <th style="width: 25%">Invoice Number / Date</th>
+            <td style="width: 25%">{{ pr.bill_passing.invoice_number }} / {{ pr.bill_passing.invoice_date }}</td>
+            <th style="width: 25%">Challan Number / Date</th>
+            <td style="width: 25%">{{ pr.bill_passing.challan_number or 'N/A' }} / {{ pr.bill_passing.challan_date or 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>Passed Bill Amount</th>
+            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.bill_passing.bill_amount) }} Lakhs</td>
+            <th>Passed GST Amount</th>
+            <td>₹{{ "%.2f"|format(pr.bill_passing.gst_amount) }} Lakhs</td>
+        </tr>
+        <tr>
+            <th>Payment Terms</th>
+            <td>{{ pr.bill_passing.payment_terms or 'N/A' }}</td>
+            <th>Remarks</th>
+            <td>{{ pr.bill_passing.remarks or 'N/A' }}</td>
+        </tr>
     </table>
     {% endif %}
 

@@ -17,7 +17,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Purchase Requests', icon: FileText, href: '/pr' },
-  { label: 'Budget', icon: Wallet, href: '/budget', roles: ['faculty', 'hod', 'admin', 'dean_approver'] },
+  { label: 'Budget', icon: Wallet, href: '/budget', roles: ['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver'] },
   { label: 'Deliveries', icon: Truck, href: '/inventory/deliveries', roles: ['faculty', 'hod', 'verifier_sp', 'admin'] },
   { label: 'Assets', icon: Box, href: '/assets', roles: ['hod', 'verifier_sp', 'admin'] },
   { label: 'Discrepancies', icon: AlertTriangle, href: '/inventory/discrepancies', roles: ['admin', 'verifier_sp', 'apex_approver'] },

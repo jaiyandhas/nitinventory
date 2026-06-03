@@ -3,7 +3,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 
 def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: list) -> list:
-    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None):
+    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None):
         r = roles[role_key] if role_key else None
         return WorkFlowHierarchy(
             category_id=cat.id,
@@ -16,6 +16,8 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
             purchase_type=ptype,
             is_enabled=True,
             tender_vendors_threshold=tender_vendors_threshold,
+            tender_vendors_comparison=tender_vendors_comparison,
+            skip_condition=skip_condition,
         )
 
     rows: list[WorkFlowHierarchy] = []
@@ -59,6 +61,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     step(cat2, "FS", 4, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat2, "FS", 5, "verifier_general", "verifier", "adpd", ptype, proc),
                     step(cat2, "FS", 6, "dean_approver", "approver", "dean_pd", ptype, proc),
+                    step(cat2, "FS", 7, "apex_approver", "approver", "director", ptype, proc, skip_condition="not pr.single_bid_justification"),
                     step(cat2, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat2, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat2, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),

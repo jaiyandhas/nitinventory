@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, date
 from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Integer, DateTime, Date, Boolean, Float, ForeignKey, func, Text
+from sqlalchemy import String, Integer, DateTime, Date, Boolean, Float, ForeignKey, func, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -45,6 +45,7 @@ class ProcurementManager(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     max_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    form_schema: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class PhaseManager(Base):
@@ -76,9 +77,16 @@ class BudgetMaster(Base):
     deducted_amount: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
+    expert1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expert2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    director_faculty_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     department: Mapped[Optional["Department"]] = relationship("Department", back_populates="budget_entries")  # type: ignore
     financial_year: Mapped[FinancialYear] = relationship("FinancialYear", back_populates="budget_entries")
     pr_items: Mapped[List["PurchaseRequestItem"]] = relationship("PurchaseRequestItem", back_populates="budget_file")  # type: ignore
+    expert1: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert1_id])  # type: ignore
+    expert2: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert2_id])  # type: ignore
+    director_faculty: Mapped[Optional["User"]] = relationship("User", foreign_keys=[director_faculty_id])  # type: ignore
 
     @property
     def available_amount(self) -> float:

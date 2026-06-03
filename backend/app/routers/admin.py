@@ -16,6 +16,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
 DeanOrAdminDep = Depends(require_roles("admin", "dean_approver"))
+BudgetViewDep = Depends(require_roles("admin", "dean_approver", "hod", "faculty"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -417,8 +418,16 @@ async def update_setting(key: str, body: dict, db: AsyncSession = Depends(get_db
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/budget")
-async def list_budget(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
-    result = await db.execute(select(BudgetMaster).order_by(BudgetMaster.created_at.desc()))
+async def list_budget(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
+    result = await db.execute(
+        select(BudgetMaster)
+        .options(
+            selectinload(BudgetMaster.expert1),
+            selectinload(BudgetMaster.expert2),
+            selectinload(BudgetMaster.director_faculty)
+        )
+        .order_by(BudgetMaster.created_at.desc())
+    )
     entries = result.scalars().all()
     return [
         {
@@ -428,6 +437,12 @@ async def list_budget(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
             "financial_year_id": b.financial_year_id, "expenditure_category": b.expenditure_category,
             "category": b.category, "unit_cost": b.unit_cost, "quantity": b.quantity,
             "file_no": b.file_no,
+            "expert1_id": b.expert1_id,
+            "expert2_id": b.expert2_id,
+            "director_faculty_id": b.director_faculty_id,
+            "expert1": {"id": b.expert1.id, "name": b.expert1.name, "email": b.expert1.email} if b.expert1 else None,
+            "expert2": {"id": b.expert2.id, "name": b.expert2.name, "email": b.expert2.email} if b.expert2 else None,
+            "director_faculty": {"id": b.director_faculty.id, "name": b.director_faculty.name, "email": b.director_faculty.email} if b.director_faculty else None,
         }
         for b in entries
     ]
@@ -442,6 +457,134 @@ async def budget_summary(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
     locked = sum(b.locked_amount for b in entries)
     deducted = sum(b.deducted_amount for b in entries)
     return {"total": total, "locked": locked, "deducted": deducted, "available": total - locked - deducted}
+
+
+async def get_stored_categories(db: AsyncSession):
+    result_exp = await db.execute(select(Settings).where(Settings.key_name == "budget_expenditure_categories"))
+    exp_setting = result_exp.scalar_one_or_none()
+    if exp_setting:
+        exp_list = [c.strip() for c in exp_setting.value.split(",") if c.strip()]
+    else:
+        exp_list = ["CAPEX", "OPEX"]
+        db.add(Settings(key_name="budget_expenditure_categories", value="CAPEX,OPEX"))
+        await db.flush()
+
+    result_item = await db.execute(select(Settings).where(Settings.key_name == "budget_item_categories"))
+    item_setting = result_item.scalar_one_or_none()
+    if item_setting:
+        item_list = [c.strip() for c in item_setting.value.split(",") if c.strip()]
+    else:
+        item_list = ["computer", "lab_equipment", "software", "furniture"]
+        db.add(Settings(key_name="budget_item_categories", value="computer,lab_equipment,software,furniture"))
+        await db.flush()
+
+    return {"expenditure_categories": exp_list, "item_categories": item_list}
+
+
+@router.get("/budget/categories")
+async def get_budget_categories(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
+    return await get_stored_categories(db)
+
+
+@router.post("/budget/categories")
+async def add_budget_category(body: dict, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+    cat_type = body.get("type")
+    val = body.get("value")
+    if not val or not val.strip():
+        raise HTTPException(status_code=400, detail="Category value is required")
+    val = val.strip()
+
+    if cat_type == "expenditure":
+        key = "budget_expenditure_categories"
+    elif cat_type == "item":
+        key = "budget_item_categories"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid type: must be 'expenditure' or 'item'")
+
+    result = await db.execute(select(Settings).where(Settings.key_name == key))
+    setting = result.scalar_one_or_none()
+    if setting:
+        existing = [c.strip() for c in setting.value.split(",") if c.strip()]
+        if val in existing:
+            return {"message": "Category already exists", "categories": existing}
+        existing.append(val)
+        setting.value = ",".join(existing)
+    else:
+        if cat_type == "expenditure":
+            defaults = ["CAPEX", "OPEX", val]
+        else:
+            defaults = ["computer", "lab_equipment", "software", "furniture", val]
+        setting = Settings(key_name=key, value=",".join(defaults))
+        db.add(setting)
+
+    await db.commit()
+    return await get_stored_categories(db)
+
+
+@router.get("/budget/next-file-number")
+async def get_next_file_number(
+    department_id: int,
+    expenditure_category: str,
+    financial_year_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=BudgetViewDep
+):
+    from app.models.user import Department
+    from app.models.budget import FinancialYear, BudgetMaster
+    from sqlalchemy import func
+
+    dept_res = await db.execute(select(Department).where(Department.id == department_id))
+    dept = dept_res.scalar_one_or_none()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == financial_year_id))
+    fy = fy_res.scalar_one_or_none()
+    if not fy:
+        raise HTTPException(status_code=404, detail="Financial Year not found")
+
+    stmt = select(func.count(BudgetMaster.id)).where(
+        and_(
+            BudgetMaster.department_id == department_id,
+            BudgetMaster.expenditure_category == expenditure_category,
+            BudgetMaster.financial_year_id == financial_year_id
+        )
+    )
+    count_res = await db.execute(stmt)
+    count = count_res.scalar() or 0
+    next_num = count + 1
+
+    dept_code = dept.short_code.lower()
+    source_code = expenditure_category.lower()
+    fy_label = fy.label.lower()
+
+    file_no = f"nitt/{dept_code}/{source_code}/{fy_label}/{next_num}"
+    return {"file_no": file_no}
+
+
+@router.get("/budget/{b_id}")
+async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=BudgetViewDep):
+    result = await db.execute(
+        select(BudgetMaster).where(BudgetMaster.id == b_id)
+    )
+    b = result.scalar_one_or_none()
+    if not b:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return {
+        "id": b.id,
+        "department_id": b.department_id,
+        "financial_year_id": b.financial_year_id,
+        "expenditure_category": b.expenditure_category,
+        "item_name": b.item_name,
+        "category": b.category,
+        "unit_cost": b.unit_cost,
+        "quantity": b.quantity,
+        "total_cost": b.total_cost,
+        "file_no": b.file_no,
+        "expert1_id": b.expert1_id,
+        "expert2_id": b.expert2_id,
+        "director_faculty_id": b.director_faculty_id
+    }
 
 
 @router.post("/budget")
@@ -476,6 +619,12 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
         b.department_id = int(body["department_id"])
     if "financial_year_id" in body:
         b.financial_year_id = int(body["financial_year_id"])
+    if "expenditure_category" in body:
+        b.expenditure_category = body["expenditure_category"]
+    if "category" in body:
+        b.category = body["category"]
+    if "file_no" in body:
+        b.file_no = body["file_no"]
     if "unit_cost" in body and "quantity" in body:
         b.unit_cost = float(body["unit_cost"])
         b.quantity = int(body["quantity"])
@@ -518,7 +667,8 @@ async def list_procurement_methods(db: AsyncSession = Depends(get_db), _=AdminDe
             "id": p.id,
             "name": p.name,
             "description": p.description,
-            "max_amount": p.max_amount
+            "max_amount": p.max_amount,
+            "form_schema": p.form_schema
         }
         for p in result.scalars()
     ]
@@ -529,7 +679,8 @@ async def create_procurement_method(body: dict, db: AsyncSession = Depends(get_d
     p = ProcurementManager(
         name=body["name"],
         description=body.get("description"),
-        max_amount=float(body["max_amount"]) if body.get("max_amount") is not None else None
+        max_amount=float(body["max_amount"]) if body.get("max_amount") is not None else None,
+        form_schema=body.get("form_schema")
     )
     db.add(p)
     await db.commit()
@@ -548,6 +699,8 @@ async def update_procurement_method(pm_id: int, body: dict, db: AsyncSession = D
         p.description = body["description"]
     if "max_amount" in body:
         p.max_amount = float(body["max_amount"]) if body["max_amount"] is not None else None
+    if "form_schema" in body:
+        p.form_schema = body["form_schema"]
     await db.commit()
     return {"message": "Procurement method updated"}
 
@@ -597,6 +750,8 @@ async def list_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "is_enabled": w.is_enabled,
             "purchase_type": w.purchase_type,
             "tender_vendors_threshold": w.tender_vendors_threshold,
+            "tender_vendors_comparison": w.tender_vendors_comparison,
+            "skip_condition": w.skip_condition,
         }
         for w in entries
     ]
@@ -643,6 +798,8 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         purchase_type=purchase_type,
         is_enabled=True,
         tender_vendors_threshold=body.get("tender_vendors_threshold"),
+        tender_vendors_comparison=body.get("tender_vendors_comparison"),
+        skip_condition=body.get("skip_condition"),
     )
     db.add(wf)
     await db.commit()
@@ -697,6 +854,10 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
     if "tender_vendors_threshold" in body:
         # Accept null/None to clear the threshold
         wf.tender_vendors_threshold = body["tender_vendors_threshold"]
+    if "tender_vendors_comparison" in body:
+        wf.tender_vendors_comparison = body["tender_vendors_comparison"]
+    if "skip_condition" in body:
+        wf.skip_condition = body["skip_condition"]
     await db.commit()
     return {"message": "Workflow updated"}
 

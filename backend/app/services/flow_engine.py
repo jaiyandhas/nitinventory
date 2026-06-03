@@ -13,7 +13,7 @@ from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestFlow, PurchaseRequestHistory,
     WorkFlowHierarchy, RequestStatus
 )
-from app.models.budget import PhaseManager
+from app.models.budget import PhaseManager, BudgetMaster
 from app.models.user import User, RoleManager
 
 
@@ -83,10 +83,39 @@ class FlowEngineService:
                 # Tender details (commercial evaluations) count check
                 await self.db.refresh(pr, ["commercial_evaluations"])
                 vendor_count = len(pr.commercial_evaluations)
-                if vendor_count > step.tender_vendors_threshold:
-                    # Skip this step if the number of vendors exceeds the threshold
+                
+                op = step.tender_vendors_comparison or "<="
+                is_met = False
+                if op == "<=":
+                    is_met = (vendor_count <= step.tender_vendors_threshold)
+                elif op == ">=":
+                    is_met = (vendor_count >= step.tender_vendors_threshold)
+                elif op == "<":
+                    is_met = (vendor_count < step.tender_vendors_threshold)
+                elif op == ">":
+                    is_met = (vendor_count > step.tender_vendors_threshold)
+                elif op == "==":
+                    is_met = (vendor_count == step.tender_vendors_threshold)
+                elif op == "!=":
+                    is_met = (vendor_count != step.tender_vendors_threshold)
+                else:
+                    is_met = (vendor_count <= step.tender_vendors_threshold)
+                if not is_met:
                     continue
-            
+                    
+            if step.skip_condition:
+                from app.services.evaluator import safe_eval
+                context = {
+                    "pr": pr,
+                }
+                try:
+                    should_skip = safe_eval(step.skip_condition, context)
+                except Exception:
+                    # Fail-secure: Do not skip the step if expression raises error
+                    should_skip = False
+                if should_skip:
+                    continue
+
             return step.step_order
             
         return None
@@ -190,10 +219,61 @@ class FlowEngineService:
             return
             
         elif step.user_type == "tech_evaluation":
-            # Must be initiator or one of the committee members
-            allowed_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, getattr(pr, "faculty3_id", None)}
-            if user.id not in allowed_ids:
-                raise ValueError("Only the purchase initiator or purchase committee nominees can perform technical evaluation")
+            await self.db.refresh(pr, ["initiator"])
+            if pr.initiator:
+                await self.db.refresh(pr.initiator, ["department"])
+            
+            # Check department committee in order
+            from app.models.user import RoleManager
+            hod_res = await self.db.execute(
+                select(User)
+                .join(RoleManager, User.role_id == RoleManager.id)
+                .where(
+                    and_(
+                        User.department_id == (pr.initiator.department_id if pr.initiator else None),
+                        RoleManager.group_key == "hod"
+                    )
+                )
+            )
+            hod = hod_res.scalar_one_or_none()
+            hod_id = hod.id if hod else None
+
+            dept = pr.initiator.department if pr.initiator else None
+            if dept:
+                await self.db.refresh(dept)
+            expert1_id = dept.expert1_id if dept else None
+            expert2_id = dept.expert2_id if dept else None
+            director_faculty_id = dept.director_faculty_id if dept else None
+
+            committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
+            if any(x is None for x in committee_ids):
+                raise ValueError("The department purchase committee is not fully formed or configured yet.")
+
+            # Must be one of the committee members
+            if user.id not in committee_ids:
+                raise ValueError("Only the department purchase committee nominees can perform technical evaluation")
+
+            # Check sequential signing order
+            since = pr.te_initiated_at or pr.created_at or datetime.min
+            await self.db.refresh(pr, ["history"])
+            approved_ids = {
+                h.current_approver_id for h in pr.history 
+                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                and (h.acted_at is None or h.acted_at >= since)
+            }
+
+            pending_index = None
+            for idx, cid in enumerate(committee_ids):
+                if cid not in approved_ids:
+                    pending_index = idx
+                    break
+
+            if pending_index is not None:
+                current_turn_id = committee_ids[pending_index]
+                if user.id != current_turn_id:
+                    turn_user_res = await self.db.execute(select(User.name).where(User.id == current_turn_id))
+                    turn_user_name = turn_user_res.scalar_one_or_none() or "Another member"
+                    raise ValueError(f"It is not your turn to sign. The next signer is {turn_user_name}.")
             return
 
         # Standard role/group checking
@@ -225,6 +305,27 @@ class FlowEngineService:
         from app.services.budget_service import BudgetService
         budget_svc = BudgetService(self.db)
         await budget_svc.lock_amount(pr)
+
+        # Populate committee from budget file nominees if present, else fallback to department
+        budget_file = None
+        await self.db.refresh(pr, ["items"])
+        if pr.items:
+            budget_file_id = pr.items[0].budget_file_id
+            if budget_file_id:
+                budget_res = await self.db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
+                budget_file = budget_res.scalar_one_or_none()
+
+        if budget_file and (budget_file.expert1_id or budget_file.expert2_id or budget_file.director_faculty_id):
+            pr.faculty1_id = budget_file.expert1_id
+            pr.faculty2_id = budget_file.expert2_id
+            pr.faculty3_id = budget_file.director_faculty_id
+        else:
+            await self.db.refresh(initiator, ["department"])
+            dept = initiator.department
+            if dept:
+                pr.faculty1_id = dept.expert1_id
+                pr.faculty2_id = dept.expert2_id
+                pr.faculty3_id = dept.director_faculty_id
 
         first_phase = await self._get_first_phase()
         first_step = await self._get_first_step(pr, first_phase)
@@ -262,7 +363,7 @@ class FlowEngineService:
             await self._add_history(pr, initiator, "PR Submitted")
 
     async def advance(self, pr: PurchaseRequest, acted_by: User, remarks: Optional[str] = None,
-                      status: Optional[str] = None, db_flush: bool = True) -> PurchaseRequest:
+                       status: Optional[str] = None, db_flush: bool = True) -> PurchaseRequest:
         """Advance the purchase request to the next workflow step or phase, sending email notifications and updating status."""
         flow = await self._get_current_flow(pr)
         if not flow:
@@ -299,9 +400,29 @@ class FlowEngineService:
                 await self._add_history(pr, acted_by, status or default_status, remarks)
             
             # Check if all required committee members have approved
-            required_ids = {pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id}
+            from app.models.user import RoleManager
+            hod_res = await self.db.execute(
+                select(User)
+                .join(RoleManager, User.role_id == RoleManager.id)
+                .where(
+                    and_(
+                        User.department_id == pr.initiator.department_id,
+                        RoleManager.group_key == "hod"
+                    )
+                )
+            )
+            hod = hod_res.scalar_one_or_none()
+            hod_id = hod.id if hod else None
+
+            await self.db.refresh(pr.initiator, ["department"])
+            dept = pr.initiator.department
+            expert1_id = dept.expert1_id if dept else None
+            expert2_id = dept.expert2_id if dept else None
+            director_faculty_id = dept.director_faculty_id if dept else None
+
+            required_ids = {hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id}
             
-            if None in required_ids:
+            if None in required_ids or any(x is None for x in required_ids):
                 should_advance = False
                 flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS

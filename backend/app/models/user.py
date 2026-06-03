@@ -17,7 +17,15 @@ class Department(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     short_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
 
-    users: Mapped[List["User"]] = relationship("User", back_populates="department")
+    expert1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL", use_alter=True, name="fk_departments_expert1"), nullable=True)
+    expert2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL", use_alter=True, name="fk_departments_expert2"), nullable=True)
+    director_faculty_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL", use_alter=True, name="fk_departments_director_faculty"), nullable=True)
+
+    users: Mapped[List["User"]] = relationship("User", back_populates="department", foreign_keys="[User.department_id]")
+    expert1: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert1_id])
+    expert2: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert2_id])
+    director_faculty: Mapped[Optional["User"]] = relationship("User", foreign_keys=[director_faculty_id])
+
     budget_entries: Mapped[List["BudgetMaster"]] = relationship("BudgetMaster", back_populates="department")  # type: ignore
     assets: Mapped[List["Asset"]] = relationship("Asset", back_populates="department")
 
@@ -51,4 +59,4 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     role: Mapped[Optional[RoleManager]] = relationship("RoleManager", back_populates="users")
-    department: Mapped[Optional[Department]] = relationship("Department", back_populates="users")
+    department: Mapped[Optional[Department]] = relationship("Department", back_populates="users", foreign_keys=[department_id])

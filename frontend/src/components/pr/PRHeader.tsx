@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Check, ShieldAlert } from 'lucide-react';
+import { Download, Check, ShieldAlert, Settings, Users, Award, X } from 'lucide-react';
 import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { budgetApi } from '../../services/api';
+import toast from 'react-hot-toast';
 
 interface PRHeaderProps {
   pr: PurchaseRequest;
@@ -24,6 +27,93 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   updateWfMutation,
   formatCurrency,
 }) => {
+  const queryClient = useQueryClient();
+  const [showNominationModal, setShowNominationModal] = useState(false);
+  const [expert1Id, setExpert1Id] = useState<number | ''>('');
+  const [expert2Id, setExpert2Id] = useState<number | ''>('');
+  const [directorFacultyId, setDirectorFacultyId] = useState<number | ''>('');
+
+  const isHOD = user && user.role?.group_key === 'hod' && pr.budget_file && pr.budget_file.department_id === user.department_id;
+  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'admin');
+
+  // HOD department faculties
+  const { data: deptFaculties = [] } = useQuery<any[]>({
+    queryKey: ['departmentFaculty'],
+    queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
+    enabled: !!isHOD,
+  });
+
+  // Director nominee options (all users)
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ['all_users_for_director_nomination'],
+    queryFn: () => budgetApi.allUsers().then(r => r.data),
+    enabled: !!isDirector,
+  });
+
+  // Initialize form states when opening modal or on load
+  React.useEffect(() => {
+    if (pr.budget_file) {
+      setExpert1Id(pr.budget_file.expert1_id || '');
+      setExpert2Id(pr.budget_file.expert2_id || '');
+      setDirectorFacultyId(pr.budget_file.director_faculty_id || '');
+    }
+  }, [pr.budget_file]);
+
+  const assignCommitteeMutation = useMutation({
+    mutationFn: ({ budgetId, expert1_id, expert2_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null }) =>
+      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id }),
+    onSuccess: () => {
+      toast.success('Technical committee experts updated successfully');
+      setShowNominationModal(false);
+      queryClient.invalidateQueries({ queryKey: ['pr', pr.id] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to update technical committee');
+    }
+  });
+
+  const assignDirectorCommitteeMutation = useMutation({
+    mutationFn: ({ budgetId, director_faculty_id }: { budgetId: number; director_faculty_id: number | null }) =>
+      budgetApi.assignDirectorCommittee(budgetId, { director_faculty_id }),
+    onSuccess: () => {
+      toast.success('Director nominee updated successfully');
+      setShowNominationModal(false);
+      queryClient.invalidateQueries({ queryKey: ['pr', pr.id] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to update director nominee');
+    }
+  });
+
+  const handleNominateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pr.budget_file) return;
+
+    if (isHOD) {
+      if (!expert1Id || !expert2Id) {
+        toast.error('Both experts must be selected');
+        return;
+      }
+      if (expert1Id === expert2Id) {
+        toast.error('Expert 1 and Expert 2 must be different faculty members');
+        return;
+      }
+      assignCommitteeMutation.mutate({
+        budgetId: pr.budget_file.id,
+        expert1_id: Number(expert1Id),
+        expert2_id: Number(expert2Id)
+      });
+    } else if (isDirector) {
+      if (!directorFacultyId) {
+        toast.error('Director nominee must be selected');
+        return;
+      }
+      assignDirectorCommitteeMutation.mutate({
+        budgetId: pr.budget_file.id,
+        director_faculty_id: Number(directorFacultyId)
+      });
+    }
+  };
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -162,36 +252,58 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           </div>
         )}
 
-        {(pr.faculty1 || pr.faculty2 || pr.faculty3) && (
+        {pr.budget_file && (
           <div className="col-span-2 border-t border-slate-100 pt-4">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Purchase Committee</div>
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Purchase Committee</div>
+              {(isHOD || isDirector) && (
+                <button
+                  onClick={() => setShowNominationModal(true)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded transition-colors"
+                >
+                  <Settings size={12} className="text-indigo-600" /> Configure Nominees
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-3 border border-slate-200 rounded">
               <div className="space-y-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Purchase Initiator</span>
                 <p className="text-xs font-bold text-slate-800">{pr.initiator?.name || 'N/A'}</p>
                 <p className="text-[10px] text-slate-500">{pr.initiator?.email || ''}</p>
               </div>
-              {pr.faculty1 && (
-                <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 1</span>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty1.name}</p>
-                  <p className="text-[10px] text-slate-500">{pr.faculty1.email}</p>
-                </div>
-              )}
-              {pr.faculty2 && (
-                <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 2</span>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty2.name}</p>
-                  <p className="text-[10px] text-slate-500">{pr.faculty2.email}</p>
-                </div>
-              )}
-              {pr.faculty3 && (
-                <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Director Nominee</span>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
-                  <p className="text-[10px] text-slate-500">{pr.faculty3.email}</p>
-                </div>
-              )}
+              <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 1 (HOD)</span>
+                {pr.faculty1 ? (
+                  <>
+                    <p className="text-xs font-bold text-slate-800">{pr.faculty1.name}</p>
+                    <p className="text-[10px] text-slate-500">{pr.faculty1.email}</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-rose-500 italic font-medium">Not nominated</p>
+                )}
+              </div>
+              <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Faculty Nominee 2 (HOD)</span>
+                {pr.faculty2 ? (
+                  <>
+                    <p className="text-xs font-bold text-slate-800">{pr.faculty2.name}</p>
+                    <p className="text-[10px] text-slate-500">{pr.faculty2.email}</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-rose-500 italic font-medium">Not nominated</p>
+                )}
+              </div>
+              <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Director Nominee</span>
+                {pr.faculty3 ? (
+                  <>
+                    <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
+                    <p className="text-[10px] text-slate-500">{pr.faculty3.email}</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-rose-500 italic font-medium">Not nominated</p>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -234,13 +346,13 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             {pr.emd !== undefined && pr.emd !== null && (
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">EMD (Earnest Money Deposit)</div>
-                <div className="text-sm font-semibold text-slate-800">₹{pr.emd.toLocaleString()}</div>
+                <div className="text-sm font-semibold text-slate-800">{pr.emd}%</div>
               </div>
             )}
             {pr.performance_security !== undefined && pr.performance_security !== null && (
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Performance Security</div>
-                <div className="text-sm font-semibold text-slate-800">₹{pr.performance_security.toLocaleString()}</div>
+                <div className="text-sm font-semibold text-slate-800">{pr.performance_security}%</div>
               </div>
             )}
             {pr.exemption && (
@@ -286,6 +398,111 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           </div>
         )}
       </div>
+
+      {/* Nomination / Committee Edit Modal */}
+      {showNominationModal && pr.budget_file && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 text-left">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-fadeIn">
+            <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">Configure Purchase Committee</h2>
+                <p className="text-xs text-blue-200 mt-1">Budget File: {pr.budget_file.file_no}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowNominationModal(false)}
+                className="text-white hover:text-slate-200 text-xl font-bold"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleNominateSubmit} className="p-6 space-y-4">
+              {isHOD && (
+                <>
+                  <div className="p-3 bg-indigo-50 text-indigo-800 text-xs font-semibold rounded border border-indigo-200 leading-relaxed mb-2">
+                    As HOD, configure the two department experts who will serve on the 5-member purchase committee for technical evaluation.
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      Department Expert 1 <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={expert1Id}
+                      onChange={e => setExpert1Id(e.target.value === '' ? '' : Number(e.target.value))}
+                      required
+                      className="input-field w-full bg-white text-sm"
+                    >
+                      <option value="">Select Faculty Expert...</option>
+                      {deptFaculties.map((f: any) => (
+                        <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      Department Expert 2 <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={expert2Id}
+                      onChange={e => setExpert2Id(e.target.value === '' ? '' : Number(e.target.value))}
+                      required
+                      className="input-field w-full bg-white text-sm"
+                    >
+                      <option value="">Select Faculty Expert...</option>
+                      {deptFaculties.map((f: any) => (
+                        <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {isDirector && (
+                <>
+                  <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-semibold rounded border border-emerald-200 leading-relaxed mb-2">
+                    As Director / Admin, configure the Director Nominee who will serve on the 5-member purchase committee for technical evaluation.
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      Director Nominee <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={directorFacultyId}
+                      onChange={e => setDirectorFacultyId(e.target.value === '' ? '' : Number(e.target.value))}
+                      required
+                      className="input-field w-full bg-white text-sm"
+                    >
+                      <option value="">Select Director Nominee...</option>
+                      {allUsers.map((u: any) => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowNominationModal(false)}
+                  className="btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignCommitteeMutation.isPending || assignDirectorCommitteeMutation.isPending}
+                  className="btn-primary px-5 text-sm flex items-center gap-1.5"
+                >
+                  {(assignCommitteeMutation.isPending || assignDirectorCommitteeMutation.isPending) ? 'Updating...' : 'Save Nominees'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

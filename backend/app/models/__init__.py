@@ -5,6 +5,7 @@ from app.models.purchase_request import (
     PurchaseRequestHistory, PurchaseRequestAssignment,
     TechnicalEvaluation, FinancialEvaluation, CommercialEvaluation,
     Document, WorkFlowHierarchy, VendorMaster, EmailQueue,
+    POCancellation, TenderCancellation, BillPassing, PRReferral,
 )
 from app.models.inventory import Delivery, DeliveryItem, DeptAssetLog, StoresAssetLog, Discrepancy, Payment
 from app.models.asset import Asset, AssetMovement, AssetLog
@@ -17,6 +18,7 @@ __all__ = [
     "PurchaseRequestHistory", "PurchaseRequestAssignment",
     "TechnicalEvaluation", "FinancialEvaluation", "CommercialEvaluation",
     "Document", "WorkFlowHierarchy", "VendorMaster", "EmailQueue",
+    "POCancellation", "TenderCancellation", "BillPassing", "PRReferral",
     "Delivery", "DeliveryItem", "DeptAssetLog", "StoresAssetLog",
     "Discrepancy", "Payment",
     "Asset", "AssetMovement", "AssetLog",

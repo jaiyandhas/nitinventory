@@ -82,6 +82,12 @@ class PurchaseRequest(Base):
     faculty2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     faculty3_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     aa_approver_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    form_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    parent_pr_id: Mapped[Optional[int]] = mapped_column(ForeignKey("purchase_requests.id"), nullable=True)
+    lpc_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lpc_committee_members: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lpc_minutes_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    single_bid_justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
@@ -102,6 +108,13 @@ class PurchaseRequest(Base):
     financial_evaluations: Mapped[List["FinancialEvaluation"]] = relationship("FinancialEvaluation", back_populates="purchase_request", cascade="all, delete-orphan")
     commercial_evaluations: Mapped[List["CommercialEvaluation"]] = relationship("CommercialEvaluation", back_populates="purchase_request", cascade="all, delete-orphan")
     documents: Mapped[List["Document"]] = relationship("Document", back_populates="purchase_request", cascade="all, delete-orphan")
+    parent_pr: Mapped[Optional[PurchaseRequest]] = relationship("PurchaseRequest", remote_side=[id], back_populates="child_prs")
+    child_prs: Mapped[List[PurchaseRequest]] = relationship("PurchaseRequest", back_populates="parent_pr")
+    po_cancellations: Mapped[List["POCancellation"]] = relationship("POCancellation", back_populates="purchase_request", cascade="all, delete-orphan")
+    tender_cancellations: Mapped[List["TenderCancellation"]] = relationship("TenderCancellation", back_populates="purchase_request", cascade="all, delete-orphan")
+    bill_passing: Mapped[Optional["BillPassing"]] = relationship("BillPassing", back_populates="purchase_request", uselist=False, cascade="all, delete-orphan")
+    deliveries: Mapped[List["Delivery"]] = relationship("Delivery", back_populates="purchase_request", cascade="all, delete-orphan")
+    referrals: Mapped[List["PRReferral"]] = relationship("PRReferral", back_populates="purchase_request", cascade="all, delete-orphan")
 
 
 class PurchaseRequestItem(Base):
@@ -197,6 +210,10 @@ class FinancialEvaluation(Base):
     ranking: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     is_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    unit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    taxes: Mapped[Optional[float]] = mapped_column(Float, default=0.0)
+    delivery_period: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    warranty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="financial_evaluations")
@@ -246,6 +263,8 @@ class WorkFlowHierarchy(Base):
 
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     tender_vendors_threshold: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tender_vendors_comparison: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    skip_condition: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User")  # type: ignore
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")  # type: ignore
@@ -279,4 +298,73 @@ class EmailQueue(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class POCancellation(Base):
+    __tablename__ = "po_cancellations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reinitiation_method: Mapped[str] = mapped_column(String(50), nullable=False)  # direct / gem / limited / cppp
+    reallocated_amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    cancelled_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    cancelled_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="po_cancellations")
+    cancelled_by: Mapped["User"] = relationship("User")  # type: ignore
+
+
+class TenderCancellation(Base):
+    __tablename__ = "tender_cancellations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reinitiation_method: Mapped[str] = mapped_column(String(50), nullable=False)  # direct / gem / limited / cppp
+    cancelled_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    cancelled_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="tender_cancellations")
+    cancelled_by: Mapped["User"] = relationship("User")  # type: ignore
+
+
+class BillPassing(Base):
+    __tablename__ = "bill_passings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False, unique=True)
+    invoice_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    challan_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    challan_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    bill_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    gst_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    payment_terms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    passed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    passed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="bill_passing")
+    passed_by: Mapped["User"] = relationship("User")  # type: ignore
+
+
+class PRReferral(Base):
+    __tablename__ = "pr_referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False)
+    referred_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    referred_to_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="referrals")
+    referred_by: Mapped["User"] = relationship("User", foreign_keys=[referred_by_id])  # type: ignore
+    referred_to: Mapped["User"] = relationship("User", foreign_keys=[referred_to_id])  # type: ignore
+
 

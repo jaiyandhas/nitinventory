@@ -44,4 +44,5 @@ class PRCreatePayload(BaseModel):
     training_type: Optional[str] = None
     training_vendor: Optional[str] = None
     purchase_type: str = "department"
+    form_data: Optional[dict] = None
     items: List[PRItemCreate]

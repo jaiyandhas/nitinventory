@@ -50,7 +50,7 @@ class Delivery(Base):
     items: Mapped[List["DeliveryItem"]] = relationship("DeliveryItem", back_populates="delivery", cascade="all, delete-orphan")
     department: Mapped["Department"] = relationship("Department")  # type: ignore
     payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="delivery", cascade="all, delete-orphan")
-    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest")
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="deliveries")
 
 
 class DeliveryItem(Base):

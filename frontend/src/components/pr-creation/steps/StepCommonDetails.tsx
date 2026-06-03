@@ -3,11 +3,13 @@ import type { User } from '../../../types';
 import type { MsmeNoExceptionRoute, PRCommonFormState } from '../../../types/prCreation';
 import { EMD_PERCENT_OPTIONS, PERFORMANCE_SECURITY_OPTIONS } from '../../../config/prCreationQuestions';
 import { YesNoSelect } from '../YesNoSelect';
+import { DynamicFormRenderer } from '../../pr/DynamicFormRenderer';
 
 interface Props {
   common: PRCommonFormState;
   facultyOptions: Pick<User, 'id' | 'name' | 'email'>[];
   procurementName: string;
+  formSchema?: any;
   onUpdate: (patch: Partial<PRCommonFormState>) => void;
 }
 
@@ -22,12 +24,21 @@ export const StepCommonDetails: React.FC<Props> = ({
   common,
   facultyOptions,
   procurementName,
+  formSchema,
   onUpdate,
 }) => (
   <div className="space-y-8">
     <p className="text-sm text-slate-600">
       Common fields for this request (procurement mode: <strong>{procurementName}</strong>).
     </p>
+
+    {formSchema && (
+      <DynamicFormRenderer
+        schema={formSchema}
+        value={common.form_data || {}}
+        onChange={(val) => onUpdate({ form_data: val })}
+      />
+    )}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <div>

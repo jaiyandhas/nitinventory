@@ -11,6 +11,7 @@ import { NewPRPage } from './pages/NewPR';
 import { AssetListPage, AssetPublicPage } from './pages/Assets';
 import { DeliveriesPage, DiscrepanciesPage } from './pages/Inventory';
 import { BudgetPage } from './pages/admin/BudgetPage';
+import { BudgetFormPage } from './pages/admin/BudgetFormPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { DeliveryDetailPage } from './pages/DeliveryDetail';
@@ -54,7 +55,9 @@ const App: React.FC = () => {
         <Route path="/pr/:id" element={<ProtectedRoute><PRDetailPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 
-        <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver']}><BudgetPage /></ProtectedRoute>} />
+        <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver']}><BudgetPage /></ProtectedRoute>} />
+        <Route path="/budget/create" element={<ProtectedRoute roles={['admin', 'dean_approver']}><BudgetFormPage /></ProtectedRoute>} />
+        <Route path="/budget/edit/:id" element={<ProtectedRoute roles={['admin', 'dean_approver']}><BudgetFormPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute roles={['admin', 'apex_approver']}><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UsersPage /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute roles={['admin']}><SettingsPage /></ProtectedRoute>} />

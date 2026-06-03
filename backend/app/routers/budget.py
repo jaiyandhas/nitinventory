@@ -92,3 +92,246 @@ async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depen
     locked = sum(b.locked_amount for b in entries)
     deducted = sum(b.deducted_amount for b in entries)
     return {"total": total, "locked": locked, "deducted": deducted, "available": total - locked - deducted}
+
+
+@router.get("/department-committee")
+async def get_department_committee(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from app.models.user import Department
+    if not user.department_id:
+        return {}
+    await db.refresh(user, ["department"])
+    dept = user.department
+    if not dept:
+        return {}
+    
+    expert1 = None
+    expert2 = None
+    director_faculty = None
+    if dept.expert1_id:
+        expert1_res = await db.execute(select(User).where(User.id == dept.expert1_id))
+        expert1 = expert1_res.scalar_one_or_none()
+    if dept.expert2_id:
+        expert2_res = await db.execute(select(User).where(User.id == dept.expert2_id))
+        expert2 = expert2_res.scalar_one_or_none()
+    if dept.director_faculty_id:
+        director_faculty_res = await db.execute(select(User).where(User.id == dept.director_faculty_id))
+        director_faculty = director_faculty_res.scalar_one_or_none()
+
+    return {
+        "department_id": dept.id,
+        "department_name": dept.name,
+        "expert1_id": dept.expert1_id,
+        "expert2_id": dept.expert2_id,
+        "director_faculty_id": dept.director_faculty_id,
+        "expert1": {"id": expert1.id, "name": expert1.name, "email": expert1.email} if expert1 else None,
+        "expert2": {"id": expert2.id, "name": expert2.name, "email": expert2.email} if expert2 else None,
+        "director_faculty": {"id": director_faculty.id, "name": director_faculty.name, "email": director_faculty.email} if director_faculty else None,
+    }
+
+
+@router.post("/department-committee")
+async def update_department_committee(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi import HTTPException
+    await db.refresh(user, ["role"])
+    if not user.role or user.role.group_key != "hod":
+        raise HTTPException(status_code=403, detail="Only HOD can update department committee experts")
+    if not user.department_id:
+        raise HTTPException(status_code=400, detail="User has no department assigned")
+    
+    await db.refresh(user, ["department"])
+    dept = user.department
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    
+    expert1_id = body.get("expert1_id")
+    expert2_id = body.get("expert2_id")
+    
+    if expert1_id:
+        u1_res = await db.execute(select(User).where(and_(User.id == expert1_id, User.department_id == user.department_id)))
+        if not u1_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Expert 1 must be a faculty member in your department")
+    if expert2_id:
+        u2_res = await db.execute(select(User).where(and_(User.id == expert2_id, User.department_id == user.department_id)))
+        if not u2_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Expert 2 must be a faculty member in your department")
+            
+    if expert1_id and expert2_id and expert1_id == expert2_id:
+        raise HTTPException(status_code=400, detail="Expert 1 and Expert 2 must be different faculty members")
+
+    dept.expert1_id = expert1_id
+    dept.expert2_id = expert2_id
+    await db.commit()
+    return {"message": "Department committee experts updated successfully"}
+
+
+@router.get("/director/committees")
+async def director_get_committees(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi import HTTPException
+    from app.models.user import Department
+    await db.refresh(user, ["role"])
+    if not user.role or (user.role.value != "director" and user.role.group_key != "admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    result = await db.execute(select(Department).order_by(Department.short_code))
+    depts = result.scalars().all()
+    
+    users_res = await db.execute(select(User))
+    users_map = {u.id: u for u in users_res.scalars()}
+    
+    serialized = []
+    for d in depts:
+        expert1 = users_map.get(d.expert1_id) if d.expert1_id else None
+        expert2 = users_map.get(d.expert2_id) if d.expert2_id else None
+        director_faculty = users_map.get(d.director_faculty_id) if d.director_faculty_id else None
+        
+        serialized.append({
+            "department_id": d.id,
+            "department_name": d.name,
+            "department_code": d.short_code,
+            "expert1_id": d.expert1_id,
+            "expert2_id": d.expert2_id,
+            "director_faculty_id": d.director_faculty_id,
+            "expert1": {"id": expert1.id, "name": expert1.name, "email": expert1.email} if expert1 else None,
+            "expert2": {"id": expert2.id, "name": expert2.name, "email": expert2.email} if expert2 else None,
+            "director_faculty": {"id": director_faculty.id, "name": director_faculty.name, "email": director_faculty.email} if director_faculty else None,
+        })
+    return serialized
+
+
+@router.post("/director/committees")
+async def director_update_committee(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi import HTTPException
+    from app.models.user import Department
+    await db.refresh(user, ["role"])
+    if not user.role or (user.role.value != "director" and user.role.group_key != "admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    dept_id = body.get("department_id")
+    director_faculty_id = body.get("director_faculty_id")
+    
+    dept_res = await db.execute(select(Department).where(Department.id == dept_id))
+    dept = dept_res.scalar_one_or_none()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+        
+    if director_faculty_id:
+        u_res = await db.execute(select(User).where(User.id == director_faculty_id))
+        u = u_res.scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=400, detail="Selected user not found")
+        
+    dept.director_faculty_id = director_faculty_id
+    await db.commit()
+    return {"message": "Director nominee updated successfully"}
+
+
+@router.get("/all-faculties")
+async def get_all_faculties(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(User)
+        .join(RoleManager, User.role_id == RoleManager.id)
+        .where(and_(RoleManager.group_key == "faculty", User.is_approved == True))
+        .order_by(User.name)
+    )
+    return [{"id": u.id, "name": u.name, "email": u.email, "department_id": u.department_id} for u in result.scalars().all()]
+
+
+@router.post("/files/{budget_id}/committee")
+async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi import HTTPException
+    await db.refresh(user, ["role"])
+    if not user.role or user.role.group_key != "hod":
+        raise HTTPException(status_code=403, detail="Only HOD can nominate experts")
+
+    result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_id))
+    b = result.scalar_one_or_none()
+    if not b:
+        raise HTTPException(status_code=404, detail="Budget file not found")
+
+    if b.department_id != user.department_id:
+        raise HTTPException(status_code=403, detail="You can only configure committees for your own department's budget files")
+
+    expert1_id = body.get("expert1_id")
+    expert2_id = body.get("expert2_id")
+
+    if expert1_id:
+        u1_res = await db.execute(select(User).where(and_(User.id == expert1_id, User.department_id == user.department_id)))
+        if not u1_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Expert 1 must be a faculty member in your department")
+    if expert2_id:
+        u2_res = await db.execute(select(User).where(and_(User.id == expert2_id, User.department_id == user.department_id)))
+        if not u2_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Expert 2 must be a faculty member in your department")
+
+    if expert1_id and expert2_id and expert1_id == expert2_id:
+        raise HTTPException(status_code=400, detail="Expert 1 and Expert 2 must be different faculty members")
+
+    b.expert1_id = expert1_id
+    b.expert2_id = expert2_id
+
+    # Update active PRs associated with this budget file to use the new committee
+    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
+    active_prs_res = await db.execute(
+        select(PurchaseRequest)
+        .join(PurchaseRequestItem, PurchaseRequest.id == PurchaseRequestItem.purchase_request_id)
+        .where(
+            and_(
+                PurchaseRequestItem.budget_file_id == budget_id,
+                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"])
+            )
+        )
+    )
+    for pr_item in active_prs_res.scalars().all():
+        pr_item.faculty1_id = expert1_id
+        pr_item.faculty2_id = expert2_id
+
+    await db.commit()
+    return {"message": "Budget technical committee nominated successfully"}
+
+
+@router.post("/files/{budget_id}/director-committee")
+async def assign_budget_director_committee(budget_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi import HTTPException
+    await db.refresh(user, ["role"])
+    if not user.role or (user.role.value != "director" and user.role.group_key != "admin"):
+        raise HTTPException(status_code=403, detail="Only Director or Admin can nominate Director nominee")
+
+    result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_id))
+    b = result.scalar_one_or_none()
+    if not b:
+        raise HTTPException(status_code=404, detail="Budget file not found")
+
+    director_faculty_id = body.get("director_faculty_id")
+    if director_faculty_id:
+        u_res = await db.execute(select(User).where(User.id == director_faculty_id))
+        if not u_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Nominated user not found")
+
+    b.director_faculty_id = director_faculty_id
+
+    # Update active PRs associated with this budget file to use the new director nominee
+    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
+    active_prs_res = await db.execute(
+        select(PurchaseRequest)
+        .join(PurchaseRequestItem, PurchaseRequest.id == PurchaseRequestItem.purchase_request_id)
+        .where(
+            and_(
+                PurchaseRequestItem.budget_file_id == budget_id,
+                PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"])
+            )
+        )
+    )
+    for pr_item in active_prs_res.scalars().all():
+        pr_item.faculty3_id = director_faculty_id
+
+    await db.commit()
+    return {"message": "Director nominee assigned successfully to budget file"}
+
+
+@router.get("/users")
+async def get_all_users(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(User).where(User.is_approved == True).order_by(User.name)
+    )
+    return [{"id": u.id, "name": u.name, "email": u.email, "department_id": u.department_id} for u in result.scalars().all()]
+

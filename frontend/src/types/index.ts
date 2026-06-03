@@ -21,6 +21,7 @@ export interface User {
   role: Role | null;
   role_id?: number;
   department: Department | null;
+  department_id?: number | null;
   signature_path?: string | null;
 }
 
@@ -78,6 +79,7 @@ export interface PRFlow {
   expected_user_name?: string;
   workflow_step_id?: number;
   tender_vendors_threshold?: number | null;
+  tender_vendors_comparison?: string | null;
 }
 
 export interface PRItem {
@@ -128,9 +130,50 @@ export interface PurchaseRequest {
   flow?: PRFlow;
   commercial_evaluations?: any[];
   technical_evaluations?: any[];
-  financial_evaluations?: any[];
+  financial_evaluations?: {
+    id: number;
+    vendor_name: string;
+    quoted_amount: number;
+    ranking: string;
+    is_awarded: boolean;
+    remarks?: string;
+    unit_price?: number | null;
+    taxes?: number;
+    delivery_period?: number | null;
+    warranty?: number | null;
+  }[];
   assignments?: any[];
   documents?: any[];
+  lpc_remarks?: string | null;
+  lpc_committee_members?: string | null;
+  lpc_minutes_reference?: string | null;
+  single_bid_justification?: string | null;
+  bill_passing?: {
+    id: number;
+    invoice_number: string;
+    invoice_date: string;
+    challan_number?: string;
+    challan_date?: string;
+    bill_amount: number;
+    gst_amount: number;
+    payment_terms?: string;
+    passed_by_id: number;
+    remarks?: string;
+  } | null;
+  deliveries?: {
+    id: number;
+    status: string;
+    challan_number?: string;
+    invoice_number?: string;
+    received_date?: string;
+    created_at: string;
+    items?: {
+      id: number;
+      name: string;
+      challan_quantity: number;
+      unit_price: number;
+    }[];
+  }[];
   faculty1_id?: number;
   faculty2_id?: number;
   faculty3_id?: number;
@@ -141,6 +184,28 @@ export interface PurchaseRequest {
   faculty3?: { id: number; name: string; email: string };
   aa_approver?: { id: number; name: string; email: string };
   te_initiated_at?: string;
+  hod_id?: number;
+  expert1_id?: number;
+  expert2_id?: number;
+  director_faculty_id?: number;
+  hod?: { id: number; name: string; email: string };
+  expert1?: { id: number; name: string; email: string };
+  expert2?: { id: number; name: string; email: string };
+  director_faculty?: { id: number; name: string; email: string };
+  referrals?: PRReferral[];
+  budget_file?: any;
+}
+
+export interface PRReferral {
+  id: number;
+  referred_by: { id: number; name: string; email: string } | null;
+  referred_to: { id: number; name: string; email: string } | null;
+  query: string;
+  response: string | null;
+  response_document_path: string | null;
+  status: string;
+  created_at: string | null;
+  responded_at: string | null;
 }
 
 export interface DeliveryItem {

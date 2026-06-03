@@ -49,6 +49,7 @@ export interface PRCommonFormState {
   training_vendor: 'Yes' | 'No' | '';
   termsAccepted: boolean[];
   purchase_type: 'office' | 'department' | '';
+  form_data: Record<string, any>;
 }
 
 export interface PRWizardSelection {
@@ -103,5 +104,6 @@ export function createEmptyCommonState(): PRCommonFormState {
     training_vendor: '',
     termsAccepted: [false, false, false],
     purchase_type: '',
+    form_data: {},
   };
 }

@@ -50,7 +50,7 @@ export const prApi = {
   assignDa: (id: number, da_id: number) => api.post(`/pr/${id}/assign-da`, { da_id }),
   addTechnicalEval: (id: number, formData: FormData) =>
     api.post(`/pr/${id}/technical-eval`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  addFinancialBids: (id: number, vendors: object[], remarks?: string) => api.post(`/pr/${id}/financial-bids`, { vendors, remarks }),
+  addFinancialBids: (id: number, payload: any) => api.post(`/pr/${id}/financial-bids`, payload),
   getSendBackCandidates: (id: number) => api.get(`/pr/${id}/send-back-candidates`),
   addTenderDetails: (id: number, data: any) => {
     if (data instanceof FormData) {
@@ -63,6 +63,15 @@ export const prApi = {
   getDealingAssistants: () => api.get('/pr/dealing-assistants'),
   getVendors: () => api.get('/pr/vendors'),
   awardBid: (id: number, vendor_id: number, remarks?: string) => api.post(`/pr/${id}/award-bid`, { vendor_id, remarks }),
+  cancelPo: (id: number, reason: string, reinitiationMethod: string, reallocatedAmount: number) =>
+    api.post(`/pr/${id}/cancel-po`, { reason, reinitiation_method: reinitiationMethod, reallocated_amount: reallocatedAmount }),
+  cancelTender: (id: number, reason: string, reinitiationMethod: string) =>
+    api.post(`/pr/${id}/cancel-tender`, { reason, reinitiation_method: reinitiationMethod }),
+  reinitiatePr: (id: number) => api.post(`/pr/${id}/reinitiate`),
+  billPassing: (id: number, data: any) => api.post(`/pr/${id}/bill-passing`, data),
+  referPr: (id: number, data: { referred_to_id: number; query: string }) => api.post(`/pr/${id}/refer`, data),
+  respondReferral: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/refer/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
 
 // Budget
@@ -72,6 +81,16 @@ export const budgetApi = {
   financialYears: () => api.get('/budget/financial-years'),
   procurementMethods: () => api.get('/budget/procurement-methods'),
   departmentFaculty: () => api.get('/budget/department-faculty'),
+  getDepartmentCommittee: () => api.get('/budget/department-committee'),
+  updateDepartmentCommittee: (data: object) => api.post('/budget/department-committee', data),
+  directorGetCommittees: () => api.get('/budget/director/committees'),
+  directorUpdateCommittee: (data: object) => api.post('/budget/director/committees', data),
+  allFaculties: () => api.get('/budget/all-faculties'),
+  assignCommittee: (budgetId: number, data: { expert1_id: number | null; expert2_id: number | null }) =>
+    api.post(`/budget/files/${budgetId}/committee`, data),
+  assignDirectorCommittee: (budgetId: number, data: { director_faculty_id: number | null }) =>
+    api.post(`/budget/files/${budgetId}/director-committee`, data),
+  allUsers: () => api.get('/budget/users'),
 };
 
 // Inventory
@@ -145,4 +164,9 @@ export const adminApi = {
   importBudget: (formData: FormData) =>
     api.post('/admin/budget/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   clearBudgets: () => api.delete('/admin/budget/clear'),
+  getBudgetDetail: (id: number) => api.get(`/admin/budget/${id}`),
+  getCategories: () => api.get('/admin/budget/categories'),
+  addCategory: (data: { type: 'expenditure' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
+  getNextFileNumber: (params: { department_id: number; expenditure_category: string; financial_year_id: number }) =>
+    api.get('/admin/budget/next-file-number', { params }),
 };
