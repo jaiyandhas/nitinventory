@@ -22,6 +22,7 @@ class RequestStatus(str, enum.Enum):
     PO_ISSUED = "po_issued"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
+    ROLLED_OVER = "rolled_over"
 
 
 class PurchaseType(str, enum.Enum):

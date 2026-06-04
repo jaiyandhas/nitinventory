@@ -12,38 +12,38 @@ interface PRDocumentsProps {
 
 const FORM_DIRECTORY = [
   {
-    title: "1. Indents & Specifications",
+    title: "Indents & Specifications",
     items: [
-      { key: "indent", name: "Form 1: Purchase Indent Form", desc: "For administrative and financial approval of any indent" },
-      { key: "specs", name: "Form 2: Technical Specs Annexure", desc: "Specifications finalized by the TSC sub-committee" }
+      { key: "indent", name: "Purchase Indent Form", desc: "For administrative and financial approval of any indent" },
+      { key: "specs", name: "Technical Specs Annexure", desc: "Specifications finalized by the TSC sub-committee" }
     ]
   },
   {
-    title: "2. Mode-Specific Approvals",
+    title: "Mode-Specific Approvals",
     items: [
-      { key: "pac_approval", name: "Form 3: PAC Purchase Approval", desc: "Required basic approval for Proprietary Article purchases" },
-      { key: "pac_cert", name: "Form 4: PAC OEM Certificate", desc: "Sole manufacturer justification and OEM verification" },
-      { key: "lpc_approval", name: "Form 5: LPC GFR 155 Approval", desc: "Required approval for Local Purchase Committees under GFR 155" },
-      { key: "single_source", name: "Form 6: GFR 194 Nomination", desc: "Single source nomination justification and approvals" }
+      { key: "pac_approval", name: "PAC Purchase Approval", desc: "Required basic approval for Proprietary Article purchases" },
+      { key: "pac_cert", name: "PAC OEM Certificate", desc: "Sole manufacturer justification and OEM verification" },
+      { key: "lpc_approval", name: "LPC GFR 155 Approval", desc: "Required approval for Local Purchase Committees under GFR 155" },
+      { key: "single_source", name: "GFR 194 Nomination", desc: "Single source nomination justification and approvals" }
     ]
   },
   {
-    title: "3. Tendering & Comparatives",
+    title: "Tendering & Comparatives",
     items: [
-      { key: "tech_minutes", name: "Form 10: Technical evaluation", desc: "Minutes of technical evaluation committee" },
-      { key: "tech_comparative", name: "Form 10: Tech Comparative", desc: "Technical bid eligibility and compliance matrix" },
-      { key: "price_comparative", name: "Form 11: Price Comparative", desc: "Price comparative statement with bidder rankings" },
-      { key: "techno_comm_comparative", name: "Form 12: Techno-Commercial", desc: "Unified techno-commercial eligibility & price matrix" },
-      { key: "fin_approval_single", name: "Form 13: Financial Approval (Single Bid)", desc: "DPC Single Bid approval minutes" },
-      { key: "fin_approval_two", name: "Form 14: Financial Scrutiny (Two Bid)", desc: "DPC Two Bid financial scrutiny & award minutes" }
+      { key: "tech_minutes", name: "Technical evaluation", desc: "Minutes of technical evaluation committee" },
+      { key: "tech_comparative", name: "Tech Comparative", desc: "Technical bid eligibility and compliance matrix" },
+      { key: "price_comparative", name: "Price Comparative", desc: "Price comparative statement with bidder rankings" },
+      { key: "techno_comm_comparative", name: "Techno-Commercial", desc: "Unified techno-commercial eligibility & price matrix" },
+      { key: "fin_approval_single", name: "Financial Approval (Single Bid)", desc: "DPC Single Bid approval minutes" },
+      { key: "fin_approval_two", name: "Financial Scrutiny (Two Bid)", desc: "DPC Two Bid financial scrutiny & award minutes" }
     ]
   },
   {
-    title: "4. Receipts, Billing & Closures",
+    title: "Receipts, Billing & Closures",
     items: [
-      { key: "bill_passing", name: "Form 7 & 8: Goods Receipt & Billing", desc: "Stock entry register reference and bill passing minutes" },
-      { key: "po_cancel", name: "Form 9: PO Cancellation Minutes", desc: "Purchase committee recommendation for PO cancellation" },
-      { key: "tender_cancel", name: "Form 15: Tender Cancellation", desc: "DPC minutes for tender process cancellation" }
+      { key: "bill_passing", name: "Goods Receipt & Billing", desc: "Stock entry register reference and bill passing minutes" },
+      { key: "po_cancel", name: "PO Cancellation Minutes", desc: "Purchase committee recommendation for PO cancellation" },
+      { key: "tender_cancel", name: "Tender Cancellation", desc: "DPC minutes for tender process cancellation" }
     ]
   }
 ];

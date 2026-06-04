@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Save, Loader2, Plus, Check } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Check, Trash2 } from 'lucide-react';
 import { adminApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 
 export const BudgetFormPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
 
   // Form states
   const [departmentId, setDepartmentId] = useState<number>(0);
@@ -129,6 +131,41 @@ export const BudgetFormPage: React.FC = () => {
       setPendingCatValue('');
     },
   });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (payload: { type: 'expenditure' | 'item'; value: string }) =>
+      adminApi.deleteBudgetCategory(payload.type, payload.value),
+    onSuccess: (res) => {
+      const updated = res.data;
+      toast.success('Category deleted successfully');
+      queryClient.setQueryData(['budget_categories'], updated);
+      
+      // Reset selected category to a default if the deleted one was selected
+      if (pendingCatType === 'expenditure' && pendingCatValue) {
+        if (expenditureCategory === pendingCatValue) {
+          setExpenditureCategory(updated.expenditure_categories?.[0] || 'CAPEX');
+        }
+      } else if (pendingCatType === 'item' && pendingCatValue) {
+        if (category === pendingCatValue) {
+          setCategory(updated.item_categories?.[0] || 'computer');
+        }
+      }
+      setPendingCatType(null);
+      setPendingCatValue('');
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to delete category');
+      setPendingCatType(null);
+      setPendingCatValue('');
+    },
+  });
+
+  const handleDeleteCategory = (type: 'expenditure' | 'item', value: string) => {
+    if (!window.confirm(`Are you sure you want to delete the category "${value}"?`)) return;
+    setPendingCatType(type);
+    setPendingCatValue(value);
+    deleteCategoryMutation.mutate({ type, value });
+  };
 
   const saveMutation = useMutation({
     mutationFn: (data: any) => {
@@ -273,15 +310,27 @@ export const BudgetFormPage: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700">
                     Expenditure Category <span className="text-rose-500">*</span>
                   </label>
-                  {!showAddExp && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddExp(true)}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5"
-                    >
-                      <Plus size={12} /> Add New
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {isAdmin() && cats.added_by_dean?.expenditure?.includes(expenditureCategory) && !isEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory('expenditure', expenditureCategory)}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-0.5"
+                        disabled={deleteCategoryMutation.isPending}
+                      >
+                        <Trash2 size={12} /> Delete Selected
+                      </button>
+                    )}
+                    {!showAddExp && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddExp(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5"
+                      >
+                        <Plus size={12} /> Add New
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {showAddExp ? (
                   <div className="flex gap-2">
@@ -331,15 +380,27 @@ export const BudgetFormPage: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700">
                     Item Category <span className="text-rose-500">*</span>
                   </label>
-                  {!showAddItem && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddItem(true)}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5"
-                    >
-                      <Plus size={12} /> Add New
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {isAdmin() && cats.added_by_dean?.item?.includes(category) && !isEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory('item', category)}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-0.5"
+                        disabled={deleteCategoryMutation.isPending}
+                      >
+                        <Trash2 size={12} /> Delete Selected
+                      </button>
+                    )}
+                    {!showAddItem && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddItem(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5"
+                      >
+                        <Plus size={12} /> Add New
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {showAddItem ? (
                   <div className="flex gap-2">

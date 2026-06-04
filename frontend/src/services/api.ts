@@ -135,6 +135,7 @@ export const adminApi = {
   roles: () => api.get('/admin/roles'),
   financialYears: () => api.get('/admin/financial-years'),
   createFinancialYear: (data: object) => api.post('/admin/financial-years', data),
+  rolloverFinancialYear: () => api.post('/admin/financial-years/rollover', {}),
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
   budget: (params?: { skip?: number; limit?: number }) => api.get('/admin/budget', { params }),
@@ -168,6 +169,8 @@ export const adminApi = {
   getBudgetDetail: (id: number) => api.get(`/admin/budget/${id}`),
   getCategories: () => api.get('/admin/budget/categories'),
   addCategory: (data: { type: 'expenditure' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
+  deleteBudgetCategory: (type: 'expenditure' | 'item', value: string) =>
+    api.delete('/admin/budget/categories', { params: { type, value } }),
   getNextFileNumber: (params: { department_id: number; expenditure_category: string; financial_year_id: number }) =>
     api.get('/admin/budget/next-file-number', { params }),
   forceAdvancePr: (prId: number, remarks: string) =>

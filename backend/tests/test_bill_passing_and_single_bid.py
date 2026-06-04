@@ -42,7 +42,7 @@ async def test_lpc_fields_persistency(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=2,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.IN_PROGRESS,
     )
@@ -108,7 +108,7 @@ async def test_single_bid_director_routing(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=2,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.IN_PROGRESS,
     )
@@ -148,7 +148,7 @@ async def test_bill_passing_lifecycle(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=2,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.PO_ISSUED,
     )

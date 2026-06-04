@@ -246,18 +246,7 @@ async def test_technical_evaluation_committee_signatures(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # First sign: HOD (first signer)
-    await flow_service.advance(pr, hod, remarks="HOD tech eval sign")
-    await db_session.refresh(flow)
-    await db_session.refresh(pr, ["history"])
-    assert flow.step_order == 1
-    
-    # Check that HOD has a signature history log
-    hod_history = [h for h in pr.history if h.current_approver_id == hod.id]
-    assert len(hod_history) == 1
-    assert hod_history[0].status == "Technical Evaluation Approved"
-    
-    # Second sign: Initiator (faculty)
+    # First sign: Initiator (faculty)
     await flow_service.advance(pr, faculty, remarks="Initiator tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
@@ -268,24 +257,24 @@ async def test_technical_evaluation_committee_signatures(db_session):
     assert len(initiator_history) == 1
     assert initiator_history[0].status == "Technical Evaluation Completed"
     
-    # Third sign: Faculty 1
+    # Second sign: Faculty 1
     await flow_service.advance(pr, faculty1, remarks="Faculty 1 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Fourth sign: Faculty 2
+    # Third sign: Faculty 2
     await flow_service.advance(pr, faculty2, remarks="Faculty 2 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Fifth sign: VG (Director Nominee)
+    # Fourth sign: VG (Director Nominee)
     await flow_service.advance(pr, vg, remarks="VG tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     
-    # Now all 5 should have signed, and flow step order should have advanced to step 2 (HOD review)
+    # Now all 4 committee members have signed, and flow step order should have advanced to step 2 (HOD review)
     assert flow.step_order == 2
     
     # Verify no redundant "Forwarded" or "Forwarded to next phase" status exists in the history logs for TE step 1
@@ -352,8 +341,7 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # Sign all 5 in order to advance to step 2
-    await flow_service.advance(pr, hod, remarks="HOD sign")
+    # Sign all 4 in order to advance to step 2
     await flow_service.advance(pr, faculty, remarks="PI sign")
     await flow_service.advance(pr, faculty1, remarks="F1 sign")
     await flow_service.advance(pr, faculty2, remarks="F2 sign")
@@ -368,14 +356,14 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     assert flow.step_order == 1
     assert pr.te_initiated_at is not None
     
-    # Verify that signing out of order (e.g. Faculty 1 signing first) raises ValueError
-    with pytest.raises(ValueError, match="It is not your turn to sign"):
-        await flow_service.advance(pr, faculty1, remarks="Out of order F1 sign")
-        
-    # Sign in correct turn: HOD
-    await flow_service.advance(pr, hod, remarks="New HOD sign")
+    # Verify that signing out of order (e.g. Faculty 1 signing first) works (does NOT raise ValueError)
+    await flow_service.advance(pr, faculty1, remarks="F1 signs first after reset")
     await db_session.refresh(flow)
-    assert flow.step_order == 1  # Should stay on step 1 since others haven't signed this round!
+    assert flow.step_order == 1
+    
+    # Verify that trying to sign again raises ValueError
+    with pytest.raises(ValueError, match="You have already signed"):
+        await flow_service.advance(pr, faculty1, remarks="F1 signs again")
 
 
 @pytest.mark.asyncio

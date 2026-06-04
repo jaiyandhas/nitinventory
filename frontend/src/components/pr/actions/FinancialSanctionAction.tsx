@@ -49,6 +49,25 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
   }>>({});
   const [singleBidJustification, setSingleBidJustification] = useState('');
 
+  const isInitiatorStep = user?.id === pr.initiator_id && pr.flow?.step_order === 1;
+
+  const handleAdvanceOnly = async () => {
+    if (!remarks.trim()) { toast.error('Remarks are required to approve and advance'); return; }
+    if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
+    
+    setActionLoading(true);
+    try {
+      await prApi.advance(pr.id, remarks);
+      toast.success('PR advanced successfully');
+      setRemarks('');
+      refetch();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Action failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (pr.technical_evaluations) {
       const initialBids: Record<string, {
@@ -63,12 +82,12 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
         if (te.is_qualified) {
           const existingFe = pr.financial_evaluations?.find(f => f.vendor_name === te.vendor_name);
           initialBids[te.vendor_name] = { 
-            quoted_amount: existingFe ? String(existingFe.quoted_amount) : '', 
+            quoted_amount: existingFe ? String(existingFe.quoted_amount / 100000) : '', 
             remarks: existingFe ? existingFe.remarks || '' : '',
-            unit_price: existingFe && existingFe.unit_price !== null ? String(existingFe.unit_price) : '',
+            unit_price: existingFe && existingFe.unit_price !== undefined && existingFe.unit_price !== null ? String(existingFe.unit_price / 100000) : '',
             taxes: existingFe && existingFe.taxes !== undefined ? String(existingFe.taxes) : '0',
-            delivery_period: existingFe && existingFe.delivery_period !== null ? String(existingFe.delivery_period) : '',
-            warranty: existingFe && existingFe.warranty !== null ? String(existingFe.warranty) : '',
+            delivery_period: existingFe && existingFe.delivery_period !== undefined && existingFe.delivery_period !== null ? String(existingFe.delivery_period) : '',
+            warranty: existingFe && existingFe.warranty !== undefined && existingFe.warranty !== null ? String(existingFe.warranty) : '',
           };
         }
       });
@@ -116,9 +135,9 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
         }
         return {
           name,
-          quoted_amount: parseFloat(data.quoted_amount),
+          quoted_amount: parseFloat(data.quoted_amount) * 100000,
           remarks: data.remarks,
-          unit_price: data.unit_price ? parseFloat(data.unit_price) : null,
+          unit_price: data.unit_price ? parseFloat(data.unit_price) * 100000 : null,
           taxes: data.taxes ? parseFloat(data.taxes) : 0,
           delivery_period: data.delivery_period ? parseInt(data.delivery_period) : null,
           warranty: data.warranty ? parseInt(data.warranty) : null,
@@ -145,6 +164,57 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
       setActionLoading(false);
     }
   };
+
+  if (!isInitiatorStep) {
+    return (
+      <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left animate-fadeIn">
+        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+          Approve &amp; Forward Financial Sanction
+        </h4>
+        
+        <div className="space-y-2">
+          <label className="label text-slate-700 font-bold text-xs">
+            Remarks / Recommendation Comments *
+          </label>
+          <textarea
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Provide financial sanction evaluation remarks..."
+            className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm"
+            required
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2.5 pt-1">
+          <button 
+            onClick={handleAdvanceOnly} 
+            disabled={actionLoading || !remarks.trim()}
+            className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+          >
+            <CheckCircle2 size={14} /> Approve &amp; Forward
+          </button>
+
+          <button 
+            onClick={() => onReject(remarks)} 
+            disabled={actionLoading || !remarks.trim()} 
+            className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+          >
+            <XCircle size={14} /> Reject
+          </button>
+
+          {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+            <button 
+              onClick={() => setShowSendBackModal(true)} 
+              disabled={actionLoading} 
+              className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+            >
+              <RotateCcw size={14} /> Send Back
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left">
@@ -291,7 +361,7 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
 
           {pr.technical_evaluations.filter(t => t.is_qualified).length === 1 && (
             <div className="pt-3 pb-2 space-y-2 border-t border-slate-100 bg-orange-50/20 p-4 rounded border border-orange-100/50 animate-fadeIn">
-              <label className="label text-[#1a3a6b] font-bold text-xs block mb-1">Single Bid Justification (Module 13) *</label>
+              <label className="label text-[#1a3a6b] font-bold text-xs block mb-1">Single Bid Justification *</label>
               <textarea
                 value={singleBidJustification}
                 onChange={(e) => setSingleBidJustification(e.target.value)}

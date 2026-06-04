@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { RotateCcw, XCircle, CheckCircle2, GitMerge, Info } from 'lucide-react';
-import { prApi } from '../../services/api';
+import { prApi, budgetApi } from '../../services/api';
 import { PurchaseRequest } from '../../types';
 import toast from 'react-hot-toast';
+import { useQuery } from '@tanstack/react-query';
 
 // Subcomponents
 import { AAAction } from './actions/AAAction';
@@ -25,6 +26,27 @@ interface PRActionPanelProps {
 export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch, faculties }) => {
   const [remarks, setRemarks] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  const isHOD = user?.role?.group_key === 'hod';
+  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
+
+  const [expert1Id, setExpert1Id] = useState<number | ''>('');
+  const [expert2Id, setExpert2Id] = useState<number | ''>('');
+  const [directorFacultyId, setDirectorFacultyId] = useState<number | ''>('');
+
+  useEffect(() => {
+    if (pr) {
+      setExpert1Id(pr.faculty1_id || '');
+      setExpert2Id(pr.faculty2_id || '');
+      setDirectorFacultyId(pr.faculty3_id || '');
+    }
+  }, [pr]);
+
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ['all_users_for_director_nomination'],
+    queryFn: () => budgetApi.allUsers().then(r => r.data),
+    enabled: !!isDirector && pr.flow?.phase_name === 'Administrative Approval',
+  });
 
   // Send back states
   const [showSendBackModal, setShowSendBackModal] = useState(false);
@@ -50,10 +72,36 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to advance the PR'); return; }
+
+    if (pr.flow?.phase_name === 'Administrative Approval') {
+      if (isHOD) {
+        if (!expert1Id || !expert2Id) {
+          toast.error('Both Expert 1 and Expert 2 must be nominated');
+          return;
+        }
+        if (expert1Id === expert2Id) {
+          toast.error('Expert 1 and Expert 2 must be different faculty members');
+          return;
+        }
+      } else if (isDirector) {
+        if (!directorFacultyId) {
+          toast.error('Director Nominee must be nominated');
+          return;
+        }
+      }
+    }
+
     if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
     setActionLoading(true);
     try {
-      await prApi.advance(pr.id, remarks);
+      await prApi.advance(
+        pr.id,
+        remarks,
+        undefined,
+        isHOD ? Number(expert1Id) : undefined,
+        isHOD ? Number(expert2Id) : undefined,
+        isDirector ? Number(directorFacultyId) : undefined
+      );
       toast.success('PR advanced successfully');
       setRemarks('');
       refetch();
@@ -208,6 +256,16 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             onSendBackClick={() => setShowSendBackModal(true)}
             remarks={remarks}
             setRemarks={setRemarks}
+            isHOD={isHOD}
+            isDirector={isDirector}
+            expert1Id={expert1Id}
+            setExpert1Id={setExpert1Id}
+            expert2Id={expert2Id}
+            setExpert2Id={setExpert2Id}
+            directorFacultyId={directorFacultyId}
+            setDirectorFacultyId={setDirectorFacultyId}
+            faculties={faculties}
+            allUsers={allUsers}
           />
         );
       case 'Tendering':
@@ -292,6 +350,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             onSendBackClick={() => setShowSendBackModal(true)}
             remarks={remarks}
             setRemarks={setRemarks}
+            isDirector={isDirector}
+            directorFacultyId={directorFacultyId}
+            setDirectorFacultyId={setDirectorFacultyId}
+            allUsers={allUsers}
           />
         );
     }

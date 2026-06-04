@@ -257,6 +257,11 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     if not b:
         raise HTTPException(status_code=404, detail="Budget file not found")
 
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == b.financial_year_id))
+    fy = fy_res.scalar_one_or_none()
+    if fy and fy.is_closed:
+        raise HTTPException(status_code=400, detail="The financial year for this budget is closed. Budgets in closed financial years cannot be modified.")
+
     if b.department_id != user.department_id:
         raise HTTPException(status_code=403, detail="You can only configure committees for your own department's budget files")
 
@@ -318,6 +323,11 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
     b = result.scalar_one_or_none()
     if not b:
         raise HTTPException(status_code=404, detail="Budget file not found")
+
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == b.financial_year_id))
+    fy = fy_res.scalar_one_or_none()
+    if fy and fy.is_closed:
+        raise HTTPException(status_code=400, detail="The financial year for this budget is closed. Budgets in closed financial years cannot be modified.")
 
     director_faculty_id = body.get("director_faculty_id")
     if director_faculty_id:

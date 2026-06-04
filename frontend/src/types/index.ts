@@ -117,7 +117,8 @@ export type PRStatus =
   | 'rejected'
   | 'po_issued'
   | 'cancelled'
-  | 'completed';
+  | 'completed'
+  | 'rolled_over';
 
 export interface PurchaseRequest {
   id: number;
@@ -128,6 +129,9 @@ export interface PurchaseRequest {
   created_at: string;
   is_potential_split?: boolean;
   initiator?: { id: number; name: string; email: string; department?: { id: number; name: string; short_code: string } };
+  parent_pr_id?: number | null;
+  parent_pr?: { id: number; icr_number?: string } | null;
+  child_prs?: Array<{ id: number; icr_number?: string }>;
   category?: PurchaseCategory;
   procurement?: ProcurementMethod;
   form_data?: Record<string, any> | null;
@@ -291,6 +295,7 @@ export const PR_STATUS_LABELS: Record<PRStatus, string> = {
   po_issued: 'PO Issued',
   cancelled: 'Cancelled',
   completed: 'Completed',
+  rolled_over: 'Rolled Over',
 };
 
 export const PR_STATUS_COLORS: Record<PRStatus, string> = {
@@ -301,4 +306,14 @@ export const PR_STATUS_COLORS: Record<PRStatus, string> = {
   po_issued: 'bg-green-500/20 text-green-300 border-green-500/30',
   cancelled: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
   completed: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  rolled_over: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
 };
+
+export interface FinancialYear {
+  id: number;
+  label: string;
+  start_date: string;
+  end_date: string;
+  is_active: boolean;
+  is_closed: boolean;
+}

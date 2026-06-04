@@ -367,11 +367,13 @@ class FlowEngineService:
             hod = hod_res.scalar_one_or_none()
             hod_id = hod.id if hod else None
 
-            expert1_id = pr.faculty1_id
-            expert2_id = pr.faculty2_id
-            director_faculty_id = pr.faculty3_id
+            # Fallback to department defaults if PR fields are None (heals existing PRs)
+            dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
+            expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
+            expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
+            director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
 
-            raw_committee_ids = [hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
+            raw_committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
             if any(x is None for x in raw_committee_ids):
                 raise ValueError("The department purchase committee is not fully formed or configured yet.")
             # De-duplicate while preserving order (same person may fill multiple roles)
@@ -386,7 +388,7 @@ class FlowEngineService:
             if user.id not in committee_ids:
                 raise ValueError("Only the department purchase committee nominees can perform technical evaluation")
 
-            # Check sequential signing order
+            # Check if user has already signed
             since = pr.te_initiated_at or pr.created_at or datetime.min
             await self.db.refresh(pr, ["history"])
             approved_ids = {
@@ -395,25 +397,8 @@ class FlowEngineService:
                 and (h.acted_at is None or h.acted_at >= since)
             }
 
-            # DEBUG — remove after TE investigation
-            import sys
-            print(f"[TE DEBUG] PR#{pr.id} user={user.id}({user.name}) te_initiated_at={pr.te_initiated_at} since={since}", file=sys.stderr, flush=True)
-            print(f"[TE DEBUG] committee_ids={committee_ids} approved_ids={approved_ids}", file=sys.stderr, flush=True)
-            for h in pr.history:
-                print(f"[TE DEBUG]   history: approver={h.current_approver_id} status={h.status!r} acted_at={h.acted_at}", file=sys.stderr, flush=True)
-
-            pending_index = None
-            for idx, cid in enumerate(committee_ids):
-                if cid not in approved_ids:
-                    pending_index = idx
-                    break
-
-            if pending_index is not None:
-                current_turn_id = committee_ids[pending_index]
-                if user.id != current_turn_id:
-                    turn_user_res = await self.db.execute(select(User.name).where(User.id == current_turn_id))
-                    turn_user_name = turn_user_res.scalar_one_or_none() or "Another member"
-                    raise ValueError(f"It is not your turn to sign. The next signer is {turn_user_name}.")
+            if user.id in approved_ids:
+                raise ValueError("You have already signed the technical evaluation.")
             return
 
         # Standard role/group checking
@@ -446,7 +431,7 @@ class FlowEngineService:
         budget_svc = BudgetService(self.db)
         await budget_svc.lock_amount(pr)
 
-        # Populate committee from budget file nominees if present, else fallback to department
+        # Populate committee from budget file nominees if present
         budget_file = None
         await self.db.refresh(pr, ["items"])
         if pr.items:
@@ -455,17 +440,7 @@ class FlowEngineService:
                 budget_res = await self.db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
                 budget_file = budget_res.scalar_one_or_none()
 
-        if budget_file and (budget_file.expert1_id or budget_file.expert2_id or budget_file.director_faculty_id):
-            pr.faculty1_id = budget_file.expert1_id
-            pr.faculty2_id = budget_file.expert2_id
-            pr.faculty3_id = budget_file.director_faculty_id
-        else:
-            await self.db.refresh(initiator, ["department"])
-            dept = initiator.department
-            if dept:
-                pr.faculty1_id = dept.expert1_id
-                pr.faculty2_id = dept.expert2_id
-                pr.faculty3_id = dept.director_faculty_id
+
 
         first_phase = await self._get_first_phase()
         first_step = await self._get_first_step(pr, first_phase)
@@ -554,11 +529,13 @@ class FlowEngineService:
             hod = hod_res.scalar_one_or_none()
             hod_id = hod.id if hod else None
 
-            expert1_id = pr.faculty1_id
-            expert2_id = pr.faculty2_id
-            director_faculty_id = pr.faculty3_id
+            # Fallback to department defaults if PR fields are None (heals existing PRs)
+            dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
+            expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
+            expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
+            director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
 
-            required_ids = {hod_id, pr.initiator_id, expert1_id, expert2_id, director_faculty_id}
+            required_ids = {pr.initiator_id, expert1_id, expert2_id, director_faculty_id}
             
             if None in required_ids or any(x is None for x in required_ids):
                 should_advance = False

@@ -31,7 +31,7 @@ async def test_cancel_tender_success(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=1,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.IN_PROGRESS,
     )
@@ -111,7 +111,7 @@ async def test_cancel_po_success(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=1,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.PO_ISSUED,
     )
@@ -178,7 +178,7 @@ async def test_reinitiate_cancelled_pr(db_session):
         purchase_type="department",
         initiator_id=faculty.id,
         category_id=2,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.CANCELLED,
         basis_of_estimate_details="Direct OEM Quotation",
@@ -270,7 +270,7 @@ async def test_cancellation_permissions(db_session):
         purchase_type="department",
         initiator_id=faculty_cse.id,
         category_id=1,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.PO_ISSUED,
     )

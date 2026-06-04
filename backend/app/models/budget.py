@@ -18,6 +18,7 @@ class FinancialYear(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     budget_entries: Mapped[List["BudgetMaster"]] = relationship("BudgetMaster", back_populates="financial_year")
 

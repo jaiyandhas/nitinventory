@@ -153,7 +153,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         const initialTenders = pr.commercial_evaluations.map(ce => ({
           name: ce.vendor_name,
           email: ce.vendor_email || '',
-          quoted_amount: ce.quoted_amount ? String(ce.quoted_amount) : '',
+          quoted_amount: ce.quoted_amount ? String(ce.quoted_amount / 100000) : '',
           is_qualified: ce.is_qualified !== false,
           remarks: ce.remarks || ''
         }));
@@ -220,7 +220,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         vendors: tenderVendors.map(v => ({
           name: v.name.trim(),
           email: v.email ? v.email.trim() : null,
-          quoted_amount: v.quoted_amount ? parseFloat(v.quoted_amount) : null,
+          quoted_amount: v.quoted_amount ? parseFloat(v.quoted_amount) * 100000 : null,
           is_qualified: v.is_qualified !== false,
           remarks: v.remarks
         })),
@@ -372,7 +372,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
 
           {(pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc')) && (
             <div className="space-y-2 pt-2 border-t border-slate-100 animate-fadeIn">
-              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Limited Purchase Committee Approval (Module 5)</h5>
+              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Limited Purchase Committee Approval</h5>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label text-slate-600 font-semibold text-xs">LPC Committee Members *</label>
@@ -664,8 +664,8 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         </div>
       )}
 
-      {/* Superintendent Review Form */}
-      {pr.flow?.expected_role_name === 'Superintendent' && pr.flow?.step_order === 3 && (
+      {/* Superintendent / Consultant / General Review Form */}
+      {(pr.flow?.step_order ?? 0) >= 3 && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded shadow-sm text-left">
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Review Tender Details & Bidders</h4>
           
@@ -728,7 +728,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       <td className="px-3 py-2 font-medium">{ce.vendor_name}</td>
                       <td className="px-3 py-2 text-slate-500">{ce.vendor_email || '-'}</td>
                       <td className="px-3 py-2 font-semibold text-slate-800">
-                        {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? `₹${ce.quoted_amount} Lakhs` : '-'}
+                        {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? `₹${(ce.quoted_amount / 100000).toFixed(2)} Lakhs` : '-'}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${ce.is_qualified ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>

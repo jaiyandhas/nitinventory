@@ -142,7 +142,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
 
           {pr.financial_evaluations && pr.financial_evaluations.length > 0 && (
             <div className="pt-2">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Price Comparative Statement (Module 11)</h4>
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Price Comparative Statement</h4>
               <div className="overflow-x-auto border border-slate-100 rounded-lg">
                 <table className="min-w-full text-sm text-slate-700">
                   <thead>
@@ -168,9 +168,9 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                             {isL1 && <Award size={14} className="text-green-600" />}
                             {fe.is_awarded && <span className="bg-[#1a3a6b] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-sm">★ AWARDED</span>}
                           </td>
-                          <td className="px-3 py-2 font-medium">{fe.unit_price !== undefined && fe.unit_price !== null ? `₹${fe.unit_price.toFixed(2)} Lakhs` : '-'}</td>
+                          <td className="px-3 py-2 font-medium">{fe.unit_price !== undefined && fe.unit_price !== null ? `₹${(fe.unit_price / 100000).toFixed(2)} Lakhs` : '-'}</td>
                           <td className="px-3 py-2 font-medium">{fe.taxes !== undefined ? `${fe.taxes}%` : '0%'}</td>
-                          <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">₹{(fe.quoted_amount).toFixed(2)} Lakhs</td>
+                          <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">₹{(fe.quoted_amount / 100000).toFixed(2)} Lakhs</td>
                           <td className="px-3 py-2 text-xs font-semibold">{fe.delivery_period !== undefined && fe.delivery_period !== null ? `${fe.delivery_period} weeks` : '-'}</td>
                           <td className="px-3 py-2 text-xs font-semibold">{fe.warranty !== undefined && fe.warranty !== null ? `${fe.warranty} months` : '-'}</td>
                           <td className="px-3 py-2">
@@ -190,7 +190,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
 
           {pr.technical_evaluations && pr.technical_evaluations.length > 0 && pr.financial_evaluations && pr.financial_evaluations.length > 0 && (
             <div className="pt-4 border-t border-slate-100">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Techno-Commercial Comparative Statement (Module 12)</h4>
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Techno-Commercial Comparative Statement</h4>
               <div className="overflow-x-auto border border-slate-100 rounded-lg">
                 <table className="min-w-full text-sm text-slate-700">
                   <thead>
@@ -214,7 +214,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                             </span>
                           </td>
                           <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">
-                            {te.is_qualified && fe ? `₹${fe.quoted_amount.toFixed(2)} Lakhs` : 'N/A (Disqualified)'}
+                            {te.is_qualified && fe ? `₹${(fe.quoted_amount / 100000).toFixed(2)} Lakhs` : 'N/A (Disqualified)'}
                           </td>
                           <td className="px-3 py-2">
                             <span className="text-xs font-bold text-slate-600">
@@ -235,14 +235,14 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
 
           {pr.single_bid_justification && (
             <div className="pt-4 border-t border-slate-100 bg-blue-50/30 p-3.5 rounded-lg border border-blue-100/50">
-              <h4 className="text-xs font-extrabold text-[#1a3a6b] uppercase tracking-wider mb-1">Single Bid Justification (Module 13)</h4>
+              <h4 className="text-xs font-extrabold text-[#1a3a6b] uppercase tracking-wider mb-1">Single Bid Justification</h4>
               <p className="text-sm text-slate-700 italic font-medium">"{pr.single_bid_justification}"</p>
             </div>
           )}
 
           {pr.lpc_remarks && (
             <div className="pt-4 border-t border-slate-100 bg-slate-50/50 p-4 rounded-lg border border-slate-200/60 space-y-2">
-              <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Limited Purchase Committee Approval (Module 5)</h4>
+              <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Limited Purchase Committee Approval</h4>
               <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-600">
                 <div>
                   <span className="text-slate-400 font-bold">LPC Committee:</span> {pr.lpc_committee_members || 'N/A'}
@@ -262,7 +262,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
             <div className="pt-4 border-t border-slate-100 bg-emerald-50/20 p-4 rounded-lg border border-emerald-100/60 space-y-3">
               <h4 className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                Purchase Bill Passing Certificate (Module 7)
+                Purchase Bill Passing Certificate
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-semibold text-slate-700">
                 <div>

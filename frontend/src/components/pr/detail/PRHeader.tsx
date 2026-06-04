@@ -36,31 +36,31 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
     {
       category: "Sanctions & Indents",
       items: [
-        { key: 'indent', label: '1. Purchase Indent (Module 1)' },
-        { key: 'pac_approval', label: '3. PAC Purchase Approval (Module 3)' },
-        { key: 'lpc_approval', label: '5. LPC Purchase Approval (Module 5)' },
-        { key: 'single_source', label: '6. Single Source/Nomination Purchase Approval (Module 6)' },
-        { key: 'fin_approval_single', label: '13. Financial Approval (Single Bid) (Module 13)' },
-        { key: 'fin_approval_two', label: '14. Financial Approval (Two Bid) (Module 14)' },
+        { key: 'indent', label: 'Purchase Indent' },
+        { key: 'pac_approval', label: 'PAC Purchase Approval' },
+        { key: 'lpc_approval', label: 'LPC Purchase Approval' },
+        { key: 'single_source', label: 'Single Source/Nomination Purchase Approval' },
+        { key: 'fin_approval_single', label: 'Financial Approval (Single Bid)' },
+        { key: 'fin_approval_two', label: 'Financial Approval (Two Bid)' },
       ]
     },
     {
       category: "Technical & Comparatives",
       items: [
-        { key: 'specs', label: '2. Technical Specification Annexure (Module 2)' },
-        { key: 'tech_comparative', label: '9. Technical Comparative Statement (Module 9)' },
-        { key: 'tech_minutes', label: '10. Technical Evaluation Minutes (Module 10)' },
-        { key: 'price_comparative', label: '11. Price Comparative Statement (Module 11)' },
-        { key: 'techno_comm_comparative', label: '12. Techno-Commercial Comparative Statement (Module 12)' },
+        { key: 'specs', label: 'Technical Specification Annexure' },
+        { key: 'tech_comparative', label: 'Technical Comparative Statement' },
+        { key: 'tech_minutes', label: 'Technical Evaluation Minutes' },
+        { key: 'price_comparative', label: 'Price Comparative Statement' },
+        { key: 'techno_comm_comparative', label: 'Techno-Commercial Comparative Statement' },
       ]
     },
     {
       category: "Certificates & Cancellations",
       items: [
-        { key: 'pac_cert', label: '4. Proprietary Article Certificate (Module 4)' },
-        { key: 'bill_passing', label: '7. Purchase Bill Passing Certificate (Module 7)' },
-        { key: 'po_cancel', label: '8. PO Cancellation Certificate (Module 8)' },
-        { key: 'tender_cancel', label: '15. Tender Cancellation Certificate (Module 15)' },
+        { key: 'pac_cert', label: 'Proprietary Article Certificate' },
+        { key: 'bill_passing', label: 'Purchase Bill Passing Certificate' },
+        { key: 'po_cancel', label: 'PO Cancellation Certificate' },
+        { key: 'tender_cancel', label: 'Tender Cancellation Certificate' },
       ]
     }
   ];
@@ -68,7 +68,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   const [directorFacultyId, setDirectorFacultyId] = useState<number | ''>('');
 
   const isHOD = user && user.role?.group_key === 'hod' && pr.budget_file && Number(pr.budget_file.department_id) === Number(user.department_id || user.department?.id);
-  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'admin');
+  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
 
   // HOD department faculties
   const { data: deptFaculties = [] } = useQuery<any[]>({
@@ -214,6 +214,31 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
         </span>
       </div>
+
+      {/* Rollover Links */}
+      {(pr.parent_pr || (pr.child_prs && pr.child_prs.length > 0)) && (
+        <div className="flex flex-col gap-2.5 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left shadow-sm">
+          {pr.parent_pr && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-blue-800">
+              <span className="px-2 py-0.5 bg-blue-100 border border-blue-300 text-blue-900 rounded text-[10px] uppercase font-bold tracking-wide">Rolled Over</span>
+              <span>This request was rolled over from</span>
+              <Link to={`/pr/${pr.parent_pr.id}`} className="font-mono font-black text-blue-900 hover:text-blue-950 underline decoration-blue-400 decoration-2 hover:decoration-blue-700">
+                {pr.parent_pr.icr_number || `PR #${pr.parent_pr.id}`}
+              </Link>
+              <span className="font-normal text-slate-500">due to the closure of the previous financial year.</span>
+            </div>
+          )}
+          {pr.child_prs && pr.child_prs.map((child: any) => (
+            <div key={child.id} className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-blue-800">
+              <span className="px-2 py-0.5 bg-indigo-100 border border-indigo-300 text-indigo-900 rounded text-[10px] uppercase font-bold tracking-wide">Revised Sequence</span>
+              <span>This request has been transferred to new financial year as</span>
+              <Link to={`/pr/${child.id}`} className="font-mono font-black text-indigo-900 hover:text-indigo-950 underline decoration-indigo-400 decoration-2 hover:decoration-indigo-700">
+                {child.icr_number || `PR #${child.id}`}
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Metadata Cards */}
       <div className="card p-6 grid grid-cols-2 gap-6 text-left">

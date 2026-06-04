@@ -699,7 +699,7 @@ export const PRDetailPage: React.FC = () => {
 
                       {pr.bill_passing && (
                         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-lg text-xs space-y-2 text-emerald-800">
-                          <span className="font-bold uppercase tracking-wider text-[9px] block">Bill Passing Certificate Minutes (Form 7 &amp; 8)</span>
+                          <span className="font-bold uppercase tracking-wider text-[9px] block">Bill Passing Certificate Minutes</span>
                           <div className="grid grid-cols-2 gap-4 text-emerald-900 font-medium">
                             <p><span className="font-semibold text-emerald-700">Invoice Reference:</span> {pr.bill_passing.invoice_number}</p>
                             <p><span className="font-semibold text-emerald-700">Bill Amount Passed:</span> {formatCurrency(pr.bill_passing.bill_amount)}</p>

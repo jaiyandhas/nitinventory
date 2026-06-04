@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, ArrowDown, Plus, Trash2, Edit, AlertTriangle, UserX, UserCheck, Key } from 'lucide-react';
+import { ArrowUp, ArrowDown, Plus, Trash2, Edit, AlertTriangle, UserX, UserCheck, Key, Lock, Calendar, RefreshCw } from 'lucide-react';
 import { adminApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
 import { formatCurrency } from '../../utils/format';
@@ -8,7 +8,7 @@ import { REQUIREMENT_TYPES } from '../../config/prCreationQuestions';
 
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'workflows' | 'roles' | 'categories' | 'procurement' | 'users'>('workflows');
+  const [activeTab, setActiveTab] = useState<'workflows' | 'roles' | 'categories' | 'procurement' | 'users' | 'financial_years'>('workflows');
   
   // Workflows states
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
@@ -36,6 +36,9 @@ export const SettingsPage: React.FC = () => {
   const [isProcModalOpen, setIsProcModalOpen] = useState(false);
   const [editingProc, setEditingProc] = useState<any>(null);
 
+  // Financial Year states
+  const [isFyModalOpen, setIsFyModalOpen] = useState(false);
+
   // Queries
   const { data: workflows = [] } = useQuery({ queryKey: ['admin_workflows'], queryFn: () => adminApi.workflows().then(res => res.data) });
   const { data: categories = [] } = useQuery({ queryKey: ['admin_categories'], queryFn: () => adminApi.categories().then(res => res.data) });
@@ -44,6 +47,7 @@ export const SettingsPage: React.FC = () => {
   const { data: procs = [] } = useQuery({ queryKey: ['admin_procs'], queryFn: () => adminApi.procurementMethods().then(res => res.data) });
   const { data: users = [] } = useQuery({ queryKey: ['admin_users_list'], queryFn: () => adminApi.users().then(res => res.data) });
   const { data: depts = [] } = useQuery({ queryKey: ['admin_depts'], queryFn: () => adminApi.departments().then(res => res.data) });
+  const { data: fys = [] } = useQuery({ queryKey: ['admin_financial_years'], queryFn: () => adminApi.financialYears().then(res => res.data) });
 
   const filteredWfs = workflows.filter((w: any) => 
     w.category_id === selectedCat && 
@@ -191,6 +195,62 @@ export const SettingsPage: React.FC = () => {
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete procurement method. It is referenced by existing purchase requests.')
   });
+
+  // Financial Year mutations
+  const createFyMutation = useMutation({
+    mutationFn: (data: any) => adminApi.createFinancialYear(data),
+    onSuccess: () => {
+      toast.success('Financial Year added successfully');
+      setIsFyModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.detail || 'Failed to create financial year');
+    }
+  });
+
+  const rolloverMutation = useMutation({
+    mutationFn: () => adminApi.rolloverFinancialYear(),
+    onSuccess: (res: any) => {
+      toast.success(res.data?.message || 'Year-end rollover completed successfully');
+      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.detail || 'Rollover failed');
+    }
+  });
+
+  const handleFyAddSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const label = formData.get('label') as string;
+    const start_date = formData.get('start_date') as string;
+    const end_date = formData.get('end_date') as string;
+    const is_active = formData.get('is_active') === 'on';
+    const is_closed = formData.get('is_closed') === 'on';
+
+    createFyMutation.mutate({
+      label,
+      start_date,
+      end_date,
+      is_active,
+      is_closed,
+    });
+  };
+
+  const handleRolloverClick = () => {
+    if (window.confirm("WARNING: You are about to execute a Year-End Rollover.\n\n" +
+      "This action will:\n" +
+      "1. Deactivate and close the current financial year.\n" +
+      "2. Activate the next financial year.\n" +
+      "3. Automatically rollover all active/in-progress purchase requests to the new financial year.\n" +
+      "4. Generate revised PR reference numbers (R-01, R-02, etc.) for the new year.\n" +
+      "5. Transfer and lock the budget allocations for these items.\n\n" +
+      "This operation is irreversible. Are you sure you want to proceed?")) {
+      rolloverMutation.mutate();
+    }
+  };
 
   const handleMove = async (stepId: number, direction: 'up' | 'down') => {
     const step = workflows.find((w: any) => w.id === stepId);
@@ -380,6 +440,12 @@ export const SettingsPage: React.FC = () => {
             className={`px-4 py-2 text-sm font-semibold transition ${activeTab === 'roles' ? 'bg-[#1a3a6b] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
           >
             Roles
+          </button>
+          <button 
+            onClick={() => setActiveTab('financial_years')} 
+            className={`px-4 py-2 text-sm font-semibold transition ${activeTab === 'financial_years' ? 'bg-[#1a3a6b] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+          >
+            Financial Years
           </button>
         </div>
       </div>
@@ -1012,6 +1078,82 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'financial_years' && (
+        <div className="space-y-6">
+          <div className="card p-6 bg-white border border-slate-200">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Financial Years Management</h3>
+                <p className="text-sm text-slate-500 font-medium mt-0.5">Define accounting years, start/end boundaries, and manage the year-end rollover procedure.</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRolloverClick}
+                  disabled={rolloverMutation.isPending}
+                  className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 px-3 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 font-semibold transition"
+                >
+                  <RefreshCw size={16} className={rolloverMutation.isPending ? 'animate-spin' : ''} />
+                  {rolloverMutation.isPending ? 'Processing Rollover...' : 'Year-End Rollover'}
+                </button>
+                <button
+                  onClick={() => setIsFyModalOpen(true)}
+                  className="btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3 font-semibold"
+                >
+                  <Plus size={16} /> Add Financial Year
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left text-slate-700">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
+                    <th className="px-6 py-3 font-bold">ID</th>
+                    <th className="px-6 py-3 font-bold">Label</th>
+                    <th className="px-6 py-3 font-bold">Start Date</th>
+                    <th className="px-6 py-3 font-bold">End Date</th>
+                    <th className="px-6 py-3 font-bold">Status</th>
+                    <th className="px-6 py-3 font-bold">Safe Lock</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {fys.map((f: any) => (
+                    <tr key={f.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-3.5 font-medium text-slate-500">{f.id}</td>
+                      <td className="px-6 py-3.5 font-bold text-slate-800">{f.label}</td>
+                      <td className="px-6 py-3.5 font-mono text-xs text-slate-600">{new Date(f.start_date).toLocaleDateString()}</td>
+                      <td className="px-6 py-3.5 font-mono text-xs text-slate-600">{new Date(f.end_date).toLocaleDateString()}</td>
+                      <td className="px-6 py-3.5">
+                        {f.is_active ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-800 border border-green-200">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3.5">
+                        {f.is_closed ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-100 text-red-800 border border-red-200 flex items-center gap-1 w-fit">
+                            <Lock size={12} /> Closed (Read-Only)
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1 w-fit">
+                            Open
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Workflow Step Modal */}
       {isWfModalOpen && (() => {
         const getNextStepOrder = () => {
@@ -1445,6 +1587,66 @@ export const SettingsPage: React.FC = () => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Add Financial Year Modal */}
+      {isFyModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
+              <h2 className="text-lg font-bold">Create New Financial Year</h2>
+            </div>
+            <form onSubmit={handleFyAddSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">FY Label</label>
+                <input name="label" type="text" required placeholder="e.g. 2027-28" className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Start Date</label>
+                <input name="start_date" type="date" required className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">End Date</label>
+                <input name="end_date" type="date" required className="input-field w-full" />
+              </div>
+              <div className="flex gap-6 pt-2">
+                <label className="flex items-center gap-2 text-sm text-slate-700 font-semibold cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    name="is_active"
+                    className="rounded text-[#1a3a6b] border-slate-300 focus:ring-[#1a3a6b]" 
+                  />
+                  Mark Active
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700 font-semibold cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    name="is_closed"
+                    className="rounded text-[#1a3a6b] border-slate-300 focus:ring-[#1a3a6b]" 
+                  />
+                  Mark Closed (Read-Only)
+                </label>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setIsFyModalOpen(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" disabled={createFyMutation.isPending} className="btn-primary">
+                  {createFyMutation.isPending ? 'Creating...' : 'Create Year'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Year-End Rollover Progress Backdrop */}
+      {rolloverMutation.isPending && (
+        <div className="fixed inset-0 bg-black/70 flex flex-col items-center justify-center z-[100] animate-fadeIn text-white space-y-4">
+          <RefreshCw className="animate-spin text-amber-400" size={48} />
+          <h2 className="text-xl font-bold Outfit">Year-End Rollover in Progress</h2>
+          <p className="text-sm text-slate-300 max-w-sm text-center">
+            Cloning active purchase requests, transferring locked budgets, and updating reference numbers. Please do not close or refresh this page.
+          </p>
         </div>
       )}
 

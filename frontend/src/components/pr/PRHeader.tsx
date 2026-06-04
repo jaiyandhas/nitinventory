@@ -36,31 +36,31 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
     {
       category: "Sanctions & Indents",
       items: [
-        { key: 'indent', label: '1. Purchase Indent (Module 1)' },
-        { key: 'pac_approval', label: '3. PAC Purchase Approval (Module 3)' },
-        { key: 'lpc_approval', label: '5. LPC Purchase Approval (Module 5)' },
-        { key: 'single_source', label: '6. Single Source/Nomination Purchase Approval (Module 6)' },
-        { key: 'fin_approval_single', label: '13. Financial Approval (Single Bid) (Module 13)' },
-        { key: 'fin_approval_two', label: '14. Financial Approval (Two Bid) (Module 14)' },
+        { key: 'indent', label: 'Purchase Indent' },
+        { key: 'pac_approval', label: 'PAC Purchase Approval' },
+        { key: 'lpc_approval', label: 'LPC Purchase Approval' },
+        { key: 'single_source', label: 'Single Source/Nomination Purchase Approval' },
+        { key: 'fin_approval_single', label: 'Financial Approval (Single Bid)' },
+        { key: 'fin_approval_two', label: 'Financial Approval (Two Bid)' },
       ]
     },
     {
       category: "Technical & Comparatives",
       items: [
-        { key: 'specs', label: '2. Technical Specification Annexure (Module 2)' },
-        { key: 'tech_comparative', label: '9. Technical Comparative Statement (Module 9)' },
-        { key: 'tech_minutes', label: '10. Technical Evaluation Minutes (Module 10)' },
-        { key: 'price_comparative', label: '11. Price Comparative Statement (Module 11)' },
-        { key: 'techno_comm_comparative', label: '12. Techno-Commercial Comparative Statement (Module 12)' },
+        { key: 'specs', label: 'Technical Specification Annexure' },
+        { key: 'tech_comparative', label: 'Technical Comparative Statement' },
+        { key: 'tech_minutes', label: 'Technical Evaluation Minutes' },
+        { key: 'price_comparative', label: 'Price Comparative Statement' },
+        { key: 'techno_comm_comparative', label: 'Techno-Commercial Comparative Statement' },
       ]
     },
     {
       category: "Certificates & Cancellations",
       items: [
-        { key: 'pac_cert', label: '4. Proprietary Article Certificate (Module 4)' },
-        { key: 'bill_passing', label: '7. Purchase Bill Passing Certificate (Module 7)' },
-        { key: 'po_cancel', label: '8. PO Cancellation Certificate (Module 8)' },
-        { key: 'tender_cancel', label: '15. Tender Cancellation Certificate (Module 15)' },
+        { key: 'pac_cert', label: 'Proprietary Article Certificate' },
+        { key: 'bill_passing', label: 'Purchase Bill Passing Certificate' },
+        { key: 'po_cancel', label: 'PO Cancellation Certificate' },
+        { key: 'tender_cancel', label: 'Tender Cancellation Certificate' },
       ]
     }
   ];
@@ -68,7 +68,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   const [directorFacultyId, setDirectorFacultyId] = useState<number | ''>('');
 
   const isHOD = user && user.role?.group_key === 'hod' && pr.budget_file && Number(pr.budget_file.department_id) === Number(user.department_id || user.department?.id);
-  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'admin');
+  const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
 
   // HOD department faculties
   const { data: deptFaculties = [] } = useQuery<any[]>({
@@ -378,6 +378,39 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                   <p className="text-xs text-rose-500 italic font-medium">Not nominated</p>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {pr.documents && pr.documents.length > 0 && (
+          <div className="col-span-2 border-t border-slate-100 pt-4">
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Users size={12} className="text-slate-400" /> Uploaded Committee Reports &amp; Attachments
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {pr.documents.map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Download size={14} className="text-slate-400 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 block truncate" title={doc.original_name}>
+                        {doc.original_name}
+                      </span>
+                      <span className="text-[9px] font-semibold text-slate-400 block uppercase">
+                        {doc.doc_key.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href={doc.path}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold shrink-0 ml-4 hover:underline"
+                  >
+                    View File
+                  </a>
+                </div>
+              ))}
             </div>
           </div>
         )}

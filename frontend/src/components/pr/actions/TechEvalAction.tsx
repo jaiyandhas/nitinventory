@@ -51,7 +51,6 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
   );
 
   const isCommitteeMember = [
-    pr.hod_id,
     pr.initiator_id,
     pr.faculty1_id,
     pr.faculty2_id,
@@ -63,7 +62,6 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
 
   const committeeProgress = (() => {
     const rawMembers = [
-      { id: pr.hod_id, name: pr.hod?.name || 'HOD / Chairperson', email: pr.hod?.email, roleLabel: 'HOD / Chairperson' },
       { id: pr.initiator_id, name: pr.initiator?.name || 'Purchase Initiator', email: pr.initiator?.email, roleLabel: 'Purchase Initiator' },
       { id: pr.faculty1_id, name: pr.faculty1?.name || 'Expert 1', email: pr.faculty1?.email, roleLabel: 'Expert Nominated by HOD 1' },
       { id: pr.faculty2_id, name: pr.faculty2?.name || 'Expert 2', email: pr.faculty2?.email, roleLabel: 'Expert Nominated by HOD 2' },
@@ -91,8 +89,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
     });
   })();
 
-  const firstUnsignedMember = committeeProgress.find(m => !m.hasSigned);
-  const isMyTurnToSign = firstUnsignedMember?.id === user?.id;
+  const isMyTurnToSign = isCommitteeMember && !hasUserSigned;
 
   useEffect(() => {
     if (pr.commercial_evaluations) {
@@ -172,17 +169,106 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
     }
   };
 
+  if (pr.flow && pr.flow.step_order > 1) {
+    const handleAdvanceOnly = async () => {
+      if (!remarks.trim()) { toast.error('Remarks are required to approve and advance'); return; }
+      if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
+      setActionLoading(true);
+      try {
+        await prApi.advance(pr.id, remarks);
+        toast.success('PR advanced successfully');
+        setRemarks('');
+        refetch();
+      } catch (e: any) {
+        toast.error(e.response?.data?.detail || 'Action failed');
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    return (
+      <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left animate-fadeIn">
+        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide font-semibold">
+          Approve &amp; Forward Technical Evaluation
+        </h4>
+        
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3 shadow-xs mb-4">
+          <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5 font-bold">
+            <CheckCircle2 size={14} className="text-blue-600" />
+            Committee Evaluation Progress (All Signed)
+          </h5>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {committeeProgress.map(m => (
+              <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/10 transition-all">
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-slate-800">{m.name}</span>
+                  <span className="text-xs text-slate-500">{m.roleLabel}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
+                  <CheckCircle2 size={16} className="text-emerald-600" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="label text-slate-700 font-bold text-xs">
+            Remarks / Recommendation Comments *
+          </label>
+          <textarea
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Provide technical evaluation review remarks..."
+            className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm"
+            required
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2.5 pt-1">
+          <button 
+            onClick={handleAdvanceOnly} 
+            disabled={actionLoading || !remarks.trim()}
+            className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+          >
+            <CheckCircle2 size={14} /> Approve &amp; Forward
+          </button>
+
+          <button 
+            onClick={() => onReject(remarks)} 
+            disabled={actionLoading || !remarks.trim()} 
+            className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+          >
+            <XCircle size={14} /> Reject
+          </button>
+
+          {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+            <button 
+              type="button"
+              onClick={() => setShowSendBackModal(true)} 
+              disabled={actionLoading} 
+              className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+            >
+              <RotateCcw size={14} /> Send Back
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left">
       <h4 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide pb-2 border-b border-slate-100">
         Register Technical Qualification
       </h4>
       
-      {!isMyTurnToSign && firstUnsignedMember && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3.5 text-xs font-semibold flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+      {!isCommitteeMember && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-600 rounded-lg p-3.5 text-xs font-semibold flex items-center gap-2">
+          <Clock size={14} className="text-slate-400" />
           <span>
-            It is not your turn to sign. The next signer is <strong className="text-amber-900">{firstUnsignedMember.name}</strong> ({firstUnsignedMember.roleLabel}).
+            Waiting for technical evaluation committee members to submit their report.
           </span>
         </div>
       )}
@@ -357,7 +443,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
                           />
                           <div>
                             <span className="text-sm font-bold text-slate-800">{fe.vendor_name}</span>
-                            <span className="ml-2 text-xs font-semibold text-[#1a3a6b]">₹{fe.quoted_amount.toFixed(2)} Lakhs</span>
+                            <span className="ml-2 text-xs font-semibold text-[#1a3a6b]">₹{(fe.quoted_amount / 100000).toFixed(2)} Lakhs</span>
                           </div>
                         </div>
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${isL1 ? 'bg-green-100 text-green-800' : isL2 ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-100 text-slate-600'}`}>

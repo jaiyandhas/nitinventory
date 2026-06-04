@@ -54,7 +54,7 @@ async def test_budget_categories_and_auto_roll(db_session):
     assert "item_categories" in cats
     
     # 2. Add custom category
-    updated_cats = await add_budget_category({"type": "expenditure", "value": "SPECIAL_FUNDS"}, db_session, _=admin)
+    updated_cats = await add_budget_category({"type": "expenditure", "value": "SPECIAL_FUNDS"}, db_session, current_user=admin)
     assert "SPECIAL_FUNDS" in updated_cats["expenditure_categories"]
 
     # 3. Retrieve next file number (should count 0 existing and roll to 1)
@@ -168,7 +168,7 @@ async def test_adhoc_consultation_referral_flow(db_session):
         purchase_type="department",
         initiator_id=fac.id,
         category_id=1,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status="draft",
     )
@@ -247,7 +247,7 @@ async def test_budget_committee_auto_sync_to_active_prs(db_session):
         purchase_type="department",
         initiator_id=fac1.id,
         category_id=1,
-        financial_year_id=1,
+        financial_year_id=2,
         procurement_id=1,
         current_status="in_progress",
     )

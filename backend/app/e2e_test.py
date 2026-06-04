@@ -102,11 +102,7 @@ def advance_loop(session: requests.Session, pr_id: int, label: str, max_steps: i
                 das = sp.get(f"{BASE_URL}/api/pr/dealing-assistants").json()
                 da_id = next(d["id"] for d in das if d["email"] == "da.stores@nitt.edu")
                 sp.post(f"{BASE_URL}/api/pr/{pr_id}/assign-da", json={"da_id": da_id})
-            ar = sp.post(f"{BASE_URL}/api/pr/{pr_id}/advance", json={"remarks": "DA assigned; forwarded to Dealing Assistant"})
-            if ar.status_code != 200:
-                print(f"  [{label}] SUPERINTENDENT TD1 FAIL: {ar.text}")
-                return False
-            print(f"  [{label}] Step {step}: sp.stores@nitt.edu assigned DA and advanced (Tendering #1)")
+            print(f"  [{label}] Step {step}: sp.stores@nitt.edu assigned DA (Tendering #1)")
             time.sleep(0.05)
             continue
 
@@ -122,25 +118,57 @@ def advance_loop(session: requests.Session, pr_id: int, label: str, max_steps: i
                 })
                 da.post(f"{BASE_URL}/api/pr/{pr_id}/financial-bids", json={
                     "vendors": [
-                        {"name": "Vendor A", "quoted_amount": 4.5, "remarks": "L1"},
-                        {"name": "Vendor B", "quoted_amount": 6.0, "remarks": "L2"},
+                        {"name": "Vendor A", "quoted_amount": 450000.0, "remarks": "L1"},
+                        {"name": "Vendor B", "quoted_amount": 600000.0, "remarks": "L2"},
                     ],
                     "remarks": "Bids",
                 })
 
-        if phase == "Technical Evaluation" and role_name == "Faculty" and not pr.get("technical_evaluations"):
-            fac = requests.Session()
-            login(fac, "faculty.cse@nitt.edu")
-            fac.post(f"{BASE_URL}/api/pr/{pr_id}/technical-eval", json={
-                "vendors": [
-                    {"name": "Vendor A", "is_qualified": True, "remarks": "OK"},
-                    {"name": "Vendor B", "is_qualified": False, "remarks": "No"},
-                ],
-            })
-            fe = fac.get(f"{BASE_URL}/api/pr/{pr_id}").json().get("financial_evaluations", [])
-            va = next((x for x in fe if x["vendor_name"] == "Vendor A"), None)
-            if va:
-                fac.post(f"{BASE_URL}/api/pr/{pr_id}/award-bid", json={"vendor_id": va["id"], "remarks": "Award L1"})
+        if phase == "Technical Evaluation" and role_name == "Faculty":
+            if not pr.get("technical_evaluations"):
+                fac = requests.Session()
+                login(fac, "faculty.cse@nitt.edu")
+                fac.post(f"{BASE_URL}/api/pr/{pr_id}/technical-eval", json={
+                    "vendors": [
+                        {"name": "Vendor A", "is_qualified": True, "remarks": "OK"},
+                        {"name": "Vendor B", "is_qualified": False, "remarks": "No"},
+                    ],
+                })
+                fe = fac.get(f"{BASE_URL}/api/pr/{pr_id}").json().get("financial_evaluations", [])
+                va = next((x for x in fe if x["vendor_name"] == "Vendor A"), None)
+                if va:
+                    fac.post(f"{BASE_URL}/api/pr/{pr_id}/award-bid", json={"vendor_id": va["id"], "remarks": "Award L1"})
+
+            init_email = pr.get("initiator", {}).get("email") or "faculty.cse@nitt.edu"
+            f1_email = (pr.get("faculty1") or {}).get("email") or init_email
+            f2_email = (pr.get("faculty2") or {}).get("email") or "faculty2.cse@nitt.edu"
+            f3_email = (pr.get("faculty3") or {}).get("email") or "faculty1.cse@nitt.edu"
+
+            seen_te = set()
+            unique_signers = []
+            for em in [init_email, f1_email, f2_email, f3_email]:
+                if em not in seen_te:
+                    unique_signers.append(em)
+                    seen_te.add(em)
+
+            for signer_email in unique_signers:
+                signer = requests.Session()
+                if login(signer, signer_email):
+                    r = signer.post(f"{BASE_URL}/api/pr/{pr_id}/advance", json={"remarks": f"Technical evaluation signed by {signer_email}."})
+                    if r.status_code == 200:
+                        print(f"  [{label}] Step {step}: {signer_email} advanced (Committee)")
+                    else:
+                        detail = ""
+                        try:
+                            detail = r.json().get("detail", "")
+                        except Exception:
+                            pass
+                        if "already" in detail.lower() or "completed" in detail.lower():
+                            print(f"  [{label}] Step {step}: {signer_email} already signed/completed — ok")
+                        else:
+                            print(f"  [{label}] Committee ADVANCE FAIL {signer_email}: {r.text}")
+            time.sleep(0.05)
+            continue
 
         if phase == "Financial Sanction" and role_name == "Faculty" and not pr.get("financial_evaluations"):
             fac = requests.Session()
@@ -171,9 +199,18 @@ def advance_loop(session: requests.Session, pr_id: int, label: str, max_steps: i
 
         ar = actor.post(f"{BASE_URL}/api/pr/{pr_id}/advance", json=payload)
         if ar.status_code != 200:
-            print(f"  [{label}] ADVANCE FAIL {email} @ {phase}/{order}: {ar.text}")
-            return False
-        print(f"  [{label}] Step {step}: {email} advanced ({phase} #{order})")
+            err_detail = ""
+            try:
+                err_detail = ar.json().get("detail", "")
+            except Exception:
+                pass
+            if "already signed" in err_detail.lower() or "already completed" in err_detail.lower():
+                print(f"  [{label}] Step {step}: {email} already signed/completed — ok")
+            else:
+                print(f"  [{label}] ADVANCE FAIL {email} @ {phase}/{order}: {ar.text}")
+                return False
+        else:
+            print(f"  [{label}] Step {step}: {email} advanced ({phase} #{order})")
         time.sleep(0.05)
 
     print(f"  [{label}] Exceeded max steps")

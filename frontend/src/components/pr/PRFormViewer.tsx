@@ -32,21 +32,21 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
   }
 
   const modules = [
-    { key: 'indent', label: '1. Purchase Indent Form (Form 1)', active: true },
-    { key: 'specs', label: '2. Technical Specification Annexure (Form 2)', active: true },
-    { key: 'pac_approval', label: '3. PAC Purchase Approval (Form 3)', active: pr.procurement?.name === 'Proprietary Purchase' || pr.procurement?.name === 'PAC' },
-    { key: 'pac_cert', label: '4. Proprietary Article Certificate (Form 4)', active: pr.procurement?.name === 'Proprietary Purchase' || pr.procurement?.name === 'PAC' },
-    { key: 'lpc_approval', label: '5. LPC Purchase Approval (GFR 155) (Form 5)', active: pr.procurement?.name === 'Committee purchase' || pr.procurement?.name === 'LPC' || pr.lpc_remarks !== null },
-    { key: 'single_source', label: '6. Nomination on Single Source Basis (GFR 194) (Form 6)', active: pr.procurement?.name === 'Nomination' || pr.procurement?.name === 'Single Tender' || pr.single_bid_justification !== null },
-    { key: 'bill_passing', label: '7 & 8. Goods Receipt, Supplier & Bill Passing (Form 7 & 8)', active: pr.bill_passing !== null },
-    { key: 'po_cancel', label: '9. PO Cancellation Minutes (Form 9)', active: pr.current_status === 'cancelled' },
-    { key: 'tech_minutes', label: '10. Technical Evaluation Minutes (Form 10)', active: !!(pr.technical_evaluations && pr.technical_evaluations.length > 0) },
-    { key: 'fin_approval_two', label: '11. Financial Scrutiny & Approval (Two Bid) (Form 11)', active: !!(pr.financial_evaluations && pr.financial_evaluations.length > 0) },
-    { key: 'tender_cancel', label: '12. Tender Cancellation Minutes (Form 12)', active: pr.current_status === 'cancelled' },
-    { key: 'tech_comparative', label: 'Module 9. Technical Comparative Statement', active: !!(pr.commercial_evaluations && pr.commercial_evaluations.length > 0) },
-    { key: 'price_comparative', label: 'Module 11. Price Comparative Statement', active: !!(pr.financial_evaluations && pr.financial_evaluations.length > 0) },
-    { key: 'techno_comm_comparative', label: 'Module 12. Techno-Commercial Comparative Statement', active: !!(pr.technical_evaluations && pr.technical_evaluations.length > 0 && pr.financial_evaluations && pr.financial_evaluations.length > 0) },
-    { key: 'fin_approval_single', label: 'Module 13. Financial Approval (Single Bid)', active: pr.single_bid_justification !== null }
+    { key: 'indent', label: 'Purchase Indent Form', active: true },
+    { key: 'specs', label: 'Technical Specification Annexure', active: true },
+    { key: 'pac_approval', label: 'PAC Purchase Approval', active: pr.procurement?.name === 'Proprietary Purchase' || pr.procurement?.name === 'PAC' },
+    { key: 'pac_cert', label: 'Proprietary Article Certificate', active: pr.procurement?.name === 'Proprietary Purchase' || pr.procurement?.name === 'PAC' },
+    { key: 'lpc_approval', label: 'LPC Purchase Approval (GFR 155)', active: pr.procurement?.name === 'Committee purchase' || pr.procurement?.name === 'LPC' || pr.lpc_remarks !== null },
+    { key: 'single_source', label: 'Nomination on Single Source Basis (GFR 194)', active: pr.procurement?.name === 'Nomination' || pr.procurement?.name === 'Single Tender' || pr.single_bid_justification !== null },
+    { key: 'bill_passing', label: 'Goods Receipt, Supplier & Bill Passing', active: pr.bill_passing !== null },
+    { key: 'po_cancel', label: 'PO Cancellation Minutes', active: pr.current_status === 'cancelled' },
+    { key: 'tech_minutes', label: 'Technical Evaluation Minutes', active: !!(pr.technical_evaluations && pr.technical_evaluations.length > 0) },
+    { key: 'fin_approval_two', label: 'Financial Scrutiny & Approval (Two Bid)', active: !!(pr.financial_evaluations && pr.financial_evaluations.length > 0) },
+    { key: 'tender_cancel', label: 'Tender Cancellation Minutes', active: pr.current_status === 'cancelled' },
+    { key: 'tech_comparative', label: 'Technical Comparative Statement', active: !!(pr.commercial_evaluations && pr.commercial_evaluations.length > 0) },
+    { key: 'price_comparative', label: 'Price Comparative Statement', active: !!(pr.financial_evaluations && pr.financial_evaluations.length > 0) },
+    { key: 'techno_comm_comparative', label: 'Techno-Commercial Comparative Statement', active: !!(pr.technical_evaluations && pr.technical_evaluations.length > 0 && pr.financial_evaluations && pr.financial_evaluations.length > 0) },
+    { key: 'fin_approval_single', label: 'Financial Approval (Single Bid)', active: pr.single_bid_justification !== null }
   ];
 
   // Helper to find signatures in history logs
@@ -155,7 +155,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 1: PURCHASE INDENT FORM</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">PURCHASE INDENT FORM</p>
             </div>
 
             <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs print:bg-white print:border-slate-300">
@@ -232,7 +232,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 2: ANNEXURE – SPECIFICATIONS FINALIZED BY TSC</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">ANNEXURE – SPECIFICATIONS FINALIZED BY TSC</p>
             </div>
 
             <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -293,7 +293,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 3: BASIC APPROVAL FOR PAC PURCHASE (Page 6-7)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">BASIC APPROVAL FOR PAC PURCHASE</p>
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs text-amber-800 print:bg-white print:border-slate-300">
@@ -337,7 +337,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 4: PROPRIETARY ARTICLE CERTIFICATE</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">PROPRIETARY ARTICLE CERTIFICATE</p>
             </div>
 
             <div className="border border-slate-200 rounded-lg overflow-hidden text-xs">
@@ -398,7 +398,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 5: BASIC APPROVAL FOR LPC PURCHASE (GFR 155)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">BASIC APPROVAL FOR LPC PURCHASE (GFR 155)</p>
             </div>
 
             <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg text-xs print:bg-white print:border-slate-300">
@@ -429,7 +429,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 6: NOMINATION ON SINGLE SOURCE BASIS (GFR 194)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">NOMINATION ON SINGLE SOURCE BASIS (GFR 194)</p>
             </div>
 
             <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-800 space-y-1 print:bg-white print:border-slate-300">
@@ -451,7 +451,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 7 & 8: GOODS RECEIPT, SUPPLIER & BILL PASSING MINUTES</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">GOODS RECEIPT, SUPPLIER & BILL PASSING MINUTES</p>
             </div>
 
             {pr.bill_passing ? (
@@ -493,7 +493,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 9: MINUTES OF THE COMMITTEE FOR PO CANCELLATION</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">MINUTES OF THE COMMITTEE FOR PO CANCELLATION</p>
             </div>
 
             {pr.current_status === 'cancelled' ? (
@@ -521,7 +521,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 10: TECHNICAL EVALUATION MINUTES</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TECHNICAL EVALUATION MINUTES</p>
             </div>
 
             {pr.technical_evaluations && pr.technical_evaluations.length > 0 ? (
@@ -572,7 +572,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 11: FINANCIAL SCRUTINY & APPROVAL (TWO BID)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FINANCIAL SCRUTINY & APPROVAL (TWO BID)</p>
             </div>
 
             {pr.financial_evaluations && pr.financial_evaluations.length > 0 ? (
@@ -628,7 +628,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 12: TENDER CANCELLATION MINUTES</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TENDER CANCELLATION MINUTES</p>
             </div>
 
             {pr.current_status === 'cancelled' ? (
@@ -656,7 +656,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TECHNICAL COMPARATIVE STATEMENT (MODULE 9)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TECHNICAL COMPARATIVE STATEMENT</p>
             </div>
 
             {pr.commercial_evaluations && pr.commercial_evaluations.length > 0 ? (
@@ -690,7 +690,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">PRICE COMPARATIVE STATEMENT (MODULE 11)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">PRICE COMPARATIVE STATEMENT</p>
             </div>
 
             {pr.financial_evaluations && pr.financial_evaluations.length > 0 ? (
@@ -728,7 +728,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TECHNO-COMMERCIAL COMPARATIVE STATEMENT (MODULE 12)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">TECHNO-COMMERCIAL COMPARATIVE STATEMENT</p>
             </div>
 
             {pr.technical_evaluations && pr.technical_evaluations.length > 0 ? (
@@ -771,7 +771,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-1 border-b border-slate-200 pb-4">
               <h2 className="text-base font-extrabold text-slate-800 uppercase">NATIONAL INSTITUTE OF TECHNOLOGY TIRUCHIRAPPALLI</h2>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FORM 13: FINANCIAL APPROVAL (SINGLE BID / GFR 194)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">FINANCIAL APPROVAL (SINGLE BID / GFR 194)</p>
             </div>
 
             {pr.single_bid_justification ? (

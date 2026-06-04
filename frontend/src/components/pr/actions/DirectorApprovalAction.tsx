@@ -11,6 +11,10 @@ interface DirectorApprovalActionProps {
   onSendBackClick: () => void;
   remarks: string;
   setRemarks: (val: string) => void;
+  isDirector?: boolean;
+  directorFacultyId?: number | '';
+  setDirectorFacultyId?: (val: number | '') => void;
+  allUsers?: any[];
 }
 
 export const DirectorApprovalAction: React.FC<DirectorApprovalActionProps> = ({
@@ -21,10 +25,43 @@ export const DirectorApprovalAction: React.FC<DirectorApprovalActionProps> = ({
   onReject,
   onSendBackClick,
   remarks,
-  setRemarks
+  setRemarks,
+  isDirector = false,
+  directorFacultyId = '',
+  setDirectorFacultyId,
+  allUsers = []
 }) => {
   return (
-    <div className="space-y-4 pt-2 border-t border-blue-200 text-left">
+    <div className="space-y-6 pt-2 border-t border-blue-200 text-left">
+      {isDirector && setDirectorFacultyId && (
+        <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-lg space-y-4">
+          <div>
+            <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider block">
+              Director Nominee Selection
+            </span>
+            <p className="text-[11px] text-emerald-800/80 leading-normal mt-0.5">
+              As Director, select a Director Nominee to represent the administration on the TSC.
+            </p>
+          </div>
+          <div className="max-w-md">
+            <label className="block text-xs font-bold text-slate-600 mb-1">
+              Director Nominee <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={directorFacultyId}
+              onChange={e => setDirectorFacultyId(e.target.value === '' ? '' : Number(e.target.value))}
+              required
+              className="input-field w-full bg-white text-xs py-2 shadow-xs"
+            >
+              <option value="">Select Director Nominee...</option>
+              {allUsers.map((u: any) => (
+                <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="label font-bold text-slate-700">Remarks / Justification</label>
         <textarea

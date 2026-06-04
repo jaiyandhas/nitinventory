@@ -35,6 +35,7 @@ async def create_tables():
         # We do not drop tables in production/development to persist user changes
         # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS is_closed BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);"))
         await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS tender_vendors_threshold INTEGER;"))
@@ -227,22 +228,24 @@ async def seed():
                 users[u.email] = u
 
         # 4. Financial Year
-        fy_check = await db.execute(select(FinancialYear).limit(1))
-        has_fy = fy_check.scalar_one_or_none() is not None
-        fy = None
-        if not has_fy:
-            print("  Seeding financial year...")
-            fy = FinancialYear(
-                label="2026-27",
-                start_date=date(2026, 4, 1),
-                end_date=date(2027, 3, 31),
-                is_active=True,
-            )
-            db.add(fy)
-            await db.flush()
-        else:
-            fy_res = await db.execute(select(FinancialYear).where(FinancialYear.is_active == True))
-            fy = fy_res.scalar_one_or_none()
+        fy_labels = ["2025-26", "2026-27", "2027-28"]
+        seeded_fys = {}
+        for label in fy_labels:
+            fy_res = await db.execute(select(FinancialYear).where(FinancialYear.label == label))
+            existing_fy = fy_res.scalar_one_or_none()
+            if not existing_fy:
+                if label == "2025-26":
+                    fy_obj = FinancialYear(label=label, start_date=date(2025, 4, 1), end_date=date(2026, 3, 31), is_active=False, is_closed=True)
+                elif label == "2026-27":
+                    fy_obj = FinancialYear(label=label, start_date=date(2026, 4, 1), end_date=date(2027, 3, 31), is_active=True, is_closed=False)
+                else:
+                    fy_obj = FinancialYear(label=label, start_date=date(2027, 4, 1), end_date=date(2028, 3, 31), is_active=False, is_closed=False)
+                db.add(fy_obj)
+                await db.flush()
+                seeded_fys[label] = fy_obj
+            else:
+                seeded_fys[label] = existing_fy
+        fy = seeded_fys["2026-27"]
 
         # 5. Procurement Methods
         proc_check = await db.execute(select(ProcurementManager).limit(1))
@@ -1013,6 +1016,33 @@ async def seed():
             delivery_item_id=di8.id,
             created_at=datetime.utcnow()
         ))
+
+        # Seed 4 free budget files for E2E testing
+        for i, (item_name, amount) in enumerate([
+            ("E2E Free Budget Cat1", 80000.0),
+            ("E2E Free Budget Cat1 HOD", 50000.0),
+            ("E2E Free Budget Cat2", 450000.0),
+            ("E2E Free Budget Cat3", 1500000.0),
+        ]):
+            db.add(BudgetMaster(
+                department_id=cse.id,
+                financial_year_id=fy.id,
+                expenditure_category="CAPEX" if amount > 100000 else "OPEX",
+                item_name=item_name,
+                category="equipment",
+                course_code=f"CSE-E2E-{i}",
+                unit_cost=float(amount),
+                quantity=1,
+                total_allocation=float(amount),
+                file_no=f"NITT/CSE/2026-27/E2E/FREE-{i}",
+                is_revision=False,
+                committed_amount=0.0,
+                utilized_amount=0.0,
+                expert1_id=faculty1.id,
+                expert2_id=faculty2.id,
+                director_faculty_id=faculty2.id
+            ))
+        await db.flush()
 
         await db.commit()
         print("✅ Database verification and seeding process completed successfully!")

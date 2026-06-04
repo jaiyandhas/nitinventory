@@ -6,7 +6,7 @@
     <style>
         @page {
             size: A4;
-            margin: 18mm 15mm 20mm 15mm;
+            margin: 12mm 12mm 15mm 12mm;
             background-image: url("file://{{ storage_dir }}/NITLOGO_watermark.png");
             background-repeat: no-repeat;
             background-position: center;
@@ -36,7 +36,7 @@
             font-size: 13pt;
             font-weight: bold;
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             color: #1a3a6b;
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -48,19 +48,19 @@
             color: #1a3a6b;
             border-bottom: 1.5px solid #1a3a6b;
             padding-bottom: 3px;
-            margin-top: 22px;
-            margin-bottom: 8px;
+            margin-top: 14px;
+            margin-bottom: 5px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
             font-size: 9pt;
         }
         table.details-table th, table.details-table td {
-            padding: 6px 8px;
+            padding: 4px 6px;
             border: 1px solid #ccc;
             text-align: left;
             vertical-align: top;
@@ -75,7 +75,7 @@
             width: 25%;
         }
         table.data-table th, table.data-table td {
-            padding: 6px 8px;
+            padding: 4px 6px;
             border: 1px solid #ccc;
             text-align: left;
             vertical-align: middle;
@@ -100,7 +100,7 @@
             font-style: italic;
         }
         .footer-note {
-            margin-top: 35px;
+            margin-top: 15px;
             font-size: 7.5pt;
             color: #666;
             text-align: center;
@@ -146,35 +146,35 @@
 
     <div class="doc-title">
         {% if module == 'indent' %}
-            Form 1: Purchase Indent Form
+            Purchase Indent Form
         {% elif module == 'specs' %}
-            Form 2: Annexure – Specifications Finalized by TSC
+            Annexure – Specifications Finalized by TSC
         {% elif module == 'pac_approval' %}
-            Form 3: Basic Approval for PAC Purchase
+            Basic Approval for PAC Purchase
         {% elif module == 'pac_cert' %}
-            Form 4: PAC Certificate
+            PAC Certificate
         {% elif module == 'lpc_approval' %}
-            Form 5: Basic Approval for LPC Purchase (GFR 155)
+            Basic Approval for LPC Purchase (GFR 155)
         {% elif module == 'single_source' %}
-            Form 6: Nomination on Single Source Basis (GFR 194)
+            Nomination on Single Source Basis (GFR 194)
         {% elif module == 'bill_passing' %}
-            Form 7 & 8: Goods Receipt, Inspection, Supplier, Payment & Stock Entry
+            Goods Receipt, Inspection, Supplier, Payment & Stock Entry
         {% elif module == 'po_cancel' %}
-            Form 9: Minutes of the Purchase Committee Meeting for PO Cancellation
+            Minutes of the Purchase Committee Meeting for PO Cancellation
         {% elif module == 'tech_comparative' %}
-            Module 9: Technical Comparative Statement
+            Technical Comparative Statement
         {% elif module == 'tech_minutes' %}
-            Form 10: Technical Evaluation Minutes
+            Technical Evaluation Minutes
         {% elif module == 'price_comparative' %}
-            Module 11: Price Comparative Statement
+            Price Comparative Statement
         {% elif module == 'techno_comm_comparative' %}
-            Module 12: Techno-Commercial Comparative Statement
+            Techno-Commercial Comparative Statement
         {% elif module == 'fin_approval_single' %}
-            Module 13: Financial Approval (Single Bid)
+            Financial Approval (Single Bid)
         {% elif module == 'fin_approval_two' %}
-            Form 11: Financial Scrutiny & Approval (Two Bid System)
+            Financial Scrutiny & Approval (Two Bid System)
         {% elif module == 'tender_cancel' %}
-            Form 12: Tender Cancellation Minutes
+            Tender Cancellation Minutes
         {% else %}
             Administrative Approval & Procurement Report
         {% endif %}
@@ -1106,7 +1106,7 @@
             <tr style="{{ 'background-color: #e6f4ea;' if fe.ranking == 'L1' else '' }}">
                 <td>{{ loop.index }}</td>
                 <td class="bold">{{ fe.vendor_name }}</td>
-                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount) }} Lakhs</td>
+                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} Lakhs</td>
                 <td class="bold">{{ fe.ranking }}</td>
                 <td>{{ fe.remarks or 'L1 bidder matches terms' if fe.ranking == 'L1' else '-' }}</td>
             </tr>
@@ -1161,7 +1161,7 @@
                 </td>
                 <td class="bold">
                     {% if te.is_qualified and fe %}
-                        ₹{{ "%.2f"|format(fe.quoted_amount) }} L · {{ fe.ranking }}
+                        ₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} L · {{ fe.ranking }}
                     {% else %}
                         N/A (Disqualified)
                     {% endif %}
@@ -1288,7 +1288,7 @@
             {% for fe in pr.financial_evaluations %}
             <tr style="{{ 'background-color: #e6f4ea;' if fe.ranking == 'L1' else '' }}">
                 <td class="bold">{{ fe.vendor_name }}</td>
-                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount) }} Lakhs</td>
+                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} Lakhs</td>
                 <td class="bold">{{ fe.ranking }}</td>
             </tr>
             {% endfor %}
@@ -1632,7 +1632,7 @@
     {% endif %}
 
     {% if pr.lpc_remarks %}
-    <div class="section-title">Limited Purchase Committee Approval (Module 5)</div>
+    <div class="section-title">Limited Purchase Committee Approval</div>
     <table class="details-table">
         <tr>
             <th style="width: 25%">LPC Committee Members</th>
@@ -1648,7 +1648,7 @@
     {% endif %}
 
     {% if pr.single_bid_justification %}
-    <div class="section-title">Single Bid Justification (Module 13)</div>
+    <div class="section-title">Single Bid Justification</div>
     <table class="details-table">
         <tr>
             <th style="width: 25%">Justification</th>
@@ -1658,7 +1658,7 @@
     {% endif %}
 
     {% if pr.financial_evaluations %}
-    <div class="section-title">Price Comparative Statement (Module 11)</div>
+    <div class="section-title">Price Comparative Statement</div>
     <table class="data-table">
         <thead>
             <tr>
@@ -1684,9 +1684,9 @@
                     {% if is_l1 %} <span style="color: green; font-size: 7.5pt;">(L1)</span>{% endif %}
                     {% if fe.is_awarded %} <span style="color: #1a3a6b; font-weight: bold; font-size: 7.5pt;">[★ AWARDED]</span>{% endif %}
                 </td>
-                <td>₹{{ "%.2f"|format(fe.unit_price) if fe.unit_price is not none else "-" }} L</td>
+                <td>₹{{ "%.2f"|format(fe.unit_price / 100000.0) if fe.unit_price is not none else "-" }} L</td>
                 <td>{{ "%.1f"|format(fe.taxes) if fe.taxes is not none else "0" }}%</td>
-                <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(fe.quoted_amount) if fe.quoted_amount is not none else "0.00" }} Lakhs</td>
+                <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) if fe.quoted_amount is not none else "0.00" }} Lakhs</td>
                 <td>{{ fe.delivery_period if fe.delivery_period is not none else "-" }} weeks</td>
                 <td>{{ fe.warranty if fe.warranty is not none else "-" }} months</td>
                 <td class="bold" style="color: {{ 'green' if is_l1 else 'orange' if is_l2 else 'black' }}">{{ fe.ranking }}</td>
@@ -1698,7 +1698,7 @@
     {% endif %}
 
     {% if pr.bill_passing %}
-    <div class="section-title">Purchase Bill Passing Certificate (Module 7)</div>
+    <div class="section-title">Purchase Bill Passing Certificate</div>
     <table class="details-table">
         <tr>
             <th style="width: 25%">Invoice Number / Date</th>
@@ -1721,7 +1721,7 @@
     </table>
     {% endif %}
 
-    {% if pr.faculty1_id or pr.faculty2_id or pr.faculty3_id %}
+    {% if (pr.faculty1_id or pr.faculty2_id or pr.faculty3_id) and pr.purchase_category and pr.purchase_category.max_amount > 100000 %}
     <div class="section-title">Purchase Committee</div>
     <table class="data-table">
         <thead>
@@ -1823,7 +1823,7 @@
         </tbody>
     </table>
 
-    <table style="width: 100%; border: none; margin-top: 30px; page-break-inside: avoid; border-collapse: collapse;">
+    <table style="width: 100%; border: none; margin-top: 15px; page-break-inside: avoid; border-collapse: collapse;">
         <!-- Row 1: Signature Images -->
         <tr style="border: none;">
             <td style="width: 45%; text-align: center; border: none; padding: 0 0 5px 0; vertical-align: bottom; height: 50px;">
@@ -1833,8 +1833,8 @@
             </td>
             <td style="width: 10%; border: none; padding: 0;"></td>
             <td style="width: 45%; text-align: center; border: none; padding: 0 0 5px 0; vertical-align: bottom; height: 50px;">
-                {% if aa_sig %}
-                <img src="{{ aa_sig }}" style="max-height: 45px; max-width: 130px; object-fit: contain; display: block; margin: 0 auto;" />
+                {% if sanction_authority_sig %}
+                <img src="{{ sanction_authority_sig }}" style="max-height: 45px; max-width: 130px; object-fit: contain; display: block; margin: 0 auto;" />
                 {% endif %}
             </td>
         </tr>
@@ -1848,10 +1848,10 @@
             </td>
             <td style="width: 10%; border: none; padding: 0;"></td>
             <td style="width: 45%; text-align: center; border: none; border-top: 1.5px solid #333; padding-top: 6px; vertical-align: top;">
-                {% if pr.aa_approved_at and pr.aa_approver %}
-                <div style="font-weight: bold; color: #1a3a6b; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px;">Sanctioning Authority ({{ pr.aa_approver.name }})</div>
+                {% if sanction_authority_name and sanction_authority_date_str %}
+                <div style="font-weight: bold; color: #1a3a6b; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px;">Sanctioning Authority ({{ sanction_authority_name }})</div>
                 <div style="font-size: 8.5pt; color: #333; margin-top: 3px; font-weight: bold;">
-                    Date: {{ pr_aa_approved_at_str }}
+                    Date: {{ sanction_authority_date_str }}
                 </div>
                 {% else %}
                 <div style="font-weight: bold; color: #1a3a6b; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px;">Sanctioning Authority</div>

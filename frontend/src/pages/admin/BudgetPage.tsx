@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert } from 'lucide-react';
+import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/format';
@@ -65,7 +65,7 @@ export const BudgetPage: React.FC = () => {
 
   const isWriteAllowed = user && user.role?.group_key === 'dean_approver';
   const isHOD = user && user.role?.group_key === 'hod';
-  const isDirectorOrAdmin = user && (user.role?.value === 'director' || user.role?.group_key === 'admin');
+  const isDirectorOrAdmin = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
 
   // Committee assignment mutations
   const assignCommitteeMutation = useMutation({
@@ -246,7 +246,6 @@ export const BudgetPage: React.FC = () => {
               <th>Item Name</th>
               <th>Total Allocation</th>
               <th>Committed Amount</th>
-              <th>Utilized Amount</th>
               <th>Available Balance</th>
               <th>Technical Committee</th>
               <th>Actions</th>
@@ -254,25 +253,41 @@ export const BudgetPage: React.FC = () => {
           </thead>
           <tbody>
             {loadingBudgets ? (
-              <tr><td colSpan={9} className="text-center py-8">Loading budget data...</td></tr>
+              <tr><td colSpan={8} className="text-center py-8">Loading budget data...</td></tr>
             ) : filteredBudgets.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
             ) : (
               filteredBudgets.map((b: any) => {
                 const hasCommittee = b.expert1 || b.expert2 || b.director_faculty;
                 const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
+                const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
+                const isFyClosed = budgetFy ? budgetFy.is_closed : false;
+                const fyLabel = budgetFy ? budgetFy.label : '';
                 
                 return (
                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
                     <td className="font-medium text-slate-900">
-                      <div className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</div>
-                      <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
+                          {fyLabel && (
+                            <span className="px-1.5 py-0.2 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] rounded font-sans font-medium">
+                              {fyLabel}
+                            </span>
+                          )}
+                          {isFyClosed && (
+                            <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5" title="Financial Year is closed (Read-Only)">
+                              <Lock size={10} /> Locked
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
                     <td className="max-w-[150px] truncate" title={b.item_name}>{b.item_name}</td>
                     <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
                     <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
-                    <td className="text-slate-600 font-medium">{formatCurrency(b.utilized_amount ?? b.deducted_amount)}</td>
                     <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
                     <td>
                       <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
@@ -296,8 +311,13 @@ export const BudgetPage: React.FC = () => {
                         {isWriteAllowed && (
                           <button
                             onClick={() => navigate(`/budget/edit/${b.id}`)}
-                            className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                            title="Edit details"
+                            disabled={isFyClosed}
+                            className={`p-1.5 rounded transition-colors ${
+                              isFyClosed 
+                                ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
+                                : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                            }`}
+                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
                           >
                             <Edit2 size={16} />
                           </button>
@@ -307,8 +327,13 @@ export const BudgetPage: React.FC = () => {
                         {isHOD && matchesDept && (
                           <button
                             onClick={() => openCommitteeModal(b)}
-                            className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded flex items-center gap-1 text-xs font-semibold border border-indigo-200"
-                            title="Configure Technical Committee Experts"
+                            disabled={isFyClosed}
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                              isFyClosed
+                                ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
+                            }`}
+                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
                           >
                             <Users size={14} /> Nominate
                           </button>
@@ -318,8 +343,13 @@ export const BudgetPage: React.FC = () => {
                         {isDirectorOrAdmin && (
                           <button
                             onClick={() => openDirectorModal(b)}
-                            className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded flex items-center gap-1 text-xs font-semibold border border-emerald-200"
-                            title="Nominate Director Nominee"
+                            disabled={isFyClosed}
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                              isFyClosed
+                                ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
+                            }`}
+                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
                           >
                             <Award size={14} /> Nominee
                           </button>

@@ -8,7 +8,7 @@ from typing import Optional, List
 from app.core.config import settings
 
 from app.core.database import get_db
-from app.core.deps import require_roles
+from app.core.deps import require_roles, get_current_user
 from app.core.security import get_password_hash
 from app.models.user import User, Department, RoleManager
 from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings
@@ -16,9 +16,9 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
-DeanOrAdminDep = Depends(require_roles("admin", "dean_approver"))
+DeanOrAdminDep = Depends(require_roles("admin", "dean_approver", "apex_approver"))
 DeanBudgetDep = Depends(require_roles("dean_approver"))
-BudgetViewDep = Depends(require_roles("admin", "dean_approver", "hod", "faculty"))
+BudgetViewDep = Depends(require_roles("admin", "dean_approver", "hod", "faculty", "apex_approver"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -386,10 +386,365 @@ async def create_financial_year(body: dict, db: AsyncSession = Depends(get_db), 
         start_date=dateobj.fromisoformat(body["start_date"]),
         end_date=dateobj.fromisoformat(body["end_date"]),
         is_active=body.get("is_active", True),
+        is_closed=body.get("is_closed", False),
     )
     db.add(fy)
     await db.commit()
     return {"message": "Financial year created", "id": fy.id}
+
+
+@router.post("/financial-years/rollover")
+async def financial_year_rollover(
+    db: AsyncSession = Depends(get_db),
+    _=AdminDep
+):
+    # 1. Find the current active financial year
+    active_fy_stmt = select(FinancialYear).where(FinancialYear.is_active == True)
+    active_fy_res = await db.execute(active_fy_stmt)
+    active_fy = active_fy_res.scalar_one_or_none()
+    if not active_fy:
+        raise HTTPException(status_code=400, detail="No active financial year found to rollover.")
+
+    # 2. Parse current active FY label to calculate the next FY label
+    import re
+    match = re.match(r"^(\d{4})-(\d{2})$", active_fy.label)
+    if not match:
+        raise HTTPException(status_code=400, detail=f"Invalid financial year label format: {active_fy.label}")
+    
+    start_year = int(match.group(1))
+    end_year_short = int(match.group(2))
+    
+    next_start_year = start_year + 1
+    next_end_year_short = (end_year_short + 1) % 100
+    next_label = f"{next_start_year}-{next_end_year_short:02d}"
+    
+    from datetime import date
+    next_start_date = date(next_start_year, 4, 1)
+    next_end_date = date(next_start_year + 1, 3, 31)
+
+    # Find if next FY already exists
+    next_fy_stmt = select(FinancialYear).where(FinancialYear.label == next_label)
+    next_fy_res = await db.execute(next_fy_stmt)
+    next_fy = next_fy_res.scalar_one_or_none()
+    
+    if next_fy:
+        if next_fy.is_closed:
+            raise HTTPException(status_code=400, detail=f"The next financial year '{next_label}' is already closed.")
+        next_fy.is_active = True
+    else:
+        next_fy = FinancialYear(
+            label=next_label,
+            start_date=next_start_date,
+            end_date=next_end_date,
+            is_active=True,
+            is_closed=False
+        )
+        db.add(next_fy)
+        await db.flush()
+
+    # Close current active FY
+    active_fy.is_active = False
+    active_fy.is_closed = True
+
+    # 3. Find all active/in-progress PRs in the closed FY
+    from app.models.purchase_request import PurchaseRequest, RequestStatus, PurchaseRequestItem, PurchaseRequestFlow, PurchaseRequestAssignment, TechnicalEvaluation, FinancialEvaluation, CommercialEvaluation, Document, PRReferral, PurchaseRequestHistory
+    
+    active_prs_res = await db.execute(
+        select(PurchaseRequest)
+        .options(
+            selectinload(PurchaseRequest.items).selectinload(PurchaseRequestItem.budget_file),
+            selectinload(PurchaseRequest.flow),
+            selectinload(PurchaseRequest.assignments),
+            selectinload(PurchaseRequest.technical_evaluations),
+            selectinload(PurchaseRequest.financial_evaluations),
+            selectinload(PurchaseRequest.commercial_evaluations),
+            selectinload(PurchaseRequest.documents),
+            selectinload(PurchaseRequest.referrals),
+            selectinload(PurchaseRequest.initiator).selectinload(User.department)
+        )
+        .where(
+            PurchaseRequest.financial_year_id == active_fy.id,
+            PurchaseRequest.current_status.in_([
+                RequestStatus.PR_SUBMITTED,
+                RequestStatus.IN_PROGRESS,
+                RequestStatus.SENT_BACK
+            ])
+        )
+    )
+    old_prs = active_prs_res.scalars().all()
+
+    from app.services.budget_service import BudgetService
+    budget_svc = BudgetService(db)
+    dept_seqs = {}
+
+    for old_pr in old_prs:
+        # Unlock budget reservations in old FY
+        await budget_svc.unlock_amount(old_pr)
+
+        # For each item, resolve or clone its budget file to the new FY
+        for item in old_pr.items:
+            old_bm = item.budget_file
+            if old_bm:
+                new_bm_file_no = old_bm.file_no.replace(active_fy.label, next_fy.label)
+                new_bm_file_no_alt = old_bm.file_no.replace(active_fy.label.lower(), next_fy.label.lower())
+                
+                bm_find = await db.execute(
+                    select(BudgetMaster).where(
+                        BudgetMaster.financial_year_id == next_fy.id,
+                        BudgetMaster.file_no.in_([new_bm_file_no, new_bm_file_no_alt, old_bm.file_no])
+                    )
+                )
+                new_bm = bm_find.scalar_one_or_none()
+                if not new_bm:
+                    new_bm = BudgetMaster(
+                        department_id=old_bm.department_id,
+                        financial_year_id=next_fy.id,
+                        expenditure_category=old_bm.expenditure_category,
+                        item_name=old_bm.item_name,
+                        category=old_bm.category,
+                        course_code=old_bm.course_code,
+                        unit_cost=old_bm.unit_cost,
+                        quantity=old_bm.quantity,
+                        total_allocation=old_bm.total_allocation,
+                        file_no=new_bm_file_no,
+                        is_revision=old_bm.is_revision,
+                        expert1_id=old_bm.expert1_id,
+                        expert2_id=old_bm.expert2_id,
+                        director_faculty_id=old_bm.director_faculty_id,
+                        committed_amount=0.0,
+                        utilized_amount=0.0
+                    )
+                    db.add(new_bm)
+                    await db.flush()
+
+        # Generate revised reference sequence number per department
+        dept_id = old_pr.initiator.department_id
+        if dept_id not in dept_seqs:
+            q = await db.execute(
+                select(func.count(PurchaseRequest.id))
+                .join(User, PurchaseRequest.initiator_id == User.id)
+                .where(
+                    PurchaseRequest.financial_year_id == next_fy.id,
+                    PurchaseRequest.parent_pr_id.isnot(None),
+                    User.department_id == dept_id
+                )
+            )
+            dept_seqs[dept_id] = q.scalar() or 0
+        
+        dept_seqs[dept_id] += 1
+        seq_num = dept_seqs[dept_id]
+        dept_code = old_pr.initiator.department.short_code if old_pr.initiator.department else "GEN"
+        revised_ref = f"PR/{dept_code}/{next_fy.label}/R-{seq_num:02d}"
+
+        # Clone the Purchase Request
+        new_pr = PurchaseRequest(
+            category_id=old_pr.category_id,
+            financial_year_id=next_fy.id,
+            initiator_id=old_pr.initiator_id,
+            nominee_id=old_pr.nominee_id,
+            procurement_id=old_pr.procurement_id,
+            purchase_type=old_pr.purchase_type,
+            amount=old_pr.amount,
+            emd=old_pr.emd,
+            performance_security=old_pr.performance_security,
+            current_status=old_pr.current_status,
+            vendor_list_link=old_pr.vendor_list_link,
+            is_item_split=old_pr.is_item_split,
+            item_split_justification=old_pr.item_split_justification,
+            is_quantity_split=old_pr.is_quantity_split,
+            quantity_split_details=old_pr.quantity_split_details,
+            is_service_center_in_south=old_pr.is_service_center_in_south,
+            service_center_south_desc=old_pr.service_center_south_desc,
+            basis_of_estimate_details=old_pr.basis_of_estimate_details,
+            delivery_mode=old_pr.delivery_mode,
+            delivery_location=old_pr.delivery_location,
+            exemption=old_pr.exemption,
+            exemption_remarks=old_pr.exemption_remarks,
+            is_training_required=old_pr.is_training_required,
+            training_type=old_pr.training_type,
+            training_vendor=old_pr.training_vendor,
+            training_comments=old_pr.training_comments,
+            tender_reference_number=old_pr.tender_reference_number,
+            date_of_tender=old_pr.date_of_tender,
+            date_of_tech_bid_opening=old_pr.date_of_tech_bid_opening,
+            date_of_financial_bid_opening=old_pr.date_of_financial_bid_opening,
+            aa_approved_at=old_pr.aa_approved_at,
+            te_initiated_at=old_pr.te_initiated_at,
+            te_approved_at=old_pr.te_approved_at,
+            fs_initiated_at=old_pr.fs_initiated_at,
+            fs_approved_at=old_pr.fs_approved_at,
+            po_initiated_at=old_pr.po_initiated_at,
+            po_approved_at=old_pr.po_approved_at,
+            faculty1_id=old_pr.faculty1_id,
+            faculty2_id=old_pr.faculty2_id,
+            faculty3_id=old_pr.faculty3_id,
+            aa_approver_id=old_pr.aa_approver_id,
+            form_data=old_pr.form_data,
+            parent_pr_id=old_pr.id,
+            lpc_remarks=old_pr.lpc_remarks,
+            lpc_committee_members=old_pr.lpc_committee_members,
+            lpc_minutes_reference=old_pr.lpc_minutes_reference,
+            single_bid_justification=old_pr.single_bid_justification,
+            icr_number=revised_ref
+        )
+        db.add(new_pr)
+        await db.flush()
+
+        # Clone items, linking to new budgets
+        for item in old_pr.items:
+            old_item_bm = item.budget_file
+            new_item_bm = None
+            if old_item_bm:
+                new_item_bm_file_no = old_item_bm.file_no.replace(active_fy.label, next_fy.label)
+                new_item_bm_file_no_alt = old_item_bm.file_no.replace(active_fy.label.lower(), next_fy.label.lower())
+                new_bm_find = await db.execute(
+                    select(BudgetMaster).where(
+                        BudgetMaster.financial_year_id == next_fy.id,
+                        BudgetMaster.file_no.in_([new_item_bm_file_no, new_item_bm_file_no_alt, old_item_bm.file_no])
+                    )
+                )
+                new_item_bm = new_bm_find.scalar_one_or_none()
+
+            new_item = PurchaseRequestItem(
+                purchase_request_id=new_pr.id,
+                budget_file_id=new_item_bm.id if new_item_bm else None,
+                item_description=item.item_description,
+                quantity=item.quantity,
+                estimated_total=item.estimated_total,
+                charges=item.charges,
+                requirement_type=item.requirement_type,
+                availability=item.availability,
+                availability_remarks=item.availability_remarks,
+                site_readiness=item.site_readiness,
+                site_readiness_remarks=item.site_readiness_remarks,
+                warranty=item.warranty,
+                delivery_period=item.delivery_period,
+                present_stock=item.present_stock,
+                justification_for_procurement=item.justification_for_procurement,
+                previous_file_no_reference=item.previous_file_no_reference,
+                installation_required=item.installation_required,
+                tech_specs_text=item.tech_specs_text,
+                gem_link=item.gem_link,
+            )
+            db.add(new_item)
+        await db.flush()
+
+        # Clone flow state
+        if old_pr.flow:
+            new_flow = PurchaseRequestFlow(
+                purchase_request_id=new_pr.id,
+                phase_id=old_pr.flow.phase_id,
+                step_order=old_pr.flow.step_order,
+                rejected=old_pr.flow.rejected
+            )
+            db.add(new_flow)
+
+        # Clone assignments
+        for ass in old_pr.assignments:
+            new_ass = PurchaseRequestAssignment(
+                purchase_request_id=new_pr.id,
+                assigned_by_id=ass.assigned_by_id,
+                assigned_da_id=ass.assigned_da_id,
+                status=ass.status,
+                assigned_at=ass.assigned_at
+            )
+            db.add(new_ass)
+
+        # Clone evaluations
+        for te in old_pr.technical_evaluations:
+            new_te = TechnicalEvaluation(
+                purchase_request_id=new_pr.id,
+                vendor_name=te.vendor_name,
+                is_qualified=te.is_qualified,
+                remarks=te.remarks,
+                created_at=te.created_at
+            )
+            db.add(new_te)
+        
+        for fe in old_pr.financial_evaluations:
+            new_fe = FinancialEvaluation(
+                purchase_request_id=new_pr.id,
+                vendor_name=fe.vendor_name,
+                quoted_amount=fe.quoted_amount,
+                ranking=fe.ranking,
+                is_awarded=fe.is_awarded,
+                remarks=fe.remarks,
+                unit_price=fe.unit_price,
+                taxes=fe.taxes,
+                delivery_period=fe.delivery_period,
+                warranty=fe.warranty,
+                created_at=fe.created_at
+            )
+            db.add(new_fe)
+            
+        for ce in old_pr.commercial_evaluations:
+            new_ce = CommercialEvaluation(
+                purchase_request_id=new_pr.id,
+                vendor_name=ce.vendor_name,
+                vendor_email=ce.vendor_email,
+                quoted_amount=ce.quoted_amount,
+                is_qualified=ce.is_qualified,
+                remarks=ce.remarks
+            )
+            db.add(new_ce)
+
+        # Clone documents
+        for doc in old_pr.documents:
+            new_doc = Document(
+                purchase_request_id=new_pr.id,
+                doc_key=doc.doc_key,
+                doc_value=doc.doc_value,
+                uploaded_by_id=doc.uploaded_by_id,
+                updated_at=doc.updated_at
+            )
+            db.add(new_doc)
+
+        # Clone referrals
+        for ref in old_pr.referrals:
+            new_ref = PRReferral(
+                purchase_request_id=new_pr.id,
+                referred_by_id=ref.referred_by_id,
+                referred_to_id=ref.referred_to_id,
+                query=ref.query,
+                query_document_path=ref.query_document_path,
+                response=ref.response,
+                response_document_path=ref.response_document_path,
+                status=ref.status,
+                created_at=ref.created_at,
+                responded_at=ref.responded_at
+            )
+            db.add(new_ref)
+
+        # Lock budget amounts on the new cloned budget files
+        await budget_svc.lock_amount(new_pr)
+
+        # Mark old PR as rolled_over
+        old_pr.current_status = RequestStatus.ROLLED_OVER
+
+        # Add history entries
+        old_history = PurchaseRequestHistory(
+            purchase_request_id=old_pr.id,
+            status="Rolled Over",
+            remarks=f"Purchase request rolled over to next financial year {next_fy.label}. Revised reference: {revised_ref}",
+            acted_at=datetime.utcnow()
+        )
+        db.add(old_history)
+
+        new_history = PurchaseRequestHistory(
+            purchase_request_id=new_pr.id,
+            status="Rolled Over",
+            remarks=f"Purchase request rolled over from financial year {active_fy.label}. Original reference: {old_pr.icr_number}",
+            acted_at=datetime.utcnow()
+        )
+        db.add(new_history)
+
+    await db.commit()
+    return {
+        "message": "Financial Year rollover completed successfully.",
+        "closed_year": active_fy.label,
+        "opened_year": next_fy.label,
+        "rolled_over_count": len(old_prs)
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -498,7 +853,23 @@ async def get_stored_categories(db: AsyncSession):
         db.add(Settings(key_name="budget_item_categories", value="computer,lab_equipment,software,furniture"))
         await db.flush()
 
-    return {"expenditure_categories": exp_list, "item_categories": item_list}
+    # Also load added_by_dean
+    result_dean = await db.execute(select(Settings).where(Settings.key_name == "budget_categories_added_by_dean"))
+    dean_setting = result_dean.scalar_one_or_none()
+    if dean_setting:
+        import json
+        try:
+            dean_cats = json.loads(dean_setting.value)
+        except Exception:
+            dean_cats = {"expenditure": [], "item": []}
+    else:
+        dean_cats = {"expenditure": [], "item": []}
+
+    return {
+        "expenditure_categories": exp_list,
+        "item_categories": item_list,
+        "added_by_dean": dean_cats
+    }
 
 
 @router.get("/budget/categories")
@@ -507,7 +878,15 @@ async def get_budget_categories(db: AsyncSession = Depends(get_db), _=BudgetView
 
 
 @router.post("/budget/categories")
-async def add_budget_category(body: dict, db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def add_budget_category(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    await db.refresh(current_user, ["role"])
+    if current_user.role.group_key not in ["admin", "dean_approver", "apex_approver"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
     cat_type = body.get("type")
     val = body.get("value")
     if not val or not val.strip():
@@ -523,12 +902,16 @@ async def add_budget_category(body: dict, db: AsyncSession = Depends(get_db), _=
 
     result = await db.execute(select(Settings).where(Settings.key_name == key))
     setting = result.scalar_one_or_none()
+    
+    already_exists = False
+    
     if setting:
         existing = [c.strip() for c in setting.value.split(",") if c.strip()]
         if val in existing:
-            return {"message": "Category already exists", "categories": existing}
-        existing.append(val)
-        setting.value = ",".join(existing)
+            already_exists = True
+        else:
+            existing.append(val)
+            setting.value = ",".join(existing)
     else:
         if cat_type == "expenditure":
             defaults = ["CAPEX", "OPEX", val]
@@ -536,6 +919,116 @@ async def add_budget_category(body: dict, db: AsyncSession = Depends(get_db), _=
             defaults = ["computer", "lab_equipment", "software", "furniture", val]
         setting = Settings(key_name=key, value=",".join(defaults))
         db.add(setting)
+
+    # Record if added by dean budget role
+    if not already_exists and current_user.role.group_key == "dean_approver":
+        result_dean = await db.execute(select(Settings).where(Settings.key_name == "budget_categories_added_by_dean"))
+        dean_setting = result_dean.scalar_one_or_none()
+        import json
+        if dean_setting:
+            try:
+                dean_cats = json.loads(dean_setting.value)
+            except Exception:
+                dean_cats = {"expenditure": [], "item": []}
+            
+            if cat_type == "expenditure":
+                if "expenditure" not in dean_cats:
+                    dean_cats["expenditure"] = []
+                if val not in dean_cats["expenditure"]:
+                    dean_cats["expenditure"].append(val)
+            else:
+                if "item" not in dean_cats:
+                    dean_cats["item"] = []
+                if val not in dean_cats["item"]:
+                    dean_cats["item"].append(val)
+            dean_setting.value = json.dumps(dean_cats)
+        else:
+            if cat_type == "expenditure":
+                dean_cats = {"expenditure": [val], "item": []}
+            else:
+                dean_cats = {"expenditure": [], "item": [val]}
+            db.add(Settings(key_name="budget_categories_added_by_dean", value=json.dumps(dean_cats)))
+
+    await db.commit()
+    return await get_stored_categories(db)
+
+
+@router.delete("/budget/categories")
+async def delete_budget_category(
+    type: str = Query(...),
+    value: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    await db.refresh(current_user, ["role"])
+    if current_user.role.group_key != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can delete categories")
+
+    value = value.strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Category value is required")
+
+    if type == "expenditure":
+        key = "budget_expenditure_categories"
+    elif type == "item":
+        key = "budget_item_categories"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid type: must be 'expenditure' or 'item'")
+
+    # Verify if category was added by dean budget role
+    result_dean = await db.execute(select(Settings).where(Settings.key_name == "budget_categories_added_by_dean"))
+    dean_setting = result_dean.scalar_one_or_none()
+    is_dean_added = False
+    dean_cats = {"expenditure": [], "item": []}
+    
+    if dean_setting:
+        import json
+        try:
+            dean_cats = json.loads(dean_setting.value)
+        except Exception:
+            dean_cats = {"expenditure": [], "item": []}
+        
+        if type == "expenditure" and value in dean_cats.get("expenditure", []):
+            is_dean_added = True
+        elif type == "item" and value in dean_cats.get("item", []):
+            is_dean_added = True
+
+    if not is_dean_added:
+        raise HTTPException(status_code=400, detail="Category cannot be deleted: it was not added by the dean budget role")
+
+    # Check if category is currently used by any BudgetMaster entry
+    if type == "expenditure":
+        count_stmt = select(func.count(BudgetMaster.id)).where(BudgetMaster.expenditure_category == value)
+    else:
+        count_stmt = select(func.count(BudgetMaster.id)).where(BudgetMaster.category == value)
+
+    count_res = await db.execute(count_stmt)
+    use_count = count_res.scalar() or 0
+    if use_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Category '{value}' is in use by {use_count} budget file(s) and cannot be deleted"
+        )
+
+    # Perform deletion from Settings
+    result_setting = await db.execute(select(Settings).where(Settings.key_name == key))
+    setting = result_setting.scalar_one_or_none()
+    if setting:
+        existing = [c.strip() for c in setting.value.split(",") if c.strip()]
+        if value in existing:
+            existing.remove(value)
+            setting.value = ",".join(existing)
+
+    # Remove from dean_cats metadata list
+    if type == "expenditure":
+        if value in dean_cats.get("expenditure", []):
+            dean_cats["expenditure"].remove(value)
+    else:
+        if value in dean_cats.get("item", []):
+            dean_cats["item"].remove(value)
+
+    if dean_setting:
+        dean_setting.value = json.dumps(dean_cats)
 
     await db.commit()
     return await get_stored_categories(db)
@@ -610,9 +1103,17 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
 
 @router.post("/budget")
 async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
+    fy_id = int(body["financial_year_id"])
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == fy_id))
+    fy = fy_res.scalar_one_or_none()
+    if not fy:
+        raise HTTPException(status_code=400, detail="Financial Year not found")
+    if fy.is_closed:
+        raise HTTPException(status_code=400, detail="The selected financial year is closed. Budgets in closed financial years cannot be modified.")
+
     b = BudgetMaster(
         department_id=int(body["department_id"]),
-        financial_year_id=int(body["financial_year_id"]),
+        financial_year_id=fy_id,
         expenditure_category=body["expenditure_category"],
         item_name=body["item_name"],
         category=body["category"],
@@ -635,11 +1136,25 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     b = result.scalar_one_or_none()
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Check if current budget file belongs to closed financial year
+    current_fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == b.financial_year_id))
+    current_fy = current_fy_res.scalar_one_or_none()
+    if current_fy and current_fy.is_closed:
+        raise HTTPException(status_code=400, detail="The current financial year for this budget is closed. Budgets in closed financial years cannot be modified.")
+
     b.item_name = body.get("item_name", b.item_name)
     if "department_id" in body:
         b.department_id = int(body["department_id"])
     if "financial_year_id" in body:
-        b.financial_year_id = int(body["financial_year_id"])
+        new_fy_id = int(body["financial_year_id"])
+        new_fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == new_fy_id))
+        new_fy = new_fy_res.scalar_one_or_none()
+        if not new_fy:
+            raise HTTPException(status_code=400, detail="Financial Year not found")
+        if new_fy.is_closed:
+            raise HTTPException(status_code=400, detail="The target financial year is closed. Budgets in closed financial years cannot be modified.")
+        b.financial_year_id = new_fy_id
     if "expenditure_category" in body:
         b.expenditure_category = body["expenditure_category"]
     if "category" in body:
@@ -656,7 +1171,7 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
 
 @router.delete("/budget/clear")
 async def clear_all_budgets(db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
-    """Deletes all budget master entries to start fresh. Skips any budgets linked to active PR items."""
+    """Deletes all budget master entries to start fresh. Skips any budgets linked to active PR items or belonging to closed financial years."""
     from app.models.purchase_request import PurchaseRequestItem
     from sqlalchemy import delete
 
@@ -664,16 +1179,18 @@ async def clear_all_budgets(db: AsyncSession = Depends(get_db), _=DeanBudgetDep)
     linked_res = await db.execute(select(PurchaseRequestItem.budget_file_id))
     linked_ids = {row[0] for row in linked_res.fetchall() if row[0] is not None}
 
+    closed_fy_res = await db.execute(select(FinancialYear.id).where(FinancialYear.is_closed == True))
+    closed_fy_ids = [row[0] for row in closed_fy_res.fetchall()]
+
+    stmt = delete(BudgetMaster)
+    if closed_fy_ids:
+        stmt = stmt.where(BudgetMaster.financial_year_id.not_in(closed_fy_ids))
     if linked_ids:
-        stmt = delete(BudgetMaster).where(BudgetMaster.id.not_in(linked_ids))
-        result = await db.execute(stmt)
-        await db.commit()
-        return {"message": f"Cleared {result.rowcount} unlinked budget files. (Some budget files are linked to active Purchase Requests and could not be deleted)"}
-    else:
-        stmt = delete(BudgetMaster)
-        result = await db.execute(stmt)
-        await db.commit()
-        return {"message": "All budget files cleared successfully."}
+        stmt = stmt.where(BudgetMaster.id.not_in(linked_ids))
+
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"message": f"Cleared {result.rowcount} unlinked budget files. Budgets in closed financial years and those linked to active Purchase Requests could not be deleted."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1249,6 +1766,12 @@ async def import_budget_csv(
         if not financial_year:
             raise HTTPException(status_code=400, detail="No active financial year configured in the system")
 
+    if financial_year.is_closed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The financial year '{financial_year.label}' is closed. Budgets in closed financial years cannot be imported."
+        )
+
     def clean_float(val_str) -> float:
         if not val_str:
             return 0.0
@@ -1287,6 +1810,10 @@ async def import_budget_csv(
                     fy_obj = fy_res.scalar_one_or_none()
                     if fy_obj:
                         row_fy = fy_obj
+
+            if row_fy.is_closed:
+                errors.append(f"Row {row_num}: Financial Year '{row_fy.label}' is closed. Budgets in closed financial years cannot be modified.")
+                continue
 
             # Parse amounts and quantities
             unit_cost = 0.0
@@ -1356,6 +1883,12 @@ async def import_budget_csv(
             bm = bm_res.scalar_one_or_none()
 
             if bm:
+                bm_fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == bm.financial_year_id))
+                bm_fy = bm_fy_res.scalar_one_or_none()
+                if bm_fy and bm_fy.is_closed:
+                    errors.append(f"Row {row_num}: Budget file {file_no} already exists in a closed Financial Year '{bm_fy.label}' and cannot be modified.")
+                    continue
+
                 bm.total_cost = total_cost
                 bm.unit_cost = unit_cost
                 bm.item_name = item_name

@@ -93,7 +93,6 @@ export const ProfilePage: React.FC = () => {
     ctx.scale(zoom, zoom);
     // Draw the image centered
     ctx.drawImage(imageObj, -imageObj.width / 2, -imageObj.height / 2);
-    ctx.save();
     ctx.restore();
   }, [imageObj, zoom, rotation, offsetX, offsetY]);
 

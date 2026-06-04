@@ -116,7 +116,7 @@ export const GRNAction: React.FC<GRNActionProps> = ({
   return (
     <form onSubmit={handleBillPassingSubmit} className="card p-6 bg-blue-50 border-blue-200 space-y-4 text-left">
       <h3 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide border-b border-blue-100 pb-2 flex items-center gap-2">
-        <FileText size={18} /> Purchase Bill Passing Certificate (Module 7)
+        <FileText size={18} /> Purchase Bill Passing Certificate
       </h3>
       <p className="text-xs text-slate-500 font-semibold">
         Delivery has been verified. Please generate the Bill Passing Certificate to complete this purchase request.
