@@ -704,177 +704,261 @@
     {% set first_item = pr.items[0] if pr.items else none %}
     {% set first_item_details = items_details[0] if items_details else none %}
     {% set spec = pr.form_data.get('specs', {}).get(first_item.budget_file_id|string, {}) if (pr.form_data and first_item) else {} %}
-    <table class="details-table">
-        <tr>
-            <th>File No</th>
-            <td class="bold">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else '-' }}</td>
-            <th>Department</th>
-            <td>{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
-        </tr>
-        <tr>
-            <th>Indentor Name</th>
-            <td>{{ pr.initiator.name }}</td>
-            <th>Designation</th>
-            <td>{{ pr.initiator.designation or 'Faculty' }}</td>
-        </tr>
-        <tr>
-            <th>Contact</th>
-            <td>{{ pr.initiator.email }}</td>
-            <th>Lab / Office</th>
-            <td>{{ pr.form_data.get('laboratory_office', '-') }}</td>
-        </tr>
-        <tr>
-            <th>Source of Fund</th>
-            <td>
-                {% set fund = pr.form_data.get('source_of_fund', '-') %}
-                {% if fund == 'Project code' %}
-                  Project code: {{ pr.form_data.get('source_of_fund_project_code', '-') }}
-                {% elif fund == 'Others' %}
-                  Others: {{ pr.form_data.get('source_of_fund_others', '-') }}
-                {% else %}
-                  {{ fund }}
-                {% endif %}
-            </td>
-            <th>Estimated Cost</th>
-            <td class="bold">₹{{ "%.2f"|format(grand_total) }}</td>
-        </tr>
-    </table>
 
-    <div class="section-title">TSC Finalized Specifications</div>
-    <table class="details-table">
-        <tr>
-            <th style="width: 5%">#</th>
-            <th style="width: 45%">Question</th>
-            <th style="width: 50%">Answer</th>
-        </tr>
-        <tr>
-            <td>1</td>
-            <td>Name of the equipment / goods</td>
-            <td class="bold">{{ spec.get('equipment_name', first_item.item_description if first_item else '-') }}</td>
-        </tr>
-        <tr>
-            <td>2</td>
-            <td>Specifications</td>
-            <td style="font-family: monospace; white-space: pre-wrap; font-size: 8pt;">{{ first_item.tech_specs_text or 'Generic Specifications Finalized' if first_item else 'N/A' }}</td>
-        </tr>
-        <tr>
-            <td>3</td>
-            <td>Whether Pre-Dispatch Inspection (PDI) is required?</td>
-            <td>
-                {{ spec.get('pdi_required', 'No') }}{% if spec.get('pdi_required') == 'Yes' %} (Justification: {{ spec.get('pdi_justification', '-') }}){% endif %}
-            </td>
-        </tr>
-        <tr>
-            <td>4</td>
-            <td>Whether Pre-bid meeting is required?</td>
-            <td>{{ spec.get('pre_bid_required', 'No') }}</td>
-        </tr>
-        <tr>
-            <td>5</td>
-            <td>Whether item requires installation & commissioning?</td>
-            <td>
-                {% if first_item_details and first_item_details.get('installation_required', false) %}
-                  Yes (Scope: {{ spec.get('installation_scope', 'Supplier') }}, Site Ready: {{ 'Yes' if first_item_details.get('site_readiness') else 'No' }})
-                {% else %}
-                  No
-                {% endif %}
-            </td>
-        </tr>
-        <tr>
-            <td>6</td>
-            <td>Whether training is required?</td>
-            <td>
-                {{ spec.get('training_required', 'No') }}{% if spec.get('training_required') == 'Yes' %} (Location: {{ spec.get('training_location', 'Purchaser\'s Premises') }}){% endif %}
-            </td>
-        </tr>
-        <tr>
-            <td>7</td>
-            <td>Warranty required</td>
-            <td>{{ "%d"|format(first_item.warranty or 12) if first_item else '12' }} months</td>
-        </tr>
-        <tr>
-            <td>8</td>
-            <td>Delivery Period</td>
-            <td>{{ "%d"|format(first_item.delivery_period or 8) if first_item else '8' }} weeks</td>
-        </tr>
-        <tr>
-            <td>9</td>
-            <td>Delivery Location</td>
-            <td>{{ pr.delivery_location or 'Department Lab, NIT Tiruchirappalli' }}</td>
-        </tr>
-        <tr>
-            <td>10</td>
-            <td>Technical Eligibility Criteria</td>
-            <td>{{ spec.get('tech_eligibility', '-') }}</td>
-        </tr>
-        <tr>
-            <td>11</td>
-            <td>Performance Security</td>
-            <td>{{ "%.1f"|format(pr.performance_security) }}%</td>
-        </tr>
-        <tr>
-            <td>12</td>
-            <td>EMD</td>
-            <td>{{ "%.1f"|format(pr.emd) }}%</td>
-        </tr>
-    </table>
-
-    <div class="section-title">Certification by Technical Sub-Committee</div>
-    <div class="checkbox-container">
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> The description of the item/equipment/service is generic and does not indicate any trademark or brand.</div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> The eligibility criteria is not unduly restrictive.</div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> The demand for goods is not split into piecemeal quantities.</div>
+    <!-- ====== NIT Official Annexure Header ====== -->
+    <div style="text-align: center; margin-bottom: 4px;">
+        <div style="font-size: 9pt; color: #333; margin-bottom: 2px; font-weight: bold;">
+            NATIONAL INSTITUTE OF TECHNOLOGY, TIRUCHIRAPPALLI 620015
+        </div>
+        <div style="font-size: 9pt; font-weight: bold; color: #333; border-bottom: 1px solid #333; display: inline-block; padding-bottom: 1px; min-width: 200px;">
+            DEPARTMENT OF: {{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else '___________________________' }}
+        </div>
     </div>
 
-    <div class="section-title">Signature of Technical Sub-Committee</div>
-    <table class="data-table">
+    <!-- Double-rule separator -->
+    <div style="border-top: 3px double #333; margin: 6px 0 8px 0;"></div>
+
+    <!-- Annexure Title Block -->
+    <div style="text-align: center; margin-bottom: 8px;">
+        <div style="font-size: 10pt; font-weight: bold; text-decoration: underline; margin-bottom: 3px;">Annexure</div>
+        <div style="font-size: 10pt; font-weight: bold; text-decoration: underline; text-transform: uppercase; letter-spacing: 0.5px;">
+            SPECIFICATIONS FINALIZED BY THE TECHNICAL SUB-COMMITTEE
+        </div>
+    </div>
+
+    <!-- File No -->
+    <div style="font-size: 9.5pt; font-weight: bold; margin-bottom: 10px;">
+        File No: <span style="font-weight: bold;">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else '' }}</span>
+    </div>
+
+    <!-- Details Table — exact layout as official form -->
+    <table style="width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 14px;">
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: normal; width: 42%;">Name of the Department</td>
+            <td style="border: 1px solid #333; padding: 5px 7px;" colspan="2">{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top; font-weight: normal;">Name of the Purchase Indentor</td>
+            <td style="border: 1px solid #333; padding: 5px 7px;" colspan="2">
+                <strong>Name:</strong> {{ pr.initiator.name }}<br/>
+                <strong>Designation:</strong> {{ pr.initiator.designation or 'Faculty' }}<br/>
+                <strong>Contact:</strong> {{ pr.initiator.email }}
+            </td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: normal;">Name of the laboratory/office</td>
+            <td style="border: 1px solid #333; padding: 5px 7px;" colspan="2">{{ pr.form_data.get('laboratory_office', '') }}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: normal; vertical-align: top;" rowspan="2">Source of fund</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: right; width: 35%;">
+                {% set fund = pr.form_data.get('source_of_fund', '') %}
+                <strong>
+                {% if fund == 'OH-35' %}OH-35/{% elif fund == 'OH-31' %}OH-31/{% elif fund == 'SW' %}SW/{% else %}{{ fund }}{% endif %}
+                </strong>
+            </td>
+            <td style="border: 1px solid #333; padding: 5px 7px; width: 23%;">
+                {% set proj = pr.form_data.get('source_of_fund_project_code', '') %}
+                {% if proj %}Project code: {{ proj }}{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px;" colspan="2">
+                {% if pr.form_data.get('source_of_fund_others') %}Others (Specify): {{ pr.form_data.get('source_of_fund_others') }}{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: normal;">Estimated amount (incl. GST)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: bold;" colspan="2">Rs. {{ "%.2f"|format(grand_total) }}</td>
+        </tr>
+    </table>
+
+    <!-- SPECIFICATIONS heading -->
+    <div style="font-size: 10pt; font-weight: bold; text-decoration: underline; margin-bottom: 8px;">SPECIFICATIONS:</div>
+
+    <!-- Specifications numbered table — exact NIT format -->
+    <table style="width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 14px;">
+        <!-- Row 1 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; width: 8%; vertical-align: middle;">1)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; width: 48%; vertical-align: middle;">Name of the equipment/goods</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: bold;">{{ spec.get('equipment_name', first_item.item_description if first_item else '') }}</td>
+        </tr>
+        <!-- Row 2 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: top;">2)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">Specifications</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 8.5pt; min-height: 40px;">{{ first_item.tech_specs_text or '' if first_item else '' }}</td>
+        </tr>
+        <!-- Row 3 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: top;">3)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">
+                Whether Pre-Dispatch Inspection (PDI) is required?
+                {% if spec.get('pdi_required') == 'Yes' %}
+                <div style="margin-top: 6px; font-style: italic; font-size: 8.5pt;">In case the answer to the above is 'Yes', furnish detailed justification.</div>
+                {% endif %}
+            </td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">
+                {{ spec.get('pdi_required', 'No') }}
+                {% if spec.get('pdi_required') == 'Yes' %}
+                <div style="margin-top: 6px; border-top: 1px solid #ccc; padding-top: 4px; font-style: italic; font-size: 8.5pt;">{{ spec.get('pdi_justification', '') }}</div>
+                {% endif %}
+            </td>
+        </tr>
+        <!-- Row 4 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">4)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">Whether Pre-bid meeting is required?</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
+                {{ spec.get('pre_bid_required', 'No') }}
+                <span style="color: #555; font-size: 8pt;">(Yes/No)</span>
+            </td>
+        </tr>
+        <!-- Row 5 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: top;">5)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">Whether item requires any installation &amp; commissioning?</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">
+                {% if first_item_details and first_item_details.get('installation_required', false) %}Yes{% else %}No{% endif %}
+                <span style="color: #555; font-size: 8pt;">(Yes/No)</span>
+            </td>
+        </tr>
+        <!-- Row 5a -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">(a)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle; font-style: italic;">If Yes, indicate in whose scope? <em>(Supplier/Department)</em></td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ spec.get('installation_scope', '') }}</td>
+        </tr>
+        <!-- Row 5b -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">(b)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">If installation &amp; commissioning are required, confirm whether the site is ready.</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
+                {% if first_item_details and first_item_details.get('site_readiness') %}Yes{% else %}No{% endif %}
+            </td>
+        </tr>
+        <!-- Row 6 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">6)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">Whether training is required?</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
+                {{ spec.get('training_required', 'No') }}
+                <span style="color: #555; font-size: 8pt;">(Yes/No)</span>
+            </td>
+        </tr>
+        <!-- Row 6a -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">(a)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">If Yes, please indicate the place i.e., at purchaser's premises or at supplier's premises?</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ spec.get('training_location', '') }}</td>
+        </tr>
+        <!-- Row 7 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">7)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
+                Warranty required<br/>
+                <em style="font-size: 8.5pt;">(mention no. of months)</em>
+            </td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(first_item.warranty or 12) if first_item else '12' }} months</td>
+        </tr>
+        <!-- Row 8 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">8)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
+                Delivery <em style="font-size: 8.5pt;">(in weeks)</em>
+            </td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(first_item.delivery_period or 8) if first_item else '8' }} weeks</td>
+        </tr>
+        <!-- Row 9 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">9)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">Delivery location</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ pr.delivery_location or 'Department Lab, NIT Tiruchirappalli' }}</td>
+        </tr>
+        <!-- Row 10 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">10)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">Technical Eligibility criteria <em style="font-size: 8.5pt;">(if any)</em></td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ spec.get('tech_eligibility', '') }}</td>
+        </tr>
+        <!-- Row 11 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">11)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">Performance Security</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle; font-weight: bold;">{{ "%.1f"|format(pr.performance_security) }}%</td>
+        </tr>
+        <!-- Row 12 -->
+        <tr>
+            <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">12)</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">EMD</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle; font-weight: bold;">{{ "%.1f"|format(pr.emd) }}%</td>
+        </tr>
+    </table>
+
+    <!-- Certification bullets — exact text from official document -->
+    <div style="margin: 14px 0 12px 0; font-size: 9pt; line-height: 1.6;">
+        <div style="margin-bottom: 7px;">
+            &#x276F; Certified that the description of the item/equipment/service indented is generic and does not indicate any particular trade mark, trade name and brand. The specifications are generic and broad based without having any restrictive parameters to suit any particular source of supply. <em>(In case of Proprietary purchases or purchases from single source, the trade mark, trade name or brand may be mentioned.)</em>
+        </div>
+        <div style="margin-bottom: 7px;">
+            &#x276F; The eligibility criteria is not unduly restrictive.
+        </div>
+        <div>
+            &#x276F; The demand for goods is not divided into small quantities to make piecemeal purchases to avoid tendering or the necessity of obtaining the sanction of higher authorities required with reference to the estimated value of the total demand.
+        </div>
+    </div>
+
+    <!-- Signature of Technical Sub-Committee -->
+    <div style="font-size: 10pt; font-weight: bold; margin: 16px 0 8px 0;">Signature of Technical Sub-Committee:</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 9pt;">
         <thead>
-            <tr>
-                <th style="width: 30%">Role</th>
-                <th style="width: 30%">Name</th>
-                <th style="width: 20%">Date</th>
-                <th style="width: 20%">Signature</th>
+            <tr style="background: #f5f8fa;">
+                <th style="border: 1px solid #333; padding: 6px 8px; text-align: center; width: 8%;">S.No</th>
+                <th style="border: 1px solid #333; padding: 6px 8px; text-align: center; width: 38%;">Member</th>
+                <th style="border: 1px solid #333; padding: 6px 8px; text-align: center; width: 27%;">Name</th>
+                <th style="border: 1px solid #333; padding: 6px 8px; text-align: center; width: 27%;">Signature</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td class="bold">HoD, Chairperson</td>
-                <td>{{ hod_user.name if hod_user else 'Chairperson' }}</td>
-                <td>{{ hod_date_str or '-' }}</td>
-                <td>
-                    {% if hod_sig %}<img src="{{ hod_sig }}" style="max-height: 25px; max-width: 80px; object-fit: contain;" />{% else %}-{% endif %}
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">1)</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">HoD, Chairperson</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ hod_user.name if hod_user else '' }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
+                    {% if hod_sig %}<img src="{{ hod_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
             </tr>
             <tr>
-                <td class="bold">Purchase Indentor</td>
-                <td>{{ pr.initiator.name }}</td>
-                <td>{{ initiator_date_str or '-' }}</td>
-                <td>
-                    {% if initiator_sig %}<img src="{{ initiator_sig }}" style="max-height: 25px; max-width: 80px; object-fit: contain;" />{% else %}-{% endif %}
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">2)</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">Purchase Indentor</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ pr.initiator.name }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
+                    {% if initiator_sig %}<img src="{{ initiator_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
             </tr>
             <tr>
-                <td class="bold">Dept. Faculty 1 / Expert</td>
-                <td>{{ first_item.budget_file.expert1.name if (first_item and first_item.budget_file and first_item.budget_file.expert1) else (pr.faculty1.name if pr.faculty1 else 'Expert 1') }}</td>
-                <td>{{ faculty1_date_str or '-' }}</td>
-                <td>
-                    {% if faculty1_sig %}<img src="{{ faculty1_sig }}" style="max-height: 25px; max-width: 80px; object-fit: contain;" />{% else %}-{% endif %}
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">3)</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">Dept.Faculty 1/ Technical expert nominated by HoD</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.expert1.name if (first_item and first_item.budget_file and first_item.budget_file.expert1) else (pr.faculty1.name if pr.faculty1 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
+                    {% if faculty1_sig %}<img src="{{ faculty1_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
             </tr>
             <tr>
-                <td class="bold">Dept. Faculty 2 / Expert</td>
-                <td>{{ first_item.budget_file.expert2.name if (first_item and first_item.budget_file and first_item.budget_file.expert2) else (pr.faculty2.name if pr.faculty2 else 'Expert 2') }}</td>
-                <td>{{ faculty2_date_str or '-' }}</td>
-                <td>
-                    {% if faculty2_sig %}<img src="{{ faculty2_sig }}" style="max-height: 25px; max-width: 80px; object-fit: contain;" />{% else %}-{% endif %}
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">4)</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">Dept.Faculty 2/ Technical expert nominated by HoD</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.expert2.name if (first_item and first_item.budget_file and first_item.budget_file.expert2) else (pr.faculty2.name if pr.faculty2 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
+                    {% if faculty2_sig %}<img src="{{ faculty2_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
             </tr>
             <tr>
-                <td class="bold">Faculty - Nominated by Director</td>
-                <td>{{ first_item.budget_file.director_faculty.name if (first_item and first_item.budget_file and first_item.budget_file.director_faculty) else (pr.faculty3.name if pr.faculty3 else 'Director Nominee') }}</td>
-                <td>{{ faculty3_date_str or '-' }}</td>
-                <td>
-                    {% if faculty3_sig %}<img src="{{ faculty3_sig }}" style="max-height: 25px; max-width: 80px; object-fit: contain;" />{% else %}-{% endif %}
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">5)</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">Faculty - Nominated by the Director</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.director_faculty.name if (first_item and first_item.budget_file and first_item.budget_file.director_faculty) else (pr.faculty3.name if pr.faculty3 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
+                    {% if faculty3_sig %}<img src="{{ faculty3_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
             </tr>
         </tbody>

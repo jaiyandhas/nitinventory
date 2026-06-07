@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, FileText, AlertTriangle
+  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle
 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { prApi, budgetApi, adminApi, assetsApi } from '../services/api';
@@ -13,7 +13,6 @@ import toast from 'react-hot-toast';
 import { PRHeader } from '../components/pr/detail/PRHeader';
 import { PRItemsTable } from '../components/pr/detail/PRItemsTable';
 import { PRTimeline } from '../components/pr/detail/PRTimeline';
-import { PRDocuments } from '../components/pr/detail/PRDocuments';
 import { PRCommitteePanel } from '../components/pr/detail/PRCommitteePanel';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
 
@@ -36,9 +35,8 @@ export const PRDetailPage: React.FC = () => {
   const isHodOrAbove = user && user.role?.group_key !== 'faculty';
 
   const [showHistory, setShowHistory] = useState(true);
-  const [activeTab, setActiveTab] = useState<'stages' | 'compliance'>('stages');
+
   const [selectedStageKey, setSelectedStageKey] = useState<string>('request');
-  const [selectedDocKey, setSelectedDocKey] = useState<string>('indent');
 
   // Admin control states
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
@@ -279,31 +277,7 @@ export const PRDetailPage: React.FC = () => {
         formatCurrency={formatCurrency}
       />
 
-      {/* Tabs Menu */}
-      <div className="flex border-b border-slate-200 bg-white p-2 rounded-lg shadow-sm">
-        <button
-          onClick={() => setActiveTab('stages')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-bold transition-all border ${
-            activeTab === 'stages'
-              ? 'bg-[#1a3a6b] text-white border-transparent shadow-sm'
-              : 'text-slate-600 hover:text-slate-800 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <Layers size={16} /> Workflow Stage Workspace
-        </button>
-        <button
-          onClick={() => setActiveTab('compliance')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-bold transition-all border ${
-            activeTab === 'compliance'
-              ? 'bg-[#1a3a6b] text-white border-transparent shadow-sm'
-              : 'text-slate-600 hover:text-slate-800 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <FileText size={16} /> Compliance GFR Documents
-        </button>
-      </div>
-
-      {activeTab === 'stages' ? (
+      {(
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Main workspace */}
           <div className="lg:col-span-8 space-y-6">
@@ -1002,14 +976,6 @@ export const PRDetailPage: React.FC = () => {
 
           </div>
         </div>
-      ) : (
-        /* Compliance GFR Documents directory tab view */
-        <PRDocuments
-          pr={pr}
-          formatCurrency={formatCurrency}
-          selectedDocKey={selectedDocKey}
-          setSelectedDocKey={setSelectedDocKey}
-        />
       )}
 
       {/* Procurement Mode Form Details */}
