@@ -239,7 +239,7 @@ class FlowEngineService:
         from app.core.config import settings
 
         # Freeze user details
-        frozen_actor_name = user.name
+        frozen_actor_name = f"{user.title} {user.name}" if user.title else user.name
         frozen_designation = user.designation
         
         # Load department if not loaded
@@ -270,6 +270,7 @@ class FlowEngineService:
             remarks=remarks,
             acted_at=datetime.utcnow(),
             frozen_actor_name=frozen_actor_name,
+            frozen_title=user.title,
             frozen_designation=frozen_designation,
             frozen_department=frozen_department,
             frozen_signature_path=frozen_sig_path,
@@ -408,6 +409,17 @@ class FlowEngineService:
         role_value = step.role.value if (step.role_id and step.role) else None
         is_faculty = (role_value == "faculty") or (step.user_group == "faculty")
         is_initiator_acting_as_faculty = (is_faculty and pr.initiator_id == user.id)
+
+        # Enforce that only the Superintendent who assigned the DA can perform subsequent steps
+        if step.role_id:
+            if step.role and step.role.value == "superintendent" and pr.flow and pr.flow.step_order > 1:
+                await self.db.refresh(pr, ["assignments"])
+                if pr.assignments:
+                    latest_assignment = pr.assignments[-1]
+                    if latest_assignment.assigned_by_id != user.id:
+                        await self.db.refresh(latest_assignment, ["assigned_by"])
+                        assigner_name = latest_assignment.assigned_by.name if latest_assignment.assigned_by else f"ID {latest_assignment.assigned_by_id}"
+                        raise ValueError(f"Only the Superintendent who assigned the Dealing Assistant ({assigner_name}) can perform this action")
 
         # Check by role_id first
         if step.role_id:

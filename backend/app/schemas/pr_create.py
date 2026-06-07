@@ -46,3 +46,17 @@ class PRCreatePayload(BaseModel):
     purchase_type: str = "department"
     form_data: Optional[dict] = None
     items: List[PRItemCreate]
+    
+    # New official indent form fields (stored in form_data JSONB in database)
+    laboratory_office: Optional[str] = None
+    source_of_fund: Optional[str] = None
+    source_of_fund_project_code: Optional[str] = None
+    source_of_fund_others: Optional[str] = None
+    bog_resolution_no: Optional[str] = None
+    fc_resolution_no: Optional[str] = None
+    item_category: Optional[str] = None
+    basis_of_estimate_others: Optional[str] = None
+    purpose: Optional[str] = None
+    purpose_justification: Optional[str] = None
+    mii_clause: Optional[str] = None
+    mii_justification: Optional[str] = None

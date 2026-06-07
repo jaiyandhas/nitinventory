@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 
 from app.core.database import get_db
@@ -20,7 +21,7 @@ async def get_financial_years(db: AsyncSession = Depends(get_db), user: User = D
 @router.get("/procurement-methods")
 async def get_procurement_methods(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(ProcurementManager))
-    return [{"id": p.id, "name": p.name, "description": p.description} for p in result.scalars()]
+    return [{"id": p.id, "name": p.name, "description": p.description, "form_schema": p.form_schema, "max_amount": p.max_amount} for p in result.scalars()]
 
 
 @router.get("/files")
@@ -36,9 +37,43 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
     if not fy:
         return []
 
-    query = select(BudgetMaster).where(
-        and_(BudgetMaster.financial_year_id == fy.id, BudgetMaster.department_id == user.department_id)
-    )
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+
+    filters = [
+        BudgetMaster.financial_year_id == fy.id
+    ]
+    
+    if group_key in ("hod", "faculty") and user.department_id:
+        filters.append(BudgetMaster.department_id == user.department_id)
+
+    if group_key == "faculty":
+        from sqlalchemy import exists, or_
+        from app.models.purchase_request import PurchaseRequestItem, PurchaseRequest, PurchaseRequestHistory
+        
+        pr_budget_exists = exists().where(
+            and_(
+                PurchaseRequestItem.budget_file_id == BudgetMaster.id,
+                PurchaseRequestItem.purchase_request_id == PurchaseRequest.id,
+                or_(
+                    PurchaseRequest.initiator_id == user.id,
+                    exists().where(
+                        and_(
+                            PurchaseRequestHistory.purchase_request_id == PurchaseRequest.id,
+                            PurchaseRequestHistory.current_approver_id == user.id
+                        )
+                    )
+                )
+            )
+        )
+        filters.append(
+            or_(
+                BudgetMaster.allocated_initiator_id == user.id,
+                pr_budget_exists
+            )
+        )
+
+    query = select(BudgetMaster).options(selectinload(BudgetMaster.allocated_initiator)).where(and_(*filters))
     result = await db.execute(query)
     entries = result.scalars().all()
     return [
@@ -50,6 +85,13 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "available_amount": b.available_balance,
             "available_balance": b.available_balance,
             "unit_cost": b.unit_cost, "quantity": b.quantity,
+            "remarks": b.remarks,
+            "allocated_initiator_id": b.allocated_initiator_id,
+            "allocated_initiator": {
+                "id": b.allocated_initiator.id,
+                "name": b.allocated_initiator.name,
+                "email": b.allocated_initiator.email
+            } if b.allocated_initiator else None,
         }
         for b in entries
     ]
@@ -87,11 +129,43 @@ async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depen
             "total_allocation": 0, "committed_amount": 0, "utilized_amount": 0, "available_balance": 0
         }
 
-    dept_id = user.department_id
-    query = select(BudgetMaster).where(BudgetMaster.financial_year_id == fy.id)
-    if dept_id:
-        query = query.where(BudgetMaster.department_id == dept_id)
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+
+    filters = [
+        BudgetMaster.financial_year_id == fy.id
+    ]
+    
+    if group_key in ("hod", "faculty") and user.department_id:
+        filters.append(BudgetMaster.department_id == user.department_id)
+
+    if group_key == "faculty":
+        from sqlalchemy import exists, or_
+        from app.models.purchase_request import PurchaseRequestItem, PurchaseRequest, PurchaseRequestHistory
         
+        pr_budget_exists = exists().where(
+            and_(
+                PurchaseRequestItem.budget_file_id == BudgetMaster.id,
+                PurchaseRequestItem.purchase_request_id == PurchaseRequest.id,
+                or_(
+                    PurchaseRequest.initiator_id == user.id,
+                    exists().where(
+                        and_(
+                            PurchaseRequestHistory.purchase_request_id == PurchaseRequest.id,
+                            PurchaseRequestHistory.current_approver_id == user.id
+                        )
+                    )
+                )
+            )
+        )
+        filters.append(
+            or_(
+                BudgetMaster.allocated_initiator_id == user.id,
+                pr_budget_exists
+            )
+        )
+
+    query = select(BudgetMaster).where(and_(*filters))
     result = await db.execute(query)
     entries = result.scalars().all()
     total = sum(b.total_allocation for b in entries)
@@ -267,6 +341,7 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
 
     expert1_id = body.get("expert1_id")
     expert2_id = body.get("expert2_id")
+    allocated_initiator_id = body.get("allocated_initiator_id")
 
     if expert1_id:
         u1_res = await db.execute(select(User).where(and_(User.id == expert1_id, User.department_id == user.department_id)))
@@ -276,12 +351,17 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
         u2_res = await db.execute(select(User).where(and_(User.id == expert2_id, User.department_id == user.department_id)))
         if not u2_res.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Expert 2 must be a faculty member in your department")
+    if allocated_initiator_id:
+        u3_res = await db.execute(select(User).where(and_(User.id == allocated_initiator_id, User.department_id == user.department_id)))
+        if not u3_res.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Allocated purchase initiator must be a faculty member in your department")
 
     if expert1_id and expert2_id and expert1_id == expert2_id:
         raise HTTPException(status_code=400, detail="Expert 1 and Expert 2 must be different faculty members")
 
     b.expert1_id = expert1_id
     b.expert2_id = expert2_id
+    b.allocated_initiator_id = allocated_initiator_id
 
     # Update active PRs associated with this budget file to use the new committee
     # Only update PRs that are in the "Administrative Approval" phase (or haven't started flow yet)

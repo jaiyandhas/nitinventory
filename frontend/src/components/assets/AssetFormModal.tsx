@@ -38,6 +38,17 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
   const [unitCost, setUnitCost] = useState('');
   const [warrantyExpiry, setWarrantyExpiry] = useState('');
   const [deptId, setDeptId] = useState('');
+  
+  // New Stock Register and Supplier details states
+  const [quantity, setQuantity] = useState('1');
+  const [supplierName, setSupplierName] = useState('');
+  const [supplierAddress, setSupplierAddress] = useState('');
+  const [billNumber, setBillNumber] = useState('');
+  const [billDate, setBillDate] = useState('');
+  const [stockRegisterVolume, setStockRegisterVolume] = useState('');
+  const [stockRegisterPage, setStockRegisterPage] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [remarks, setRemarks] = useState('');
 
   // Pre-fill department if HOD
   useEffect(() => {
@@ -98,6 +109,15 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
       unitCost,
       warrantyExpiry,
       deptId,
+      quantity,
+      supplierName,
+      supplierAddress,
+      billNumber,
+      billDate,
+      stockRegisterVolume,
+      stockRegisterPage,
+      deliveryDate,
+      remarks,
     });
   };
 
@@ -259,9 +279,9 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian / In-Charge</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian Name</label>
               <input 
                 type="text" 
                 value={custodian} 
@@ -271,13 +291,25 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
               />
             </div>
             <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity *</label>
+              <input 
+                type="number" 
+                value={quantity} 
+                onChange={e => setQuantity(e.target.value)} 
+                min="1"
+                className="input-field w-full" 
+                required
+              />
+            </div>
+            <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Serial Number</label>
               <input 
                 type="text" 
                 value={serialNumber} 
                 onChange={e => setSerialNumber(e.target.value)} 
-                placeholder="e.g. SN123456789" 
-                className="input-field w-full" 
+                placeholder={parseInt(quantity) > 1 ? "Ignored for Qty > 1" : "e.g. SN123456789"} 
+                disabled={parseInt(quantity) > 1}
+                className="input-field w-full disabled:bg-slate-100 disabled:text-slate-400" 
               />
             </div>
             <div>
@@ -306,12 +338,104 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Warranty Expiry</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Warranty upto</label>
               <input 
                 type="date" 
                 value={warrantyExpiry} 
                 onChange={e => setWarrantyExpiry(e.target.value)} 
                 className="input-field w-full text-slate-600" 
+              />
+            </div>
+          </div>
+
+          <h3 className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wider border-b border-slate-100 pb-1 mt-6 mb-2">Supplier & Bill Details</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Supplier Name</label>
+              <input 
+                type="text" 
+                value={supplierName} 
+                onChange={e => setSupplierName(e.target.value)} 
+                placeholder="e.g. M/s. USAM TECHNOLOGY SOLUTIONS" 
+                className="input-field w-full" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Bill Number</label>
+              <input 
+                type="text" 
+                value={billNumber} 
+                onChange={e => setBillNumber(e.target.value)} 
+                placeholder="e.g. 201156/TRY2425" 
+                className="input-field w-full" 
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Bill Date</label>
+              <input 
+                type="date" 
+                value={billDate} 
+                onChange={e => setBillDate(e.target.value)} 
+                className="input-field w-full text-slate-600" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Delivery Date</label>
+              <input 
+                type="date" 
+                value={deliveryDate} 
+                onChange={e => setDeliveryDate(e.target.value)} 
+                className="input-field w-full text-slate-600" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Stock Vol.</label>
+                <input 
+                  type="text" 
+                  value={stockRegisterVolume} 
+                  onChange={e => setStockRegisterVolume(e.target.value)} 
+                  placeholder="Vol" 
+                  className="input-field w-full" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Stock Page</label>
+                <input 
+                  type="text" 
+                  value={stockRegisterPage} 
+                  onChange={e => setStockRegisterPage(e.target.value)} 
+                  placeholder="Page" 
+                  className="input-field w-full" 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Supplier Address</label>
+              <textarea 
+                value={supplierAddress} 
+                onChange={e => setSupplierAddress(e.target.value)} 
+                placeholder="Enter supplier address..." 
+                className="input-field w-full h-20 py-2 resize-none" 
+              />
+            </div>
+          </div>
+
+          <h3 className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wider border-b border-slate-100 pb-1 mt-6 mb-2">Remarks & Notes</h3>
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Remarks</label>
+              <textarea 
+                value={remarks} 
+                onChange={e => setRemarks(e.target.value)} 
+                placeholder="Any additional remarks..." 
+                className="input-field w-full h-20 py-2 resize-none" 
               />
             </div>
           </div>

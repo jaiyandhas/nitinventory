@@ -35,9 +35,17 @@ async def create_tables():
         # We do not drop tables in production/development to persist user changes
         # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS remarks TEXT;"))
         await conn.execute(text("ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS is_closed BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS supplier_address TEXT;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS bill_number VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS bill_date DATE;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS stock_register_volume VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS stock_register_page VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS delivery_date DATE;"))
         await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS tender_vendors_threshold INTEGER;"))
         await conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS expert1_id INTEGER;"))
         await conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS expert2_id INTEGER;"))
@@ -60,6 +68,12 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS expert1_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS expert2_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS director_faculty_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS allocated_initiator_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
+
+        # Update existing purchase categories for cat3 bounds
+        await conn.execute(text("UPDATE purchase_categories SET max_amount = 999999999, title = REPLACE(title, 'Rs. 10,00,001 to Rs. 30,00,000', 'Rs. 10,00,001 and above') WHERE title LIKE '%Rs. 10,00,001 to Rs. 30,00,000%';"))
+        # Also clean up old southern region service center references or GFR details if needed (no column drop needed)
+
 
         # referrals table
         await conn.execute(text("""
@@ -82,6 +96,23 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_designation VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_department VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_signature_path VARCHAR(500);"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS title VARCHAR(50) DEFAULT 'Mr.';"))
+        await conn.execute(text("ALTER TABLE purchase_request_history ADD COLUMN IF NOT EXISTS frozen_title VARCHAR(50);"))
+
+        # Clean up existing users' names and set titles
+        await conn.execute(text("UPDATE users SET title='Dr.', name='A. Kumar' WHERE name='Dr. A. Kumar';"))
+        await conn.execute(text("UPDATE users SET title='Dr.', name='B. Prasad' WHERE name='Dr. B. Prasad';"))
+        await conn.execute(text("UPDATE users SET title='Dr.', name='C. Singh' WHERE name='Dr. C. Singh';"))
+        await conn.execute(text("UPDATE users SET title='Prof.', name='D. Rajan' WHERE name='Prof. D. Rajan';"))
+        await conn.execute(text("UPDATE users SET title='Prof.', name='H. Dean' WHERE name='Prof. H. Dean';"))
+        await conn.execute(text("UPDATE users SET title='Prof.', name='J. Director' WHERE name='Prof. J. Director';"))
+        await conn.execute(text("UPDATE users SET title='Mr.', name='L. Superintendent' WHERE name='Mr. L. Superintendent';"))
+        await conn.execute(text("UPDATE users SET title='Mr.', name='K. DA Stores' WHERE name='Mr. K. DA Stores';"))
+        await conn.execute(text("UPDATE users SET title='Mr.', name='M. Consultant' WHERE name='Mr. M. Consultant';"))
+        await conn.execute(text("UPDATE users SET title='Mr.', name='N. Asst Registrar' WHERE name='Mr. N. Asst Registrar';"))
+        await conn.execute(text("UPDATE users SET title='Mr.', name='O. Dy Registrar' WHERE name='Mr. O. Dy Registrar';"))
+        await conn.execute(text("UPDATE users SET title='Dr.', name='P. Associate Dean' WHERE name='Dr. P. Associate Dean';"))
+        await conn.execute(text("UPDATE users SET title='Prof.', name='Q. Dean Budget' WHERE name='Prof. Q. Dean Budget';"))
 
         # pr_referrals query document field
         await conn.execute(text("ALTER TABLE pr_referrals ADD COLUMN IF NOT EXISTS query_document_path VARCHAR(500);"))
@@ -192,23 +223,24 @@ async def seed():
         if not has_users:
             print("  Seeding users...")
             users_spec = [
-                ("Administrator", "admin@nitt.edu", "System Administrator", "male", "admin", None),
-                ("Dr. A. Kumar", "faculty.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Dr. B. Prasad", "faculty1.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Dr. C. Singh", "faculty2.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Prof. D. Rajan", "hod.cse@nitt.edu", "Head of Department", "male", "hod", cse),
-                ("Prof. H. Dean", "dean.pd@nitt.edu", "Dean P&D", "male", "dean_pd", None),
-                ("Prof. J. Director", "director@nitt.edu", "Director", "male", "director", None),
-                ("Mr. L. Superintendent", "sp.stores@nitt.edu", "Superintendent S&P", "male", "superintendent", None),
-                ("Mr. K. DA Stores", "da.stores@nitt.edu", "Dealing Assistant", "male", "dealing_assistant", None),
-                ("Mr. M. Consultant", "consultant.stores@nitt.edu", "Consultant S&P", "male", "consultant_sp", None),
-                ("Mr. N. Asst Registrar", "ar.stores@nitt.edu", "Assistant Registrar", "male", "assistant_registrar", None),
-                ("Mr. O. Dy Registrar", "dr.stores@nitt.edu", "Deputy Registrar", "male", "deputy_registrar", None),
-                ("Dr. P. Associate Dean", "vg.pd@nitt.edu", "Associate Dean P&D", "male", "adpd", None),
-                ("Prof. Q. Dean Budget", "dean.budget@nitt.edu", "Dean P&D (Budget)", "male", "dean_pd", None),
+                ("Mr.", "Administrator", "admin@nitt.edu", "System Administrator", "male", "admin", None),
+                ("Dr.", "A. Kumar", "faculty.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+                ("Dr.", "B. Prasad", "faculty1.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+                ("Dr.", "C. Singh", "faculty2.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+                ("Prof.", "D. Rajan", "hod.cse@nitt.edu", "Head of Department", "male", "hod", cse),
+                ("Prof.", "H. Dean", "dean.pd@nitt.edu", "Dean P&D", "male", "dean_pd", None),
+                ("Prof.", "J. Director", "director@nitt.edu", "Director", "male", "director", None),
+                ("Mr.", "L. Superintendent", "sp.stores@nitt.edu", "Superintendent S&P", "male", "superintendent", None),
+                ("Mr.", "K. DA Stores", "da.stores@nitt.edu", "Dealing Assistant", "male", "dealing_assistant", None),
+                ("Mr.", "M. Consultant", "consultant.stores@nitt.edu", "Consultant S&P", "male", "consultant_sp", None),
+                ("Mr.", "N. Asst Registrar", "ar.stores@nitt.edu", "Assistant Registrar", "male", "assistant_registrar", None),
+                ("Mr.", "O. Dy Registrar", "dr.stores@nitt.edu", "Deputy Registrar", "male", "deputy_registrar", None),
+                ("Dr.", "P. Associate Dean", "vg.pd@nitt.edu", "Associate Dean P&D", "male", "adpd", None),
+                ("Prof.", "Q. Dean Budget", "dean.budget@nitt.edu", "Dean P&D (Budget)", "male", "dean_pd", None),
             ]
-            for name, email, desig, gender, role_val, dept in users_spec:
+            for title, name, email, desig, gender, role_val, dept in users_spec:
                 u = User(
+                    title=title,
                     name=name,
                     email=email,
                     hashed_password=DEMO_PASSWORD,
@@ -385,9 +417,9 @@ async def seed():
                         procurement_id=proc.id
                     )
                     cat3 = PurchaseCategory(
-                        title=f"{proc.name}: Rs. 10,00,001 to Rs. 30,00,000",
+                        title=f"{proc.name}: Rs. 10,00,001 and above",
                         min_amount=1_000_001,
-                        max_amount=3_000_000,
+                        max_amount=999_999_999,
                         is_active=True,
                         procurement_id=proc.id
                     )
@@ -526,6 +558,13 @@ async def seed():
                 db.add(Settings(key_name=key, value=val))
             await db.flush()
 
+        # Seed designations if not present
+        desig_check = await db.execute(select(Settings).where(Settings.key_name == "designations"))
+        if not desig_check.scalar_one_or_none():
+            default_desigs = "Assistant Professor,Associate Professor,Professor,Dean P&D (Budget),Dean P&D,Director,Registrar"
+            db.add(Settings(key_name="designations", value=default_desigs))
+            await db.flush()
+
         # Reseed 8 representative purchase requests at various stages of completion
         print("🌱 Seeding 8 representative workflow-centric purchase requests...")
         from app.models.purchase_request import (
@@ -586,7 +625,8 @@ async def seed():
                 utilized_amount=float(amount) if budget_deduct else 0.0,
                 expert1_id=faculty1.id,
                 expert2_id=faculty2.id,
-                director_faculty_id=faculty2.id
+                director_faculty_id=faculty2.id,
+                allocated_initiator_id=initiator.id
             )
             db.add(bm)
             await db.flush()

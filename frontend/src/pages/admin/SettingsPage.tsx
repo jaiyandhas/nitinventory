@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, ArrowDown, Plus, Trash2, Edit, AlertTriangle, UserX, UserCheck, Key, Lock, Calendar, RefreshCw } from 'lucide-react';
-import { adminApi } from '../../services/api';
+import { adminApi, authApi } from '../../services/api';
+import { TitleSelect, DesignationSelect } from '../../components/UserFormFields';
 import { toast } from 'react-hot-toast';
 import { formatCurrency } from '../../utils/format';
 import { REQUIREMENT_TYPES } from '../../config/prCreationQuestions';
@@ -36,6 +37,14 @@ export const SettingsPage: React.FC = () => {
   const [isProcModalOpen, setIsProcModalOpen] = useState(false);
   const [editingProc, setEditingProc] = useState<any>(null);
 
+  // Budget Category states
+  const [newBudgetExpVal, setNewBudgetExpVal] = useState('');
+  const [newBudgetItemVal, setNewBudgetItemVal] = useState('');
+  const [showAddBudgetExp, setShowAddBudgetExp] = useState(false);
+  const [showAddBudgetItem, setShowAddBudgetItem] = useState(false);
+  const [newDesignationVal, setNewDesignationVal] = useState('');
+  const [showAddDesignation, setShowAddDesignation] = useState(false);
+
   // Financial Year states
   const [isFyModalOpen, setIsFyModalOpen] = useState(false);
 
@@ -48,6 +57,14 @@ export const SettingsPage: React.FC = () => {
   const { data: users = [] } = useQuery({ queryKey: ['admin_users_list'], queryFn: () => adminApi.users().then(res => res.data) });
   const { data: depts = [] } = useQuery({ queryKey: ['admin_depts'], queryFn: () => adminApi.departments().then(res => res.data) });
   const { data: fys = [] } = useQuery({ queryKey: ['admin_financial_years'], queryFn: () => adminApi.financialYears().then(res => res.data) });
+  const { data: budgetCats = { expenditure_categories: [], item_categories: [], added_by_dean: { expenditure: [], item: [] } } } = useQuery({
+    queryKey: ['budget_categories'],
+    queryFn: () => adminApi.getCategories().then(res => res.data),
+  });
+  const { data: designations = [] } = useQuery({
+    queryKey: ['admin_designations'],
+    queryFn: () => authApi.designations().then(res => res.data)
+  });
 
   const filteredWfs = workflows.filter((w: any) => 
     w.category_id === selectedCat && 
@@ -221,6 +238,46 @@ export const SettingsPage: React.FC = () => {
     }
   });
 
+  const addBudgetCategoryMutation = useMutation({
+    mutationFn: (data: { type: 'expenditure' | 'item'; value: string }) => adminApi.addCategory(data),
+    onSuccess: () => {
+      toast.success('Budget category added');
+      queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error adding budget category')
+  });
+
+  const deleteBudgetCategoryMutation = useMutation({
+    mutationFn: ({ type, value }: { type: 'expenditure' | 'item'; value: string }) => adminApi.deleteBudgetCategory(type, value),
+    onSuccess: () => {
+      toast.success('Budget category deleted');
+      queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error deleting budget category')
+  });
+
+  const addDesignationMutation = useMutation({
+    mutationFn: (value: string) => adminApi.addDesignation(value),
+    onSuccess: () => {
+      toast.success('Designation added');
+      queryClient.invalidateQueries({ queryKey: ['admin_designations'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to add designation');
+    }
+  });
+
+  const deleteDesignationMutation = useMutation({
+    mutationFn: (value: string) => adminApi.deleteDesignation(value),
+    onSuccess: () => {
+      toast.success('Designation removed');
+      queryClient.invalidateQueries({ queryKey: ['admin_designations'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to remove designation');
+    }
+  });
+
   const handleFyAddSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -337,6 +394,7 @@ export const SettingsPage: React.FC = () => {
     const is_approved = formData.get('is_approved') === 'on';
 
     const data: any = {
+      title: String(formData.get('title') || 'Mr.'),
       name: String(formData.get('name')),
       email: String(formData.get('email')),
       designation: String(formData.get('designation') || ''),
@@ -790,6 +848,227 @@ export const SettingsPage: React.FC = () => {
               </table>
             </div>
           </div>
+
+          {/* Budget Categories Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Expenditure Categories Card */}
+            <div className="card p-6 bg-white border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">Expenditure Categories</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Budget allocation sources (e.g. CAPEX, OPEX)</p>
+                </div>
+                {!showAddBudgetExp ? (
+                  <button
+                    onClick={() => setShowAddBudgetExp(true)}
+                    className="btn-primary flex items-center gap-1 text-xs py-1.5 px-3 font-semibold"
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                ) : null}
+              </div>
+
+              {showAddBudgetExp && (
+                <div className="flex gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-md">
+                  <input
+                    type="text"
+                    placeholder="Enter category name..."
+                    value={newBudgetExpVal}
+                    onChange={(e) => setNewBudgetExpVal(e.target.value)}
+                    className="input-field flex-1 text-xs py-1"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newBudgetExpVal.trim()) return;
+                      addBudgetCategoryMutation.mutate({ type: 'expenditure', value: newBudgetExpVal.trim() });
+                      setNewBudgetExpVal('');
+                      setShowAddBudgetExp(false);
+                    }}
+                    className="btn-primary py-1 px-3 text-xs"
+                    disabled={addBudgetCategoryMutation.isPending}
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddBudgetExp(false);
+                      setNewBudgetExpVal('');
+                    }}
+                    className="btn-secondary py-1 px-3 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto border border-slate-200 rounded-md">
+                {budgetCats.expenditure_categories?.map((cat: string) => {
+                  return (
+                    <div key={cat} className="flex justify-between items-center px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                      <span className="font-semibold text-sm text-slate-800">{cat}</span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete expenditure category "${cat}"?`)) {
+                            deleteBudgetCategoryMutation.mutate({ type: 'expenditure', value: cat });
+                          }
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Item Categories Card */}
+            <div className="card p-6 bg-white border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">Item Categories</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Asset classification types (e.g. computer, software)</p>
+                </div>
+                {!showAddBudgetItem ? (
+                  <button
+                    onClick={() => setShowAddBudgetItem(true)}
+                    className="btn-primary flex items-center gap-1 text-xs py-1.5 px-3 font-semibold"
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                ) : null}
+              </div>
+
+              {showAddBudgetItem && (
+                <div className="flex gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-md">
+                  <input
+                    type="text"
+                    placeholder="Enter category name..."
+                    value={newBudgetItemVal}
+                    onChange={(e) => setNewBudgetItemVal(e.target.value)}
+                    className="input-field flex-1 text-xs py-1"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newBudgetItemVal.trim()) return;
+                      addBudgetCategoryMutation.mutate({ type: 'item', value: newBudgetItemVal.trim() });
+                      setNewBudgetItemVal('');
+                      setShowAddBudgetItem(false);
+                    }}
+                    className="btn-primary py-1 px-3 text-xs"
+                    disabled={addBudgetCategoryMutation.isPending}
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddBudgetItem(false);
+                      setNewBudgetItemVal('');
+                    }}
+                    className="btn-secondary py-1 px-3 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto border border-slate-200 rounded-md">
+                {budgetCats.item_categories?.map((cat: string) => {
+                  return (
+                    <div key={cat} className="flex justify-between items-center px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                      <span className="font-semibold text-sm text-slate-800">{cat}</span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete item category "${cat}"?`)) {
+                            deleteBudgetCategoryMutation.mutate({ type: 'item', value: cat });
+                          }
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Designations Management Section */}
+          <div className="mt-8 border-t border-slate-200 pt-8">
+            <div className="max-w-md card p-6 bg-white border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">User Designations</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Manage professional roles used for user onboarding and approval verification</p>
+                </div>
+                {!showAddDesignation ? (
+                  <button
+                    onClick={() => setShowAddDesignation(true)}
+                    className="btn-primary flex items-center gap-1 text-xs py-1.5 px-3 font-semibold"
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                ) : null}
+              </div>
+
+              {showAddDesignation && (
+                <div className="flex gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-md">
+                  <input
+                    type="text"
+                    placeholder="Enter designation name..."
+                    value={newDesignationVal}
+                    onChange={(e) => setNewDesignationVal(e.target.value)}
+                    className="input-field flex-1 text-xs py-1"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newDesignationVal.trim()) return;
+                      addDesignationMutation.mutate(newDesignationVal.trim());
+                      setNewDesignationVal('');
+                      setShowAddDesignation(false);
+                    }}
+                    className="btn-primary py-1 px-3 text-xs"
+                    disabled={addDesignationMutation.isPending}
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddDesignation(false);
+                      setNewDesignationVal('');
+                    }}
+                    className="btn-secondary py-1 px-3 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto border border-slate-200 rounded-md">
+                {designations.map((desig: string) => {
+                  return (
+                    <div key={desig} className="flex justify-between items-center px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                      <span className="font-semibold text-sm text-slate-800">{desig}</span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete designation "${desig}"?`)) {
+                            deleteDesignationMutation.mutate(desig);
+                          }
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -936,7 +1215,7 @@ export const SettingsPage: React.FC = () => {
                       return (
                         <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-5 py-3">
-                            <div className="font-bold text-slate-800">{u.name}</div>
+                            <div className="font-bold text-slate-800">{u.title ? `${u.title} ` : ''}{u.name}</div>
                             {u.is_approved ? null : (
                               <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Pending Approval</span>
                             )}
@@ -1660,7 +1939,13 @@ export const SettingsPage: React.FC = () => {
             <form onSubmit={handleUserSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
-                <input name="name" type="text" required defaultValue={editingUser?.name} placeholder="e.g. Dr. John Doe" className="input-field w-full" />
+                <div className="flex gap-2">
+                  <TitleSelect
+                    name="title"
+                    defaultValue={editingUser?.title || 'Mr.'}
+                  />
+                  <input name="name" type="text" required defaultValue={editingUser?.name} placeholder="John Doe" className="input-field flex-1" />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
@@ -1690,7 +1975,12 @@ export const SettingsPage: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Designation</label>
-                  <input name="designation" type="text" defaultValue={editingUser?.designation || ''} placeholder="e.g. Professor" className="input-field w-full" />
+                  <DesignationSelect
+                    name="designation"
+                    defaultValue={editingUser?.designation || ''}
+                    designations={designations}
+                    className="input-field w-full"
+                  />
                 </div>
               </div>
               <div>

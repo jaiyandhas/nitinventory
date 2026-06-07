@@ -22,7 +22,7 @@ import { FormsDashboardPage } from './pages/FormsDashboard';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[] }> = ({ children, roles }) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[]; prRestricted?: boolean }> = ({ children, roles, prRestricted }) => {
   const { user, loading } = useAuth();
   if (loading) return (
     <div className="min-h-screen formal-bg flex items-center justify-center">
@@ -31,6 +31,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[] }> 
   );
   if (!user) return <Navigate to="/login" replace />;
   if (roles && user.role && !roles.includes(user.role.group_key)) return <Navigate to="/dashboard" replace />;
+  if (prRestricted && user.designation === 'Dean P&D (Budget)') return <Navigate to="/dashboard" replace />;
   return <DashboardLayout><ErrorBoundary>{children}</ErrorBoundary></DashboardLayout>;
 };
 
@@ -53,10 +54,10 @@ const App: React.FC = () => {
 
         {/* Protected routes */}
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/pr" element={<ProtectedRoute><PRListPage /></ProtectedRoute>} />
+        <Route path="/pr" element={<ProtectedRoute prRestricted><PRListPage /></ProtectedRoute>} />
         <Route path="/forms" element={<ProtectedRoute><FormsDashboardPage /></ProtectedRoute>} />
         <Route path="/pr/create" element={<ProtectedRoute roles={['faculty', 'hod']}><NewPRPage /></ProtectedRoute>} />
-        <Route path="/pr/:id" element={<ProtectedRoute><PRDetailPage /></ProtectedRoute>} />
+        <Route path="/pr/:id" element={<ProtectedRoute prRestricted><PRDetailPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 
         <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver']}><BudgetPage /></ProtectedRoute>} />

@@ -67,16 +67,12 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                 <label className="label">Quantity to Purchase *</label>
                 <input
                   type="number"
-                  min={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? 0 : 1}
-                  max={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost)}
-                  required={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) > 0}
-                  disabled={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0}
-                  className="input-field disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed"
-                  value={Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? '0' : item.quantity}
-                  onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
+                  disabled={true}
+                  className="input-field disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed font-medium text-slate-750"
+                  value={file.quantity}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
-                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency((Number(Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 ? '0' : item.quantity) || 0) * file.unit_cost)}</strong>
+                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency(file.quantity * file.unit_cost)}</strong>
                 </span>
               </div>
 
@@ -195,6 +191,104 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                   <span className="font-semibold">{item.tech_specs_file.name}</span>
                 </div>
               )}
+            </div>
+            {/* Technical Sub-Committee Specifications Annexure Fields */}
+            <div className="border-t border-slate-200 pt-4 space-y-4">
+              <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+                Technical Specifications &amp; Committee Details (Annexure)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="label">Name of Equipment *</label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    placeholder="e.g. High Performance Server Module"
+                    value={item.equipment_name || ''}
+                    onChange={(e) => onUpdate(fid, { equipment_name: e.target.value })}
+                  />
+                </div>
+
+                <YesNoSelect
+                  label="Pre-Dispatch Inspection (PDI) Required?"
+                  required
+                  value={item.pdi_required || ''}
+                  onChange={(v) => onUpdate(fid, { pdi_required: v as any })}
+                />
+
+                {item.pdi_required === 'Yes' && (
+                  <div className="md:col-span-2">
+                    <label className="label">Justification for PDI *</label>
+                    <input
+                      type="text"
+                      required
+                      className="input-field"
+                      placeholder="Enter justification..."
+                      value={item.pdi_justification || ''}
+                      onChange={(e) => onUpdate(fid, { pdi_justification: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                <YesNoSelect
+                  label="Pre-bid Meeting Required?"
+                  required
+                  value={item.pre_bid_required || ''}
+                  onChange={(v) => onUpdate(fid, { pre_bid_required: v as any })}
+                />
+
+                {item.installation_required === 'Yes' && (
+                  <div>
+                    <label className="label">Scope of Installation *</label>
+                    <select
+                      required
+                      className="input-field bg-white"
+                      value={item.installation_scope || ''}
+                      onChange={(e) => onUpdate(fid, { installation_scope: e.target.value as any })}
+                    >
+                      <option value="" disabled>Select Scope</option>
+                      <option value="Supplier">Supplier</option>
+                      <option value="Department">Department</option>
+                    </select>
+                  </div>
+                )}
+
+                <YesNoSelect
+                  label="Training Required?"
+                  required
+                  value={item.training_required || ''}
+                  onChange={(v) => onUpdate(fid, { training_required: v as any })}
+                />
+
+                {item.training_required === 'Yes' && (
+                  <div>
+                    <label className="label">Training Location *</label>
+                    <select
+                      required
+                      className="input-field bg-white"
+                      value={item.training_location || ''}
+                      onChange={(e) => onUpdate(fid, { training_location: e.target.value as any })}
+                    >
+                      <option value="" disabled>Select Location</option>
+                      <option value="Purchaser's Premises">Purchaser's Premises</option>
+                      <option value="Supplier's Premises">Supplier's Premises</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="md:col-span-2">
+                  <label className="label">Technical Eligibility Criteria (for bidders) *</label>
+                  <textarea
+                    required
+                    rows={3}
+                    className="input-field min-h-[80px]"
+                    placeholder="Specify minimum experience, certifications, etc."
+                    value={item.tech_eligibility || ''}
+                    onChange={(e) => onUpdate(fid, { tech_eligibility: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
           </section>
         );

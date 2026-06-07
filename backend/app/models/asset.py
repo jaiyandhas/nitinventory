@@ -52,6 +52,20 @@ class Asset(Base):
     unit_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     warranty_expiry: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     delivery_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("delivery_items.id"), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    asset_source: Mapped[str] = mapped_column(String(50), default="legacy")
+    
+    # Stock Register details
+    supplier_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    supplier_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    bill_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    bill_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    stock_register_volume: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    stock_register_page: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    delivery_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     department: Mapped["Department"] = relationship("Department", back_populates="assets")  # type: ignore

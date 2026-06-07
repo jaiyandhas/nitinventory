@@ -14,6 +14,7 @@ export interface Department {
 
 export interface User {
   id: number;
+  title?: string;
   name: string;
   email: string;
   designation: string;
@@ -40,6 +41,7 @@ export interface ProcurementMethod {
   name: string;
   description?: string;
   max_amount?: number;
+  form_schema?: Record<string, any> | null;
 }
 
 export interface BudgetFile {
@@ -283,6 +285,17 @@ export interface Asset {
   purchase_date?: string;
   warranty_expiry?: string;
   qr_code_url?: string;
+  remarks?: string;
+  is_verified?: boolean;
+  verified_at?: string;
+  asset_source?: string;
+  supplier_name?: string;
+  supplier_address?: string;
+  bill_number?: string;
+  bill_date?: string;
+  stock_register_volume?: string;
+  stock_register_page?: string;
+  delivery_date?: string;
   movements?: { from_room?: string; to_room: string; moved_at: string; reason?: string }[];
   logs?: { action: string; performed_at: string; old_value?: object; new_value?: object }[];
 }

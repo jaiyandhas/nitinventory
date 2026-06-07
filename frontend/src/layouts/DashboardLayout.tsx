@@ -34,9 +34,12 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const location = useLocation();
   const navigate = useNavigate();
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.roles || (user?.role && item.roles.includes(user.role.group_key))
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.label === 'Purchase Requests' && user?.designation === 'Dean P&D (Budget)') {
+      return false;
+    }
+    return !item.roles || (user?.role && item.roles.includes(user.role.group_key));
+  });
 
   const handleLogout = async () => {
     await logout();

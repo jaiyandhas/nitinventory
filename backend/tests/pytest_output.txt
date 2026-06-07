@@ -1,0 +1,2078 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+rootdir: /app
+plugins: asyncio-1.4.0, anyio-4.13.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items / 2 deselected / 1 selected
+
+tests/test_committee_workflow.py F                                       [100%]
+
+=================================== FAILURES ===================================
+___________________ test_tender_routing_operators_evaluation ___________________
+
+db_session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0xffffb58f9ee0>
+
+    @pytest.mark.asyncio
+    async def test_tender_routing_operators_evaluation(db_session):
+        """Test that tender routing is correctly evaluated for all dynamic operators comparison."""
+        flow_service = FlowEngineService(db_session)
+    
+        # Load faculty
+        faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+        faculty = faculty_res.scalar_one()
+    
+        # Fetch Phase TD (Tendering)
+        phase_td_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Tendering"))
+        phase_td = phase_td_res.scalar_one()
+    
+        # Create a draft PR
+        pr = PurchaseRequest(
+            amount=250000.0,
+            purchase_type="department",
+            initiator_id=faculty.id,
+            category_id=2,
+            financial_year_id=1,
+            procurement_id=1,
+            current_status="draft",
+        )
+        db_session.add(pr)
+        await db_session.flush()
+    
+        # Create dummy commercial evaluations (say 3 vendors)
+        for i in range(3):
+            ce = CommercialEvaluation(
+                purchase_request_id=pr.id,
+                vendor_name=f"Vendor {i}",
+                is_qualified=True,
+            )
+            db_session.add(ce)
+        await db_session.flush()
+    
+        # We will query the workflow step 6 (the Director step in Tendering phase)
+        # and update its tender_vendors_threshold and tender_vendors_comparison, then test routing.
+        step_res = await db_session.execute(
+            select(WorkFlowHierarchy).where(
+                and_(
+                    WorkFlowHierarchy.phase_id == phase_td.id,
+                    WorkFlowHierarchy.step_order == 6,
+                    WorkFlowHierarchy.category_id == pr.category_id,
+                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                )
+            )
+        )
+        step = step_res.scalar_one()
+        step.tender_vendors_threshold = 3
+    
+        # Operator 1: "<" (Skip if count < 3. Here count=3, so 3 < 3 is False, meaning do NOT skip -> returns step order 6)
+        step.tender_vendors_comparison = "<"
+        await db_session.flush()
+        next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
+>       assert next_step == 6
+E       assert None == 6
+
+tests/test_committee_workflow.py:159: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+2026-06-02 05:52:27,370 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-06-02 05:52:27,370 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-06-02 05:52:27,371 INFO sqlalchemy.engine.Engine select current_schema()
+2026-06-02 05:52:27,371 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-06-02 05:52:27,371 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-06-02 05:52:27,372 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-06-02 05:52:27,372 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-06-02 05:52:27,375 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,375 INFO sqlalchemy.engine.Engine [generated in 0.00010s] ('departments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine [cached since 0.00208s ago] ('role_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine [cached since 0.002381s ago] ('users', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine [cached since 0.002624s ago] ('financial_years', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,377 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine [cached since 0.002858s ago] ('purchase_categories', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine [cached since 0.003118s ago] ('procurement_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine [cached since 0.003358s ago] ('phase_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine [cached since 0.003544s ago] ('budget_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,378 INFO sqlalchemy.engine.Engine [cached since 0.003731s ago] ('settings', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine [cached since 0.003979s ago] ('tc_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine [cached since 0.004205s ago] ('purchase_requests', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine [cached since 0.004402s ago] ('purchase_request_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine [cached since 0.004599s ago] ('purchase_request_flows', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,379 INFO sqlalchemy.engine.Engine [cached since 0.004784s ago] ('purchase_request_history', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine [cached since 0.004967s ago] ('purchase_request_assignments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine [cached since 0.005157s ago] ('technical_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine [cached since 0.005338s ago] ('financial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine [cached since 0.005517s ago] ('commercial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,380 INFO sqlalchemy.engine.Engine [cached since 0.0057s ago] ('documents', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.005906s ago] ('workflow_hierarchies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.006101s ago] ('vendor_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.006276s ago] ('email_queue', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.006453s ago] ('deliveries', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.006632s ago] ('delivery_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,381 INFO sqlalchemy.engine.Engine [cached since 0.006823s ago] ('dept_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine [cached since 0.007019s ago] ('stores_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine [cached since 0.007197s ago] ('discrepancies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine [cached since 0.007373s ago] ('payments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine [cached since 0.007575s ago] ('assets', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,382 INFO sqlalchemy.engine.Engine [cached since 0.00775s ago] ('asset_movements', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,383 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,383 INFO sqlalchemy.engine.Engine [cached since 0.007932s ago] ('asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,383 INFO sqlalchemy.engine.Engine ALTER TABLE departments DROP CONSTRAINT fk_departments_director_faculty
+2026-06-02 05:52:27,383 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,384 INFO sqlalchemy.engine.Engine ALTER TABLE departments DROP CONSTRAINT fk_departments_expert1
+2026-06-02 05:52:27,384 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,385 INFO sqlalchemy.engine.Engine ALTER TABLE departments DROP CONSTRAINT fk_departments_expert2
+2026-06-02 05:52:27,385 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,385 INFO sqlalchemy.engine.Engine 
+DROP TABLE asset_logs
+2026-06-02 05:52:27,386 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,387 INFO sqlalchemy.engine.Engine 
+DROP TABLE asset_movements
+2026-06-02 05:52:27,387 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,389 INFO sqlalchemy.engine.Engine 
+DROP TABLE assets
+2026-06-02 05:52:27,389 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,390 INFO sqlalchemy.engine.Engine 
+DROP TABLE discrepancies
+2026-06-02 05:52:27,391 INFO sqlalchemy.engine.Engine [no key 0.00007s] ()
+2026-06-02 05:52:27,392 INFO sqlalchemy.engine.Engine 
+DROP TABLE stores_asset_logs
+2026-06-02 05:52:27,392 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,395 INFO sqlalchemy.engine.Engine 
+DROP TABLE dept_asset_logs
+2026-06-02 05:52:27,395 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,397 INFO sqlalchemy.engine.Engine 
+DROP TABLE payments
+2026-06-02 05:52:27,397 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,398 INFO sqlalchemy.engine.Engine 
+DROP TABLE delivery_items
+2026-06-02 05:52:27,398 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,399 INFO sqlalchemy.engine.Engine 
+DROP TABLE deliveries
+2026-06-02 05:52:27,399 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,401 INFO sqlalchemy.engine.Engine 
+DROP TABLE documents
+2026-06-02 05:52:27,401 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,403 INFO sqlalchemy.engine.Engine 
+DROP TABLE commercial_evaluations
+2026-06-02 05:52:27,403 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,404 INFO sqlalchemy.engine.Engine 
+DROP TABLE financial_evaluations
+2026-06-02 05:52:27,404 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,405 INFO sqlalchemy.engine.Engine 
+DROP TABLE technical_evaluations
+2026-06-02 05:52:27,405 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,407 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_request_assignments
+2026-06-02 05:52:27,407 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,408 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_request_history
+2026-06-02 05:52:27,408 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,410 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_request_flows
+2026-06-02 05:52:27,410 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,411 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_request_items
+2026-06-02 05:52:27,411 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,412 INFO sqlalchemy.engine.Engine 
+DROP TABLE workflow_hierarchies
+2026-06-02 05:52:27,412 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,415 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_requests
+2026-06-02 05:52:27,415 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,418 INFO sqlalchemy.engine.Engine 
+DROP TABLE budget_master
+2026-06-02 05:52:27,418 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,420 INFO sqlalchemy.engine.Engine 
+DROP TABLE purchase_categories
+2026-06-02 05:52:27,420 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,421 INFO sqlalchemy.engine.Engine 
+DROP TABLE users
+2026-06-02 05:52:27,421 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,422 INFO sqlalchemy.engine.Engine 
+DROP TABLE email_queue
+2026-06-02 05:52:27,422 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,423 INFO sqlalchemy.engine.Engine 
+DROP TABLE vendor_master
+2026-06-02 05:52:27,423 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,424 INFO sqlalchemy.engine.Engine 
+DROP TABLE tc_master
+2026-06-02 05:52:27,424 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,424 INFO sqlalchemy.engine.Engine 
+DROP TABLE settings
+2026-06-02 05:52:27,424 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,425 INFO sqlalchemy.engine.Engine 
+DROP TABLE phase_managers
+2026-06-02 05:52:27,425 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,426 INFO sqlalchemy.engine.Engine 
+DROP TABLE procurement_managers
+2026-06-02 05:52:27,426 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,427 INFO sqlalchemy.engine.Engine 
+DROP TABLE financial_years
+2026-06-02 05:52:27,427 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,427 INFO sqlalchemy.engine.Engine 
+DROP TABLE role_managers
+2026-06-02 05:52:27,427 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,428 INFO sqlalchemy.engine.Engine 
+DROP TABLE departments
+2026-06-02 05:52:27,428 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
+2026-06-02 05:52:27,429 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,429 INFO sqlalchemy.engine.Engine [cached since 0.05437s ago] ('departments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,429 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,429 INFO sqlalchemy.engine.Engine [cached since 0.05482s ago] ('role_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine [cached since 0.05509s ago] ('users', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine [cached since 0.05531s ago] ('financial_years', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine [cached since 0.05552s ago] ('purchase_categories', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,430 INFO sqlalchemy.engine.Engine [cached since 0.05573s ago] ('procurement_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05596s ago] ('phase_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05612s ago] ('budget_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05628s ago] ('settings', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05646s ago] ('tc_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05663s ago] ('purchase_requests', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,431 INFO sqlalchemy.engine.Engine [cached since 0.05679s ago] ('purchase_request_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine [cached since 0.05697s ago] ('purchase_request_flows', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine [cached since 0.05713s ago] ('purchase_request_history', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine [cached since 0.05734s ago] ('purchase_request_assignments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine [cached since 0.05756s ago] ('technical_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,432 INFO sqlalchemy.engine.Engine [cached since 0.05776s ago] ('financial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05794s ago] ('commercial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05808s ago] ('documents', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05825s ago] ('workflow_hierarchies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05841s ago] ('vendor_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05858s ago] ('email_queue', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,433 INFO sqlalchemy.engine.Engine [cached since 0.05876s ago] ('deliveries', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05895s ago] ('delivery_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05911s ago] ('dept_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05928s ago] ('stores_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05944s ago] ('discrepancies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05961s ago] ('payments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,434 INFO sqlalchemy.engine.Engine [cached since 0.05977s ago] ('assets', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine [cached since 0.05993s ago] ('asset_movements', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine [cached since 0.06009s ago] ('asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine 
+CREATE TABLE departments (
+	id SERIAL NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	short_code VARCHAR(20) NOT NULL, 
+	expert1_id INTEGER, 
+	expert2_id INTEGER, 
+	director_faculty_id INTEGER, 
+	PRIMARY KEY (id), 
+	UNIQUE (short_code)
+)
+
+
+2026-06-02 05:52:27,435 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,441 INFO sqlalchemy.engine.Engine 
+CREATE TABLE role_managers (
+	id SERIAL NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	value VARCHAR(50) NOT NULL, 
+	group_key VARCHAR(50) NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (value)
+)
+
+
+2026-06-02 05:52:27,441 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,444 INFO sqlalchemy.engine.Engine 
+CREATE TABLE financial_years (
+	id SERIAL NOT NULL, 
+	label VARCHAR(9) NOT NULL, 
+	start_date DATE NOT NULL, 
+	end_date DATE NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	PRIMARY KEY (id)
+)
+
+
+2026-06-02 05:52:27,444 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,445 INFO sqlalchemy.engine.Engine 
+CREATE TABLE procurement_managers (
+	id SERIAL NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	description VARCHAR(255), 
+	max_amount FLOAT, 
+	PRIMARY KEY (id), 
+	UNIQUE (name)
+)
+
+
+2026-06-02 05:52:27,445 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,450 INFO sqlalchemy.engine.Engine 
+CREATE TABLE phase_managers (
+	id SERIAL NOT NULL, 
+	phase_name VARCHAR(50) NOT NULL, 
+	description VARCHAR(255), 
+	phase_order INTEGER NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (phase_name)
+)
+
+
+2026-06-02 05:52:27,450 INFO sqlalchemy.engine.Engine [no key 0.00009s] ()
+2026-06-02 05:52:27,453 INFO sqlalchemy.engine.Engine 
+CREATE TABLE settings (
+	id SERIAL NOT NULL, 
+	key_name VARCHAR(255) NOT NULL, 
+	value VARCHAR(1024) NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (key_name)
+)
+
+
+2026-06-02 05:52:27,453 INFO sqlalchemy.engine.Engine [no key 0.00004s] ()
+2026-06-02 05:52:27,458 INFO sqlalchemy.engine.Engine 
+CREATE TABLE tc_master (
+	id SERIAL NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	content TEXT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id)
+)
+
+
+2026-06-02 05:52:27,458 INFO sqlalchemy.engine.Engine [no key 0.00007s] ()
+2026-06-02 05:52:27,463 INFO sqlalchemy.engine.Engine 
+CREATE TABLE vendor_master (
+	id SERIAL NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	email VARCHAR(255) NOT NULL, 
+	contact_number VARCHAR(20), 
+	address VARCHAR(500), 
+	pincode VARCHAR(10), 
+	gst_number VARCHAR(15), 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (email)
+)
+
+
+2026-06-02 05:52:27,463 INFO sqlalchemy.engine.Engine [no key 0.00006s] ()
+2026-06-02 05:52:27,466 INFO sqlalchemy.engine.Engine 
+CREATE TABLE email_queue (
+	id SERIAL NOT NULL, 
+	subject VARCHAR(255) NOT NULL, 
+	body TEXT NOT NULL, 
+	recipient VARCHAR(255) NOT NULL, 
+	attachments JSON, 
+	sent BOOLEAN NOT NULL, 
+	error_message TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	sent_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id)
+)
+
+
+2026-06-02 05:52:27,466 INFO sqlalchemy.engine.Engine [no key 0.00006s] ()
+2026-06-02 05:52:27,469 INFO sqlalchemy.engine.Engine 
+CREATE TABLE users (
+	id SERIAL NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	email VARCHAR(255) NOT NULL, 
+	hashed_password VARCHAR(255) NOT NULL, 
+	designation VARCHAR(255) NOT NULL, 
+	gender VARCHAR(20) NOT NULL, 
+	role_id INTEGER, 
+	department_id INTEGER, 
+	is_active BOOLEAN NOT NULL, 
+	signature_path VARCHAR(500), 
+	is_approved BOOLEAN NOT NULL, 
+	last_login_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (email), 
+	FOREIGN KEY(role_id) REFERENCES role_managers (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id)
+)
+
+
+2026-06-02 05:52:27,469 INFO sqlalchemy.engine.Engine [no key 0.00006s] ()
+2026-06-02 05:52:27,474 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_categories (
+	id SERIAL NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	min_amount FLOAT NOT NULL, 
+	max_amount FLOAT NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	procurement_id INTEGER NOT NULL, 
+	requirement_type VARCHAR(100), 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id) ON DELETE CASCADE
+)
+
+
+2026-06-02 05:52:27,474 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,476 INFO sqlalchemy.engine.Engine 
+CREATE TABLE budget_master (
+	id SERIAL NOT NULL, 
+	department_id INTEGER, 
+	financial_year_id INTEGER NOT NULL, 
+	expenditure_category VARCHAR(255) NOT NULL, 
+	item_name VARCHAR(255) NOT NULL, 
+	category VARCHAR(255) NOT NULL, 
+	course_code VARCHAR(255) NOT NULL, 
+	unit_cost FLOAT NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	total_cost FLOAT NOT NULL, 
+	file_no VARCHAR(64) NOT NULL, 
+	is_revision BOOLEAN NOT NULL, 
+	locked_amount FLOAT NOT NULL, 
+	deducted_amount FLOAT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id), 
+	FOREIGN KEY(financial_year_id) REFERENCES financial_years (id)
+)
+
+
+2026-06-02 05:52:27,476 INFO sqlalchemy.engine.Engine [no key 0.00008s] ()
+2026-06-02 05:52:27,480 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_requests (
+	id SERIAL NOT NULL, 
+	icr_number VARCHAR(100), 
+	category_id INTEGER NOT NULL, 
+	financial_year_id INTEGER NOT NULL, 
+	initiator_id INTEGER NOT NULL, 
+	nominee_id INTEGER, 
+	procurement_id INTEGER NOT NULL, 
+	purchase_type VARCHAR(50) NOT NULL, 
+	current_status VARCHAR(50) NOT NULL, 
+	amount FLOAT NOT NULL, 
+	emd FLOAT NOT NULL, 
+	performance_security FLOAT NOT NULL, 
+	vendor_list_link VARCHAR(500), 
+	is_item_split BOOLEAN NOT NULL, 
+	item_split_justification TEXT, 
+	is_quantity_split BOOLEAN NOT NULL, 
+	quantity_split_details TEXT, 
+	is_service_center_in_south BOOLEAN NOT NULL, 
+	service_center_south_desc VARCHAR(500), 
+	basis_of_estimate_details TEXT, 
+	delivery_mode VARCHAR(255), 
+	delivery_location VARCHAR(255), 
+	exemption BOOLEAN NOT NULL, 
+	exemption_remarks TEXT, 
+	is_training_required BOOLEAN NOT NULL, 
+	training_type VARCHAR(255), 
+	training_vendor VARCHAR(255), 
+	training_comments VARCHAR(500), 
+	tender_reference_number VARCHAR(255), 
+	date_of_tender DATE, 
+	date_of_tech_bid_opening DATE, 
+	date_of_financial_bid_opening DATE, 
+	aa_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	te_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	te_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	fs_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	fs_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	po_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	po_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	faculty1_id INTEGER, 
+	faculty2_id INTEGER, 
+	faculty3_id INTEGER, 
+	aa_approver_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (icr_number), 
+	FOREIGN KEY(category_id) REFERENCES purchase_categories (id), 
+	FOREIGN KEY(financial_year_id) REFERENCES financial_years (id), 
+	FOREIGN KEY(initiator_id) REFERENCES users (id), 
+	FOREIGN KEY(nominee_id) REFERENCES users (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id), 
+	FOREIGN KEY(faculty1_id) REFERENCES users (id), 
+	FOREIGN KEY(faculty2_id) REFERENCES users (id), 
+	FOREIGN KEY(faculty3_id) REFERENCES users (id), 
+	FOREIGN KEY(aa_approver_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,480 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,486 INFO sqlalchemy.engine.Engine 
+CREATE TABLE workflow_hierarchies (
+	id SERIAL NOT NULL, 
+	user_id INTEGER, 
+	category_id INTEGER NOT NULL, 
+	phase_id INTEGER NOT NULL, 
+	procurement_id INTEGER NOT NULL, 
+	step_order INTEGER NOT NULL, 
+	user_type VARCHAR(255) NOT NULL, 
+	user_group VARCHAR(100), 
+	role_id INTEGER, 
+	purchase_type VARCHAR(100) NOT NULL, 
+	is_enabled BOOLEAN NOT NULL, 
+	tender_vendors_threshold INTEGER, 
+	tender_vendors_comparison VARCHAR(20), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id), 
+	FOREIGN KEY(category_id) REFERENCES purchase_categories (id) ON DELETE CASCADE, 
+	FOREIGN KEY(phase_id) REFERENCES phase_managers (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(role_id) REFERENCES role_managers (id)
+)
+
+
+2026-06-02 05:52:27,487 INFO sqlalchemy.engine.Engine [no key 0.00008s] ()
+2026-06-02 05:52:27,491 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_request_items (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	budget_file_id INTEGER NOT NULL, 
+	item_description VARCHAR(500) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	estimated_total FLOAT NOT NULL, 
+	charges FLOAT, 
+	requirement_type VARCHAR(100) NOT NULL, 
+	availability VARCHAR(100) NOT NULL, 
+	availability_remarks TEXT, 
+	site_readiness BOOLEAN NOT NULL, 
+	site_readiness_remarks TEXT, 
+	warranty FLOAT, 
+	delivery_period FLOAT, 
+	present_stock VARCHAR(255), 
+	justification_for_procurement TEXT, 
+	previous_file_no_reference VARCHAR(255), 
+	installation_required BOOLEAN NOT NULL, 
+	tech_specs_text TEXT, 
+	gem_link VARCHAR(500), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(budget_file_id) REFERENCES budget_master (id)
+)
+
+
+2026-06-02 05:52:27,492 INFO sqlalchemy.engine.Engine [no key 0.00023s] ()
+2026-06-02 05:52:27,497 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_request_flows (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	phase_id INTEGER NOT NULL, 
+	step_order INTEGER NOT NULL, 
+	rejected BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (purchase_request_id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(phase_id) REFERENCES phase_managers (id)
+)
+
+
+2026-06-02 05:52:27,497 INFO sqlalchemy.engine.Engine [no key 0.00012s] ()
+2026-06-02 05:52:27,503 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_request_history (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	current_approver_id INTEGER, 
+	status VARCHAR(255) NOT NULL, 
+	remarks TEXT, 
+	acted_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(current_approver_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,503 INFO sqlalchemy.engine.Engine [no key 0.00010s] ()
+2026-06-02 05:52:27,517 INFO sqlalchemy.engine.Engine 
+CREATE TABLE purchase_request_assignments (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	assigned_by_id INTEGER NOT NULL, 
+	assigned_da_id INTEGER NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	assigned_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(assigned_by_id) REFERENCES users (id), 
+	FOREIGN KEY(assigned_da_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,517 INFO sqlalchemy.engine.Engine [no key 0.00017s] ()
+2026-06-02 05:52:27,526 INFO sqlalchemy.engine.Engine 
+CREATE TABLE technical_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	is_qualified BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+2026-06-02 05:52:27,526 INFO sqlalchemy.engine.Engine [no key 0.00041s] ()
+2026-06-02 05:52:27,536 INFO sqlalchemy.engine.Engine 
+CREATE TABLE financial_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	quoted_amount FLOAT NOT NULL, 
+	ranking VARCHAR(10), 
+	is_awarded BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+2026-06-02 05:52:27,536 INFO sqlalchemy.engine.Engine [no key 0.00015s] ()
+2026-06-02 05:52:27,544 INFO sqlalchemy.engine.Engine 
+CREATE TABLE commercial_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	vendor_email VARCHAR(255), 
+	quoted_amount FLOAT, 
+	is_qualified BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+2026-06-02 05:52:27,544 INFO sqlalchemy.engine.Engine [no key 0.00013s] ()
+2026-06-02 05:52:27,549 INFO sqlalchemy.engine.Engine 
+CREATE TABLE documents (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	doc_key VARCHAR(255) NOT NULL, 
+	doc_value JSON NOT NULL, 
+	uploaded_by_id INTEGER, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(uploaded_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,549 INFO sqlalchemy.engine.Engine [no key 0.00012s] ()
+2026-06-02 05:52:27,557 INFO sqlalchemy.engine.Engine 
+CREATE TABLE deliveries (
+	id SERIAL NOT NULL, 
+	po_id INTEGER NOT NULL, 
+	challan_number VARCHAR(100), 
+	invoice_number VARCHAR(100), 
+	invoice_pdf_path VARCHAR(512), 
+	challan_pdf_path VARCHAR(512), 
+	department_id INTEGER NOT NULL, 
+	received_date TIMESTAMP WITHOUT TIME ZONE, 
+	status VARCHAR(50) NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(po_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id)
+)
+
+
+2026-06-02 05:52:27,558 INFO sqlalchemy.engine.Engine [no key 0.00012s] ()
+2026-06-02 05:52:27,567 INFO sqlalchemy.engine.Engine 
+CREATE TABLE delivery_items (
+	id SERIAL NOT NULL, 
+	delivery_id INTEGER NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	category VARCHAR(100) NOT NULL, 
+	challan_quantity INTEGER NOT NULL, 
+	unit_price FLOAT NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(delivery_id) REFERENCES deliveries (id)
+)
+
+
+2026-06-02 05:52:27,567 INFO sqlalchemy.engine.Engine [no key 0.00020s] ()
+2026-06-02 05:52:27,575 INFO sqlalchemy.engine.Engine 
+CREATE TABLE payments (
+	id SERIAL NOT NULL, 
+	delivery_id INTEGER NOT NULL, 
+	invoice_number VARCHAR(100) NOT NULL, 
+	amount FLOAT NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	approved_by_id INTEGER, 
+	paid_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(delivery_id) REFERENCES deliveries (id), 
+	FOREIGN KEY(approved_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,575 INFO sqlalchemy.engine.Engine [no key 0.00011s] ()
+2026-06-02 05:52:27,582 INFO sqlalchemy.engine.Engine 
+CREATE TABLE dept_asset_logs (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	logged_by_id INTEGER NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	condition VARCHAR(50) NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian_name VARCHAR(255), 
+	serial_numbers JSON, 
+	remarks TEXT, 
+	logged_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(logged_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,582 INFO sqlalchemy.engine.Engine [no key 0.00012s] ()
+2026-06-02 05:52:27,591 INFO sqlalchemy.engine.Engine 
+CREATE TABLE stores_asset_logs (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	logged_by_id INTEGER NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	condition VARCHAR(50) NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian_name VARCHAR(255), 
+	serial_numbers JSON, 
+	is_approved BOOLEAN NOT NULL, 
+	approved_by_id INTEGER, 
+	approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(logged_by_id) REFERENCES users (id), 
+	FOREIGN KEY(approved_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,591 INFO sqlalchemy.engine.Engine [no key 0.00013s] ()
+2026-06-02 05:52:27,597 INFO sqlalchemy.engine.Engine 
+CREATE TABLE discrepancies (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	challan_qty INTEGER NOT NULL, 
+	dept_qty INTEGER NOT NULL, 
+	stores_qty INTEGER NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	resolution_remarks TEXT, 
+	resolved_by_id INTEGER, 
+	resolved_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(resolved_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,597 INFO sqlalchemy.engine.Engine [no key 0.00009s] ()
+2026-06-02 05:52:27,601 INFO sqlalchemy.engine.Engine 
+CREATE TABLE assets (
+	id SERIAL NOT NULL, 
+	asset_tag VARCHAR(50) NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	category VARCHAR(50) NOT NULL, 
+	department_id INTEGER NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian VARCHAR(255), 
+	serial_number VARCHAR(255), 
+	legacy_asset_tag VARCHAR(100), 
+	fund_source VARCHAR(100), 
+	condition VARCHAR(50) NOT NULL, 
+	disposal_status VARCHAR(50) NOT NULL, 
+	qr_code_url VARCHAR(500), 
+	purchase_date DATE, 
+	unit_cost FLOAT, 
+	warranty_expiry DATE, 
+	delivery_item_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (asset_tag), 
+	FOREIGN KEY(department_id) REFERENCES departments (id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id)
+)
+
+
+2026-06-02 05:52:27,601 INFO sqlalchemy.engine.Engine [no key 0.00008s] ()
+2026-06-02 05:52:27,606 INFO sqlalchemy.engine.Engine 
+CREATE TABLE asset_movements (
+	id SERIAL NOT NULL, 
+	asset_id INTEGER NOT NULL, 
+	from_building VARCHAR(100), 
+	from_room VARCHAR(100), 
+	to_building VARCHAR(100) NOT NULL, 
+	to_room VARCHAR(100) NOT NULL, 
+	moved_by_id INTEGER NOT NULL, 
+	reason TEXT, 
+	moved_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(asset_id) REFERENCES assets (id), 
+	FOREIGN KEY(moved_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,606 INFO sqlalchemy.engine.Engine [no key 0.00009s] ()
+2026-06-02 05:52:27,610 INFO sqlalchemy.engine.Engine 
+CREATE TABLE asset_logs (
+	id SERIAL NOT NULL, 
+	asset_id INTEGER NOT NULL, 
+	action VARCHAR(100) NOT NULL, 
+	performed_by_id INTEGER NOT NULL, 
+	old_value JSON, 
+	new_value JSON, 
+	performed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(asset_id) REFERENCES assets (id), 
+	FOREIGN KEY(performed_by_id) REFERENCES users (id)
+)
+
+
+2026-06-02 05:52:27,610 INFO sqlalchemy.engine.Engine [no key 0.00007s] ()
+2026-06-02 05:52:27,616 INFO sqlalchemy.engine.Engine ALTER TABLE departments ADD CONSTRAINT fk_departments_director_faculty FOREIGN KEY(director_faculty_id) REFERENCES users (id) ON DELETE SET NULL
+2026-06-02 05:52:27,616 INFO sqlalchemy.engine.Engine [no key 0.00014s] ()
+2026-06-02 05:52:27,618 INFO sqlalchemy.engine.Engine ALTER TABLE departments ADD CONSTRAINT fk_departments_expert1 FOREIGN KEY(expert1_id) REFERENCES users (id) ON DELETE SET NULL
+2026-06-02 05:52:27,618 INFO sqlalchemy.engine.Engine [no key 0.00007s] ()
+2026-06-02 05:52:27,619 INFO sqlalchemy.engine.Engine ALTER TABLE departments ADD CONSTRAINT fk_departments_expert2 FOREIGN KEY(expert2_id) REFERENCES users (id) ON DELETE SET NULL
+2026-06-02 05:52:27,619 INFO sqlalchemy.engine.Engine [no key 0.00005s] ()
+2026-06-02 05:52:27,623 INFO sqlalchemy.engine.Engine ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);
+2026-06-02 05:52:27,623 INFO sqlalchemy.engine.Engine [generated in 0.00011s] ()
+2026-06-02 05:52:27,626 INFO sqlalchemy.engine.Engine ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);
+2026-06-02 05:52:27,626 INFO sqlalchemy.engine.Engine [generated in 0.00008s] ()
+2026-06-02 05:52:27,627 INFO sqlalchemy.engine.Engine COMMIT
+🌱 Seeding NIT Inventory (demo: CSE only, password=password)...
+✓ Seeded 408 workflow hierarchy rows
+✅ Seeding complete!
+
+📋 Demo logins (password: password)
+  admin@nitt.edu
+  faculty.cse@nitt.edu
+  faculty1.cse@nitt.edu
+  faculty2.cse@nitt.edu
+  hod.cse@nitt.edu
+  dean.pd@nitt.edu
+  director@nitt.edu
+  sp.stores@nitt.edu
+  da.stores@nitt.edu
+  consultant.stores@nitt.edu
+  ar.stores@nitt.edu
+  dr.stores@nitt.edu
+  vg.pd@nitt.edu
+  dean.budget@nitt.edu
+------------------------------ Captured log setup ------------------------------
+INFO     sqlalchemy.engine.Engine:base.py:1846 select pg_catalog.version()
+INFO     sqlalchemy.engine.Engine:base.py:1846 [raw sql] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 select current_schema()
+INFO     sqlalchemy.engine.Engine:base.py:1846 [raw sql] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 show standard_conforming_strings
+INFO     sqlalchemy.engine.Engine:base.py:1846 [raw sql] ()
+INFO     sqlalchemy.engine.Engine:base.py:2701 BEGIN (implicit)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00010s] ('departments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.00208s ago] ('role_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.002381s ago] ('users', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.002624s ago] ('financial_years', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.002858s ago] ('purchase_categories', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.003118s ago] ('procurement_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.003358s ago] ('phase_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.003544s ago] ('budget_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.003731s ago] ('settings', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.003979s ago] ('tc_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.004205s ago] ('purchase_requests', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.004402s ago] ('purchase_request_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.004599s ago] ('purchase_request_flows', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.004784s ago] ('purchase_request_history', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.004967s ago] ('purchase_request_assignments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.005157s ago] ('technical_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.005338s ago] ('financial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.005517s ago] ('commercial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.0057s ago] ('documents', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.005906s ago] ('workflow_hierarchies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.006101s ago] ('vendor_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.006276s ago] ('email_queue', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.006453s ago] ('deliveries', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.006632s ago] ('delivery_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.006823s ago] ('dept_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.007019s ago] ('stores_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.007197s ago] ('discrepancies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.007373s ago] ('payments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.007575s ago] ('assets', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.00775s ago] ('asset_movements', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.007932s ago] ('asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments DROP CONSTRAINT fk_departments_director_faculty
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments DROP CONSTRAINT fk_departments_expert1
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments DROP CONSTRAINT fk_departments_expert2
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE asset_logs
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE asset_movements
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE assets
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE discrepancies
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00007s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE stores_asset_logs
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE dept_asset_logs
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE payments
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE delivery_items
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE deliveries
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE documents
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE commercial_evaluations
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE financial_evaluations
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE technical_evaluations
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_request_assignments
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_request_history
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_request_flows
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_request_items
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE workflow_hierarchies
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_requests
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE budget_master
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE purchase_categories
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE users
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE email_queue
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE vendor_master
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE tc_master
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE settings
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE phase_managers
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE procurement_managers
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE financial_years
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE role_managers
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+DROP TABLE departments
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00003s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05437s ago] ('departments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05482s ago] ('role_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05509s ago] ('users', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05531s ago] ('financial_years', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05552s ago] ('purchase_categories', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05573s ago] ('procurement_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05596s ago] ('phase_managers', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05612s ago] ('budget_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05628s ago] ('settings', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05646s ago] ('tc_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05663s ago] ('purchase_requests', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05679s ago] ('purchase_request_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05697s ago] ('purchase_request_flows', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05713s ago] ('purchase_request_history', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05734s ago] ('purchase_request_assignments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05756s ago] ('technical_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05776s ago] ('financial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05794s ago] ('commercial_evaluations', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05808s ago] ('documents', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05825s ago] ('workflow_hierarchies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05841s ago] ('vendor_master', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05858s ago] ('email_queue', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05876s ago] ('deliveries', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05895s ago] ('delivery_items', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05911s ago] ('dept_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05928s ago] ('stores_asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05944s ago] ('discrepancies', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05961s ago] ('payments', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05977s ago] ('assets', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.05993s ago] ('asset_movements', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT pg_catalog.pg_class.relname 
+FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace 
+WHERE pg_catalog.pg_class.relname = $1::VARCHAR AND pg_catalog.pg_class.relkind = ANY (ARRAY[$2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR]) AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != $7::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 0.06009s ago] ('asset_logs', 'r', 'p', 'f', 'v', 'm', 'pg_catalog')
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE departments (
+	id SERIAL NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	short_code VARCHAR(20) NOT NULL, 
+	expert1_id INTEGER, 
+	expert2_id INTEGER, 
+	director_faculty_id INTEGER, 
+	PRIMARY KEY (id), 
+	UNIQUE (short_code)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE role_managers (
+	id SERIAL NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	value VARCHAR(50) NOT NULL, 
+	group_key VARCHAR(50) NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (value)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE financial_years (
+	id SERIAL NOT NULL, 
+	label VARCHAR(9) NOT NULL, 
+	start_date DATE NOT NULL, 
+	end_date DATE NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	PRIMARY KEY (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE procurement_managers (
+	id SERIAL NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	description VARCHAR(255), 
+	max_amount FLOAT, 
+	PRIMARY KEY (id), 
+	UNIQUE (name)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE phase_managers (
+	id SERIAL NOT NULL, 
+	phase_name VARCHAR(50) NOT NULL, 
+	description VARCHAR(255), 
+	phase_order INTEGER NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (phase_name)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00009s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE settings (
+	id SERIAL NOT NULL, 
+	key_name VARCHAR(255) NOT NULL, 
+	value VARCHAR(1024) NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (key_name)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00004s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE tc_master (
+	id SERIAL NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	content TEXT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00007s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE vendor_master (
+	id SERIAL NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	email VARCHAR(255) NOT NULL, 
+	contact_number VARCHAR(20), 
+	address VARCHAR(500), 
+	pincode VARCHAR(10), 
+	gst_number VARCHAR(15), 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (email)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00006s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE email_queue (
+	id SERIAL NOT NULL, 
+	subject VARCHAR(255) NOT NULL, 
+	body TEXT NOT NULL, 
+	recipient VARCHAR(255) NOT NULL, 
+	attachments JSON, 
+	sent BOOLEAN NOT NULL, 
+	error_message TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	sent_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00006s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE users (
+	id SERIAL NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	email VARCHAR(255) NOT NULL, 
+	hashed_password VARCHAR(255) NOT NULL, 
+	designation VARCHAR(255) NOT NULL, 
+	gender VARCHAR(20) NOT NULL, 
+	role_id INTEGER, 
+	department_id INTEGER, 
+	is_active BOOLEAN NOT NULL, 
+	signature_path VARCHAR(500), 
+	is_approved BOOLEAN NOT NULL, 
+	last_login_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (email), 
+	FOREIGN KEY(role_id) REFERENCES role_managers (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00006s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_categories (
+	id SERIAL NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	min_amount FLOAT NOT NULL, 
+	max_amount FLOAT NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	procurement_id INTEGER NOT NULL, 
+	requirement_type VARCHAR(100), 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id) ON DELETE CASCADE
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE budget_master (
+	id SERIAL NOT NULL, 
+	department_id INTEGER, 
+	financial_year_id INTEGER NOT NULL, 
+	expenditure_category VARCHAR(255) NOT NULL, 
+	item_name VARCHAR(255) NOT NULL, 
+	category VARCHAR(255) NOT NULL, 
+	course_code VARCHAR(255) NOT NULL, 
+	unit_cost FLOAT NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	total_cost FLOAT NOT NULL, 
+	file_no VARCHAR(64) NOT NULL, 
+	is_revision BOOLEAN NOT NULL, 
+	locked_amount FLOAT NOT NULL, 
+	deducted_amount FLOAT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id), 
+	FOREIGN KEY(financial_year_id) REFERENCES financial_years (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00008s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_requests (
+	id SERIAL NOT NULL, 
+	icr_number VARCHAR(100), 
+	category_id INTEGER NOT NULL, 
+	financial_year_id INTEGER NOT NULL, 
+	initiator_id INTEGER NOT NULL, 
+	nominee_id INTEGER, 
+	procurement_id INTEGER NOT NULL, 
+	purchase_type VARCHAR(50) NOT NULL, 
+	current_status VARCHAR(50) NOT NULL, 
+	amount FLOAT NOT NULL, 
+	emd FLOAT NOT NULL, 
+	performance_security FLOAT NOT NULL, 
+	vendor_list_link VARCHAR(500), 
+	is_item_split BOOLEAN NOT NULL, 
+	item_split_justification TEXT, 
+	is_quantity_split BOOLEAN NOT NULL, 
+	quantity_split_details TEXT, 
+	is_service_center_in_south BOOLEAN NOT NULL, 
+	service_center_south_desc VARCHAR(500), 
+	basis_of_estimate_details TEXT, 
+	delivery_mode VARCHAR(255), 
+	delivery_location VARCHAR(255), 
+	exemption BOOLEAN NOT NULL, 
+	exemption_remarks TEXT, 
+	is_training_required BOOLEAN NOT NULL, 
+	training_type VARCHAR(255), 
+	training_vendor VARCHAR(255), 
+	training_comments VARCHAR(500), 
+	tender_reference_number VARCHAR(255), 
+	date_of_tender DATE, 
+	date_of_tech_bid_opening DATE, 
+	date_of_financial_bid_opening DATE, 
+	aa_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	te_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	te_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	fs_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	fs_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	po_initiated_at TIMESTAMP WITHOUT TIME ZONE, 
+	po_approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	faculty1_id INTEGER, 
+	faculty2_id INTEGER, 
+	faculty3_id INTEGER, 
+	aa_approver_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (icr_number), 
+	FOREIGN KEY(category_id) REFERENCES purchase_categories (id), 
+	FOREIGN KEY(financial_year_id) REFERENCES financial_years (id), 
+	FOREIGN KEY(initiator_id) REFERENCES users (id), 
+	FOREIGN KEY(nominee_id) REFERENCES users (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id), 
+	FOREIGN KEY(faculty1_id) REFERENCES users (id), 
+	FOREIGN KEY(faculty2_id) REFERENCES users (id), 
+	FOREIGN KEY(faculty3_id) REFERENCES users (id), 
+	FOREIGN KEY(aa_approver_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE workflow_hierarchies (
+	id SERIAL NOT NULL, 
+	user_id INTEGER, 
+	category_id INTEGER NOT NULL, 
+	phase_id INTEGER NOT NULL, 
+	procurement_id INTEGER NOT NULL, 
+	step_order INTEGER NOT NULL, 
+	user_type VARCHAR(255) NOT NULL, 
+	user_group VARCHAR(100), 
+	role_id INTEGER, 
+	purchase_type VARCHAR(100) NOT NULL, 
+	is_enabled BOOLEAN NOT NULL, 
+	tender_vendors_threshold INTEGER, 
+	tender_vendors_comparison VARCHAR(20), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id), 
+	FOREIGN KEY(category_id) REFERENCES purchase_categories (id) ON DELETE CASCADE, 
+	FOREIGN KEY(phase_id) REFERENCES phase_managers (id), 
+	FOREIGN KEY(procurement_id) REFERENCES procurement_managers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(role_id) REFERENCES role_managers (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00008s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_request_items (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	budget_file_id INTEGER NOT NULL, 
+	item_description VARCHAR(500) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	estimated_total FLOAT NOT NULL, 
+	charges FLOAT, 
+	requirement_type VARCHAR(100) NOT NULL, 
+	availability VARCHAR(100) NOT NULL, 
+	availability_remarks TEXT, 
+	site_readiness BOOLEAN NOT NULL, 
+	site_readiness_remarks TEXT, 
+	warranty FLOAT, 
+	delivery_period FLOAT, 
+	present_stock VARCHAR(255), 
+	justification_for_procurement TEXT, 
+	previous_file_no_reference VARCHAR(255), 
+	installation_required BOOLEAN NOT NULL, 
+	tech_specs_text TEXT, 
+	gem_link VARCHAR(500), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(budget_file_id) REFERENCES budget_master (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00023s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_request_flows (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	phase_id INTEGER NOT NULL, 
+	step_order INTEGER NOT NULL, 
+	rejected BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (purchase_request_id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(phase_id) REFERENCES phase_managers (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00012s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_request_history (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	current_approver_id INTEGER, 
+	status VARCHAR(255) NOT NULL, 
+	remarks TEXT, 
+	acted_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(current_approver_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00010s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE purchase_request_assignments (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	assigned_by_id INTEGER NOT NULL, 
+	assigned_da_id INTEGER NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	assigned_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(assigned_by_id) REFERENCES users (id), 
+	FOREIGN KEY(assigned_da_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00017s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE technical_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	is_qualified BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00041s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE financial_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	quoted_amount FLOAT NOT NULL, 
+	ranking VARCHAR(10), 
+	is_awarded BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00015s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE commercial_evaluations (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	vendor_name VARCHAR(255) NOT NULL, 
+	vendor_email VARCHAR(255), 
+	quoted_amount FLOAT, 
+	is_qualified BOOLEAN NOT NULL, 
+	remarks TEXT, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00013s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE documents (
+	id SERIAL NOT NULL, 
+	purchase_request_id INTEGER NOT NULL, 
+	doc_key VARCHAR(255) NOT NULL, 
+	doc_value JSON NOT NULL, 
+	uploaded_by_id INTEGER, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(purchase_request_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(uploaded_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00012s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE deliveries (
+	id SERIAL NOT NULL, 
+	po_id INTEGER NOT NULL, 
+	challan_number VARCHAR(100), 
+	invoice_number VARCHAR(100), 
+	invoice_pdf_path VARCHAR(512), 
+	challan_pdf_path VARCHAR(512), 
+	department_id INTEGER NOT NULL, 
+	received_date TIMESTAMP WITHOUT TIME ZONE, 
+	status VARCHAR(50) NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(po_id) REFERENCES purchase_requests (id), 
+	FOREIGN KEY(department_id) REFERENCES departments (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00012s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE delivery_items (
+	id SERIAL NOT NULL, 
+	delivery_id INTEGER NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	category VARCHAR(100) NOT NULL, 
+	challan_quantity INTEGER NOT NULL, 
+	unit_price FLOAT NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(delivery_id) REFERENCES deliveries (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00020s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE payments (
+	id SERIAL NOT NULL, 
+	delivery_id INTEGER NOT NULL, 
+	invoice_number VARCHAR(100) NOT NULL, 
+	amount FLOAT NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	approved_by_id INTEGER, 
+	paid_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(delivery_id) REFERENCES deliveries (id), 
+	FOREIGN KEY(approved_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00011s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE dept_asset_logs (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	logged_by_id INTEGER NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	condition VARCHAR(50) NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian_name VARCHAR(255), 
+	serial_numbers JSON, 
+	remarks TEXT, 
+	logged_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(logged_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00012s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE stores_asset_logs (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	logged_by_id INTEGER NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	condition VARCHAR(50) NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian_name VARCHAR(255), 
+	serial_numbers JSON, 
+	is_approved BOOLEAN NOT NULL, 
+	approved_by_id INTEGER, 
+	approved_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(logged_by_id) REFERENCES users (id), 
+	FOREIGN KEY(approved_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00013s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE discrepancies (
+	id SERIAL NOT NULL, 
+	delivery_item_id INTEGER NOT NULL, 
+	challan_qty INTEGER NOT NULL, 
+	dept_qty INTEGER NOT NULL, 
+	stores_qty INTEGER NOT NULL, 
+	status VARCHAR(50) NOT NULL, 
+	resolution_remarks TEXT, 
+	resolved_by_id INTEGER, 
+	resolved_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (delivery_item_id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id), 
+	FOREIGN KEY(resolved_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00009s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE assets (
+	id SERIAL NOT NULL, 
+	asset_tag VARCHAR(50) NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	category VARCHAR(50) NOT NULL, 
+	department_id INTEGER NOT NULL, 
+	building VARCHAR(100), 
+	room VARCHAR(100), 
+	custodian VARCHAR(255), 
+	serial_number VARCHAR(255), 
+	legacy_asset_tag VARCHAR(100), 
+	fund_source VARCHAR(100), 
+	condition VARCHAR(50) NOT NULL, 
+	disposal_status VARCHAR(50) NOT NULL, 
+	qr_code_url VARCHAR(500), 
+	purchase_date DATE, 
+	unit_cost FLOAT, 
+	warranty_expiry DATE, 
+	delivery_item_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (asset_tag), 
+	FOREIGN KEY(department_id) REFERENCES departments (id), 
+	FOREIGN KEY(delivery_item_id) REFERENCES delivery_items (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00008s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE asset_movements (
+	id SERIAL NOT NULL, 
+	asset_id INTEGER NOT NULL, 
+	from_building VARCHAR(100), 
+	from_room VARCHAR(100), 
+	to_building VARCHAR(100) NOT NULL, 
+	to_room VARCHAR(100) NOT NULL, 
+	moved_by_id INTEGER NOT NULL, 
+	reason TEXT, 
+	moved_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(asset_id) REFERENCES assets (id), 
+	FOREIGN KEY(moved_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00009s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 
+CREATE TABLE asset_logs (
+	id SERIAL NOT NULL, 
+	asset_id INTEGER NOT NULL, 
+	action VARCHAR(100) NOT NULL, 
+	performed_by_id INTEGER NOT NULL, 
+	old_value JSON, 
+	new_value JSON, 
+	performed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(asset_id) REFERENCES assets (id), 
+	FOREIGN KEY(performed_by_id) REFERENCES users (id)
+)
+
+
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00007s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments ADD CONSTRAINT fk_departments_director_faculty FOREIGN KEY(director_faculty_id) REFERENCES users (id) ON DELETE SET NULL
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00014s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments ADD CONSTRAINT fk_departments_expert1 FOREIGN KEY(expert1_id) REFERENCES users (id) ON DELETE SET NULL
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00007s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE departments ADD CONSTRAINT fk_departments_expert2 FOREIGN KEY(expert2_id) REFERENCES users (id) ON DELETE SET NULL
+INFO     sqlalchemy.engine.Engine:base.py:1846 [no key 0.00005s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00011s] ()
+INFO     sqlalchemy.engine.Engine:base.py:1846 ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00008s] ()
+INFO     sqlalchemy.engine.Engine:base.py:2707 COMMIT
+ERROR    sqlalchemy.pool.impl.AsyncAdaptedQueuePool:base.py:378 Exception closing connection <AdaptedConnection <asyncpg.connection.Connection object at 0xffffb5a08c80>>
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py", line 376, in _close_connection
+    self._dialect.do_close(connection)
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 708, in do_close
+    dbapi_connection.close()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 890, in close
+    self.await_(self._connection.close())
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/asyncpg/connection.py", line 1467, in close
+    await self._protocol.close(timeout)
+  File "asyncpg/protocol/protocol.pyx", line 641, in close
+RuntimeError: Task <Task pending name='Task-4' coro=<_wrap_asyncgen_fixture.<locals>._asyncgen_fixture_wrapper.<locals>.setup() running at /usr/local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:403> cb=[_run_until_complete_cb() at /usr/local/lib/python3.12/asyncio/base_events.py:181]> got Future <Future pending cb=[Protocol._on_waiter_completed()]> attached to a different loop
+----------------------------- Captured stdout call -----------------------------
+2026-06-02 05:52:28,012 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-06-02 05:52:28,013 INFO sqlalchemy.engine.Engine SELECT users.id, users.name, users.email, users.hashed_password, users.designation, users.gender, users.role_id, users.department_id, users.is_active, users.signature_path, users.is_approved, users.last_login_at, users.created_at 
+FROM users 
+WHERE users.email = $1::VARCHAR
+2026-06-02 05:52:28,013 INFO sqlalchemy.engine.Engine [generated in 0.00007s] ('faculty.cse@nitt.edu',)
+2026-06-02 05:52:28,015 INFO sqlalchemy.engine.Engine SELECT phase_managers.id, phase_managers.phase_name, phase_managers.description, phase_managers.phase_order 
+FROM phase_managers 
+WHERE phase_managers.phase_name = $1::VARCHAR
+2026-06-02 05:52:28,015 INFO sqlalchemy.engine.Engine [generated in 0.00007s] ('Tendering',)
+2026-06-02 05:52:28,016 INFO sqlalchemy.engine.Engine INSERT INTO purchase_requests (icr_number, category_id, financial_year_id, initiator_id, nominee_id, procurement_id, purchase_type, current_status, amount, emd, performance_security, vendor_list_link, is_item_split, item_split_justification, is_quantity_split, quantity_split_details, is_service_center_in_south, service_center_south_desc, basis_of_estimate_details, delivery_mode, delivery_location, exemption, exemption_remarks, is_training_required, training_type, training_vendor, training_comments, tender_reference_number, date_of_tender, date_of_tech_bid_opening, date_of_financial_bid_opening, aa_approved_at, te_initiated_at, te_approved_at, fs_initiated_at, fs_approved_at, po_initiated_at, po_approved_at, faculty1_id, faculty2_id, faculty3_id, aa_approver_id, created_at) VALUES ($1::VARCHAR, $2::INTEGER, $3::INTEGER, $4::INTEGER, $5::INTEGER, $6::INTEGER, $7::VARCHAR, $8::VARCHAR, $9::FLOAT, $10::FLOAT, $11::FLOAT, $12::VARCHAR, $13::BOOLEAN, $14::VARCHAR, $15::BOOLEAN, $16::VARCHAR, $17::BOOLEAN, $18::VARCHAR, $19::VARCHAR, $20::VARCHAR, $21::VARCHAR, $22::BOOLEAN, $23::VARCHAR, $24::BOOLEAN, $25::VARCHAR, $26::VARCHAR, $27::VARCHAR, $28::VARCHAR, $29::DATE, $30::DATE, $31::DATE, $32::TIMESTAMP WITHOUT TIME ZONE, $33::TIMESTAMP WITHOUT TIME ZONE, $34::TIMESTAMP WITHOUT TIME ZONE, $35::TIMESTAMP WITHOUT TIME ZONE, $36::TIMESTAMP WITHOUT TIME ZONE, $37::TIMESTAMP WITHOUT TIME ZONE, $38::TIMESTAMP WITHOUT TIME ZONE, $39::INTEGER, $40::INTEGER, $41::INTEGER, $42::INTEGER, now()) RETURNING purchase_requests.id, purchase_requests.created_at
+2026-06-02 05:52:28,016 INFO sqlalchemy.engine.Engine [generated in 0.00013s] (None, 2, 1, 2, None, 1, 'department', 'draft', 250000.0, 0.0, 0.0, None, False, None, False, None, False, None, None, None, None, False, None, False, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None)
+2026-06-02 05:52:28,018 INFO sqlalchemy.engine.Engine INSERT INTO commercial_evaluations (purchase_request_id, vendor_name, vendor_email, quoted_amount, is_qualified, remarks) SELECT p0::INTEGER, p1::VARCHAR, p2::VARCHAR, p3::FLOAT, p4::BOOLEAN, p5::VARCHAR FROM (VALUES ($1::INTEGER, $2::VARCHAR, $3::VA ... 259 characters truncated ... ounter) ORDER BY sen_counter RETURNING commercial_evaluations.id, commercial_evaluations.id AS id__1
+2026-06-02 05:52:28,018 INFO sqlalchemy.engine.Engine [generated in 0.00004s (insertmanyvalues) 1/1 (ordered)] (1, 'Vendor 0', None, None, True, None, 1, 'Vendor 1', None, None, True, None, 1, 'Vendor 2', None, None, True, None)
+2026-06-02 05:52:28,020 INFO sqlalchemy.engine.Engine SELECT workflow_hierarchies.id, workflow_hierarchies.user_id, workflow_hierarchies.category_id, workflow_hierarchies.phase_id, workflow_hierarchies.procurement_id, workflow_hierarchies.step_order, workflow_hierarchies.user_type, workflow_hierarchies.user_group, workflow_hierarchies.role_id, workflow_hierarchies.purchase_type, workflow_hierarchies.is_enabled, workflow_hierarchies.tender_vendors_threshold, workflow_hierarchies.tender_vendors_comparison 
+FROM workflow_hierarchies 
+WHERE workflow_hierarchies.phase_id = $1::INTEGER AND workflow_hierarchies.step_order = $2::INTEGER AND workflow_hierarchies.category_id = $3::INTEGER AND workflow_hierarchies.procurement_id = $4::INTEGER AND workflow_hierarchies.purchase_type = $5::VARCHAR
+2026-06-02 05:52:28,020 INFO sqlalchemy.engine.Engine [generated in 0.00007s] (2, 6, 2, 1, 'department')
+2026-06-02 05:52:28,021 INFO sqlalchemy.engine.Engine UPDATE workflow_hierarchies SET tender_vendors_comparison=$1::VARCHAR WHERE workflow_hierarchies.id = $2::INTEGER
+2026-06-02 05:52:28,021 INFO sqlalchemy.engine.Engine [generated in 0.00006s] ('<', 14)
+2026-06-02 05:52:28,022 INFO sqlalchemy.engine.Engine SELECT workflow_hierarchies.id, workflow_hierarchies.user_id, workflow_hierarchies.category_id, workflow_hierarchies.phase_id, workflow_hierarchies.procurement_id, workflow_hierarchies.step_order, workflow_hierarchies.user_type, workflow_hierarchies.user_group, workflow_hierarchies.role_id, workflow_hierarchies.purchase_type, workflow_hierarchies.is_enabled, workflow_hierarchies.tender_vendors_threshold, workflow_hierarchies.tender_vendors_comparison 
+FROM workflow_hierarchies 
+WHERE workflow_hierarchies.category_id = $1::INTEGER AND workflow_hierarchies.procurement_id = $2::INTEGER AND workflow_hierarchies.purchase_type = $3::VARCHAR AND workflow_hierarchies.phase_id = $4::INTEGER AND workflow_hierarchies.is_enabled = true AND workflow_hierarchies.step_order > $5::INTEGER ORDER BY workflow_hierarchies.step_order
+2026-06-02 05:52:28,022 INFO sqlalchemy.engine.Engine [generated in 0.00006s] (2, 1, 'department', 2, 5)
+2026-06-02 05:52:28,023 INFO sqlalchemy.engine.Engine SELECT purchase_requests.id 
+FROM purchase_requests 
+WHERE purchase_requests.id = $1::INTEGER
+2026-06-02 05:52:28,023 INFO sqlalchemy.engine.Engine [generated in 0.00005s] (1,)
+2026-06-02 05:52:28,024 INFO sqlalchemy.engine.Engine SELECT commercial_evaluations.id AS commercial_evaluations_id, commercial_evaluations.purchase_request_id AS commercial_evaluations_purchase_request_id, commercial_evaluations.vendor_name AS commercial_evaluations_vendor_name, commercial_evaluations.vendor_email AS commercial_evaluations_vendor_email, commercial_evaluations.quoted_amount AS commercial_evaluations_quoted_amount, commercial_evaluations.is_qualified AS commercial_evaluations_is_qualified, commercial_evaluations.remarks AS commercial_evaluations_remarks 
+FROM commercial_evaluations 
+WHERE $1::INTEGER = commercial_evaluations.purchase_request_id
+2026-06-02 05:52:28,024 INFO sqlalchemy.engine.Engine [generated in 0.00006s] (1,)
+------------------------------ Captured log call -------------------------------
+INFO     sqlalchemy.engine.Engine:base.py:2701 BEGIN (implicit)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT users.id, users.name, users.email, users.hashed_password, users.designation, users.gender, users.role_id, users.department_id, users.is_active, users.signature_path, users.is_approved, users.last_login_at, users.created_at 
+FROM users 
+WHERE users.email = $1::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00007s] ('faculty.cse@nitt.edu',)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT phase_managers.id, phase_managers.phase_name, phase_managers.description, phase_managers.phase_order 
+FROM phase_managers 
+WHERE phase_managers.phase_name = $1::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00007s] ('Tendering',)
+INFO     sqlalchemy.engine.Engine:base.py:1846 INSERT INTO purchase_requests (icr_number, category_id, financial_year_id, initiator_id, nominee_id, procurement_id, purchase_type, current_status, amount, emd, performance_security, vendor_list_link, is_item_split, item_split_justification, is_quantity_split, quantity_split_details, is_service_center_in_south, service_center_south_desc, basis_of_estimate_details, delivery_mode, delivery_location, exemption, exemption_remarks, is_training_required, training_type, training_vendor, training_comments, tender_reference_number, date_of_tender, date_of_tech_bid_opening, date_of_financial_bid_opening, aa_approved_at, te_initiated_at, te_approved_at, fs_initiated_at, fs_approved_at, po_initiated_at, po_approved_at, faculty1_id, faculty2_id, faculty3_id, aa_approver_id, created_at) VALUES ($1::VARCHAR, $2::INTEGER, $3::INTEGER, $4::INTEGER, $5::INTEGER, $6::INTEGER, $7::VARCHAR, $8::VARCHAR, $9::FLOAT, $10::FLOAT, $11::FLOAT, $12::VARCHAR, $13::BOOLEAN, $14::VARCHAR, $15::BOOLEAN, $16::VARCHAR, $17::BOOLEAN, $18::VARCHAR, $19::VARCHAR, $20::VARCHAR, $21::VARCHAR, $22::BOOLEAN, $23::VARCHAR, $24::BOOLEAN, $25::VARCHAR, $26::VARCHAR, $27::VARCHAR, $28::VARCHAR, $29::DATE, $30::DATE, $31::DATE, $32::TIMESTAMP WITHOUT TIME ZONE, $33::TIMESTAMP WITHOUT TIME ZONE, $34::TIMESTAMP WITHOUT TIME ZONE, $35::TIMESTAMP WITHOUT TIME ZONE, $36::TIMESTAMP WITHOUT TIME ZONE, $37::TIMESTAMP WITHOUT TIME ZONE, $38::TIMESTAMP WITHOUT TIME ZONE, $39::INTEGER, $40::INTEGER, $41::INTEGER, $42::INTEGER, now()) RETURNING purchase_requests.id, purchase_requests.created_at
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00013s] (None, 2, 1, 2, None, 1, 'department', 'draft', 250000.0, 0.0, 0.0, None, False, None, False, None, False, None, None, None, None, False, None, False, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None)
+INFO     sqlalchemy.engine.Engine:base.py:1844 INSERT INTO commercial_evaluations (purchase_request_id, vendor_name, vendor_email, quoted_amount, is_qualified, remarks) SELECT p0::INTEGER, p1::VARCHAR, p2::VARCHAR, p3::FLOAT, p4::BOOLEAN, p5::VARCHAR FROM (VALUES ($1::INTEGER, $2::VARCHAR, $3::VA ... 259 characters truncated ... ounter) ORDER BY sen_counter RETURNING commercial_evaluations.id, commercial_evaluations.id AS id__1
+INFO     sqlalchemy.engine.Engine:base.py:1844 [generated in 0.00004s (insertmanyvalues) 1/1 (ordered)] (1, 'Vendor 0', None, None, True, None, 1, 'Vendor 1', None, None, True, None, 1, 'Vendor 2', None, None, True, None)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT workflow_hierarchies.id, workflow_hierarchies.user_id, workflow_hierarchies.category_id, workflow_hierarchies.phase_id, workflow_hierarchies.procurement_id, workflow_hierarchies.step_order, workflow_hierarchies.user_type, workflow_hierarchies.user_group, workflow_hierarchies.role_id, workflow_hierarchies.purchase_type, workflow_hierarchies.is_enabled, workflow_hierarchies.tender_vendors_threshold, workflow_hierarchies.tender_vendors_comparison 
+FROM workflow_hierarchies 
+WHERE workflow_hierarchies.phase_id = $1::INTEGER AND workflow_hierarchies.step_order = $2::INTEGER AND workflow_hierarchies.category_id = $3::INTEGER AND workflow_hierarchies.procurement_id = $4::INTEGER AND workflow_hierarchies.purchase_type = $5::VARCHAR
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00007s] (2, 6, 2, 1, 'department')
+INFO     sqlalchemy.engine.Engine:base.py:1846 UPDATE workflow_hierarchies SET tender_vendors_comparison=$1::VARCHAR WHERE workflow_hierarchies.id = $2::INTEGER
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00006s] ('<', 14)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT workflow_hierarchies.id, workflow_hierarchies.user_id, workflow_hierarchies.category_id, workflow_hierarchies.phase_id, workflow_hierarchies.procurement_id, workflow_hierarchies.step_order, workflow_hierarchies.user_type, workflow_hierarchies.user_group, workflow_hierarchies.role_id, workflow_hierarchies.purchase_type, workflow_hierarchies.is_enabled, workflow_hierarchies.tender_vendors_threshold, workflow_hierarchies.tender_vendors_comparison 
+FROM workflow_hierarchies 
+WHERE workflow_hierarchies.category_id = $1::INTEGER AND workflow_hierarchies.procurement_id = $2::INTEGER AND workflow_hierarchies.purchase_type = $3::VARCHAR AND workflow_hierarchies.phase_id = $4::INTEGER AND workflow_hierarchies.is_enabled = true AND workflow_hierarchies.step_order > $5::INTEGER ORDER BY workflow_hierarchies.step_order
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00006s] (2, 1, 'department', 2, 5)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT purchase_requests.id 
+FROM purchase_requests 
+WHERE purchase_requests.id = $1::INTEGER
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00005s] (1,)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT commercial_evaluations.id AS commercial_evaluations_id, commercial_evaluations.purchase_request_id AS commercial_evaluations_purchase_request_id, commercial_evaluations.vendor_name AS commercial_evaluations_vendor_name, commercial_evaluations.vendor_email AS commercial_evaluations_vendor_email, commercial_evaluations.quoted_amount AS commercial_evaluations_quoted_amount, commercial_evaluations.is_qualified AS commercial_evaluations_is_qualified, commercial_evaluations.remarks AS commercial_evaluations_remarks 
+FROM commercial_evaluations 
+WHERE $1::INTEGER = commercial_evaluations.purchase_request_id
+INFO     sqlalchemy.engine.Engine:base.py:1846 [generated in 0.00006s] (1,)
+--------------------------- Captured stdout teardown ---------------------------
+2026-06-02 05:52:28,039 INFO sqlalchemy.engine.Engine ROLLBACK
+---------------------------- Captured log teardown -----------------------------
+INFO     sqlalchemy.engine.Engine:base.py:2704 ROLLBACK
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/passlib/utils/__init__.py:854
+  /usr/local/lib/python3.12/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_committee_workflow.py::test_tender_routing_operators_evaluation
+================== 1 failed, 2 deselected, 1 warning in 0.97s ==================

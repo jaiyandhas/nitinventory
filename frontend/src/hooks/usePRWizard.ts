@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BudgetFile, ProcurementMethod } from '../types';
 import {
   PR_CREATION_STEPS,
   type PRWizardStepId,
   isGemProcurement,
+  yesNoToBool,
 } from '../config/prCreationQuestions';
 import {
   createEmptyCommonState,
@@ -13,6 +14,99 @@ import {
   type PRWizardSelection,
 } from '../types/prCreation';
 
+// ─── Session-storage key ──────────────────────────────────────────────────────
+const DRAFT_KEY = 'pr_wizard_draft';
+
+// ─── Serialisable shapes (File fields replaced by name strings) ───────────────
+interface SerializedItem extends Omit<PRItemFormState, 'gem_nac_file' | 'tech_specs_file'> {
+  gem_nac_file_name?: string | null;
+  tech_specs_file_name?: string | null;
+}
+
+interface SerializedCommon extends Omit<PRCommonFormState, 'quotation_file'> {
+  quotation_file_name?: string | null;
+}
+
+interface DraftState {
+  stepIndex: number;
+  selection: PRWizardSelection;
+  items: Record<number, SerializedItem>;
+  common: SerializedCommon;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function serializeItems(items: Record<number, PRItemFormState>): Record<number, SerializedItem> {
+  const out: Record<number, SerializedItem> = {};
+  for (const [k, v] of Object.entries(items)) {
+    const { gem_nac_file, tech_specs_file, ...rest } = v;
+    out[Number(k)] = {
+      ...rest,
+      gem_nac_file_name: gem_nac_file?.name ?? null,
+      tech_specs_file_name: tech_specs_file?.name ?? null,
+    };
+  }
+  return out;
+}
+
+function serializeCommon(common: PRCommonFormState): SerializedCommon {
+  const { quotation_file, ...rest } = common;
+  return { ...rest, quotation_file_name: quotation_file?.name ?? null };
+}
+
+function deserializeCommon(s: SerializedCommon): PRCommonFormState {
+  const { quotation_file_name, ...rest } = s;
+  return { ...rest, quotation_file: null };
+}
+
+function deserializeItems(s: Record<number, SerializedItem>): Record<number, PRItemFormState> {
+  const out: Record<number, PRItemFormState> = {};
+  for (const [k, v] of Object.entries(s)) {
+    const { gem_nac_file_name, tech_specs_file_name, ...rest } = v;
+    out[Number(k)] = { ...rest, gem_nac_file: null, tech_specs_file: null };
+  }
+  return out;
+}
+
+function loadDraft(): DraftState | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as DraftState;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(state: DraftState) {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(state));
+  } catch {
+    // Quota exceeded or private mode — silently ignore
+  }
+}
+
+function clearDraftStorage() {
+  sessionStorage.removeItem(DRAFT_KEY);
+}
+
+// ─── Check if any File field was saved (name present but File object gone) ────
+function hasMissingFiles(
+  items: Record<number, PRItemFormState>,
+  itemsSerialized: Record<number, SerializedItem>,
+  common: PRCommonFormState,
+  commonSerialized: SerializedCommon
+): boolean {
+  if (commonSerialized.quotation_file_name && !common.quotation_file) return true;
+  for (const [k, s] of Object.entries(itemsSerialized)) {
+    const live = items[Number(k)];
+    if (!live) continue;
+    if (s.gem_nac_file_name && !live.gem_nac_file) return true;
+    if (s.tech_specs_file_name && !live.tech_specs_file) return true;
+  }
+  return false;
+}
+
+// ─── fieldVisible helper ──────────────────────────────────────────────────────
 function fieldVisible(
   showWhen: { field: string; equals: string | boolean } | undefined,
   ctx: Record<string, string | boolean | undefined>
@@ -21,19 +115,56 @@ function fieldVisible(
   return ctx[showWhen.field] === showWhen.equals;
 }
 
+// ─── Main hook ────────────────────────────────────────────────────────────────
 export function usePRWizard() {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [selection, setSelection] = useState<PRWizardSelection>({
-    fileCount: 1,
-    selectedFileIds: [],
-    procurementMethodId: null,
+  // Load persisted draft on first render
+  const draft = useMemo(() => loadDraft(), []);
+
+  const [stepIndex, setStepIndex] = useState(draft?.stepIndex ?? 0);
+  const [selection, setSelection] = useState<PRWizardSelection>(
+    draft?.selection ?? { fileCount: 1, selectedFileIds: [], procurementMethodId: null }
+  );
+  const [items, setItems] = useState<Record<number, PRItemFormState>>(
+    draft?.items ? deserializeItems(draft.items) : {}
+  );
+  const [common, setCommon] = useState<PRCommonFormState>(
+    draft?.common ? deserializeCommon(draft.common) : createEmptyCommonState()
+  );
+
+  // Track whether any file was present at save-time so we can show a warning
+  const [filesNeedReupload, setFilesNeedReupload] = useState(() => {
+    if (!draft) return false;
+    const liveCommon = draft.common ? deserializeCommon(draft.common) : createEmptyCommonState();
+    const liveItems = draft.items ? deserializeItems(draft.items) : {};
+    return hasMissingFiles(liveItems, draft.items ?? {}, liveCommon, draft.common ?? {});
   });
-  const [items, setItems] = useState<Record<number, PRItemFormState>>({});
-  const [common, setCommon] = useState<PRCommonFormState>(createEmptyCommonState());
+
+  // ── Persist on every meaningful state change ────────────────────────────────
+  useEffect(() => {
+    saveDraft({
+      stepIndex,
+      selection,
+      items: serializeItems(items),
+      common: serializeCommon(common),
+    });
+  }, [stepIndex, selection, items, common]);
 
   const currentStep = PR_CREATION_STEPS[stepIndex];
   const stepId = currentStep.id as PRWizardStepId;
 
+  // ── Clear draft (called after successful submit or explicit discard) ─────────
+  const clearDraft = useCallback(() => {
+    clearDraftStorage();
+    setStepIndex(0);
+    setSelection({ fileCount: 1, selectedFileIds: [], procurementMethodId: null });
+    setItems({});
+    setCommon(createEmptyCommonState());
+    setFilesNeedReupload(false);
+  }, []);
+
+  const dismissFileWarning = useCallback(() => setFilesNeedReupload(false), []);
+
+  // ── Core state updaters ─────────────────────────────────────────────────────
   const initItemsFromSelection = useCallback((fileIds: number[], budgetFiles?: BudgetFile[]) => {
     setItems((prev) => {
       const next: Record<number, PRItemFormState> = {};
@@ -41,17 +172,12 @@ export function usePRWizard() {
         let defaultQty = '1';
         if (budgetFiles) {
           const file = budgetFiles.find((f) => f.id === id);
-          if (file && file.unit_cost > 0) {
-            const maxQty = Math.floor(file.available_amount / file.unit_cost);
-            if (maxQty <= 0) {
-              defaultQty = '0';
-            }
+          if (file) {
+            defaultQty = String(file.quantity || 1);
           }
         }
-        next[id] = prev[id] ?? {
-          ...createEmptyItemState(id),
-          quantity: defaultQty,
-        };
+        const existing = prev[id] ?? createEmptyItemState(id);
+        next[id] = { ...existing, quantity: defaultQty };
       }
       return next;
     });
@@ -81,6 +207,7 @@ export function usePRWizard() {
     if (idx >= 0) setStepIndex(idx);
   }, []);
 
+  // ── Validators ──────────────────────────────────────────────────────────────
   const validateSelection = useCallback(
     (budgetFiles: BudgetFile[], procurementMethods: ProcurementMethod[]): string | null => {
       const { selectedFileIds, procurementMethodId } = selection;
@@ -101,28 +228,17 @@ export function usePRWizard() {
       for (const fileId of selection.selectedFileIds) {
         const item = items[fileId];
         if (!item) return `Missing details for file #${fileId}`;
-        const ctx: Record<string, any> = {
-          ...item,
-          _procurement_is_gem: isGem,
-        };
+        const ctx: Record<string, any> = { ...item, _procurement_is_gem: isGem };
         const file = budgetFiles.find((f) => f.id === fileId);
         if (file && file.unit_cost > 0) {
           const maxQty = Math.floor(file.available_amount / file.unit_cost);
-          if (maxQty <= 0) {
-            return `Budget for "${file.item_name}" is exhausted. Please select a different budget file.`;
-          }
+          if (maxQty <= 0) return `Budget for "${file.item_name}" is exhausted. Please select a different budget file.`;
           const qty = Number(item.quantity);
-          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
-            return `Quantity for "${file.item_name}" must be a valid positive integer`;
-          }
-          if (qty > maxQty) {
-            return `Requested quantity for "${file.item_name}" (${qty}) exceeds the maximum available quantity (${maxQty}) based on available budget`;
-          }
+          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) return `Quantity for "${file.item_name}" must be a valid positive integer`;
+          if (qty > maxQty) return `Requested quantity for "${file.item_name}" (${qty}) exceeds the maximum available quantity (${maxQty}) based on available budget`;
         } else {
           const qty = Number(item.quantity);
-          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
-            return `Quantity for all items must be a valid positive integer`;
-          }
+          if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) return `Quantity for all items must be a valid positive integer`;
         }
         if (!item.charges.trim()) return `Enter GST & charges for all items`;
         if (!item.requirement_type) return `Select nature of requirement for all items`;
@@ -143,46 +259,51 @@ export function usePRWizard() {
         }
         if (!item.tech_specs_text.trim()) return `Enter technical specifications for all items`;
         if (!item.tech_specs_file) return `Upload tech spec PDF for all items`;
+        if (!item.equipment_name.trim()) return `Enter name of equipment for all items`;
+        if (!item.pdi_required) return `Select pre-dispatch inspection requirement for all items`;
+        if (item.pdi_required === 'Yes' && !item.pdi_justification.trim()) return `Provide justification for pre-dispatch inspection`;
+        if (!item.pre_bid_required) return `Select pre-bid meeting requirement for all items`;
+        if (item.installation_required === 'Yes' && !item.installation_scope) return `Select scope of installation for all items`;
+        if (!item.training_required) return `Select training requirement for all items`;
+        if (item.training_required === 'Yes' && !item.training_location) return `Select training location for all items`;
+        if (!item.tech_eligibility.trim()) return `Enter technical eligibility criteria for all items`;
       }
       return null;
     },
     [items, selection.selectedFileIds]
   );
 
-  const validateCommon = useCallback((): string | null => {
+  const validateCommon = useCallback((totalCost: number = 0, formSchema?: any): string | null => {
+    if (formSchema && formSchema.required && formSchema.properties) {
+      const formData = common.form_data || {};
+      const sectionTitle = formSchema.title ? `"${formSchema.title}"` : 'Procurement-Specific Details';
+      for (const fieldName of formSchema.required) {
+        const value = formData[fieldName];
+        const prop = formSchema.properties[fieldName];
+        const title = (prop?.title || fieldName).replace(/\s*\*\s*$/, '');
+        if (value === undefined || value === null || String(value).trim() === '') {
+          return `Please fill in "${title}" in the ${sectionTitle} section at the top of this page`;
+        }
+      }
+    }
     if (!common.purchase_type) return 'Select a purchase type';
-    if (!common.basis_of_estimate.trim()) return 'Describe how the basis of estimate was made';
+    if (!common.laboratory_office.trim()) return 'Enter laboratory/office name';
+    if (!common.source_of_fund) return 'Select source of fund';
+    if (common.source_of_fund === 'Project code' && !common.source_of_fund_project_code.trim()) return 'Enter project code details';
+    if (common.source_of_fund === 'Others' && !common.source_of_fund_others.trim()) return 'Enter source of fund details';
+    if (!common.item_category) return 'Select item category';
+    if (!common.basis_of_estimate) return 'Select basis of estimation';
+    if (common.basis_of_estimate === 'Others' && !common.basis_of_estimate_others.trim()) return 'Enter details for basis of estimation';
     if (!common.quotation_file) return 'Upload basis of estimation PDF';
     if (!common.emd) return 'Select EMD percentage';
     if (!common.performance_security) return 'Select performance security percentage';
-    if (!common.is_service_center_south) return 'Answer service center location question';
-    if (common.is_service_center_south === 'Yes') {
-      if (!common.service_center_location.trim()) return 'Enter service centre location';
-      if (!common.service_center_south_desc.trim()) return 'Enter justification for using a southern-region service centre';
-    }
     if (!common.delivery_location.trim()) return 'Enter delivery location';
     if (!common.delivery_mode.trim()) return 'Enter delivery mode';
-    if (!common.is_quantity_split) return 'Answer quantity splitting question';
-    if (common.is_quantity_split === 'No' && !common.split_quantity_justification.trim()) {
-      return 'Provide justification for non-splitting of quantity';
-    }
-    if (!common.is_item_split) return 'Answer item splitting question';
-    if (common.is_item_split === 'No' && !common.split_items_justification.trim()) {
-      return 'Provide justification for non-splitting of items';
-    }
-    if (!common.exemption) return 'Answer MSE/Startup exception question';
-    if (common.exemption === 'Yes' && !common.exemption_remarks.trim()) {
-      return 'Provide justification for seeking an MSE/startup exception';
-    }
-    if (common.exemption === 'No') {
-      if (!common.msme_no_exception_route) return 'Select how standard participation norms will apply';
-      if (common.msme_no_exception_route === 'other' && !common.exemption_remarks.trim()) {
-        return 'Describe the “other” compliance route';
-      }
-    }
-    if (!common.training_required) return 'Answer training requirement question';
-    if (common.training_required === 'Yes') {
-      if (!common.training_type || !common.training_vendor) return 'Complete training follow-up questions';
+    if (!common.purpose) return 'Select purpose';
+    if (common.purpose === 'Others' && !common.purpose_justification.trim()) return 'Enter purpose justification';
+    if (totalCost > 500000) {
+      if (!common.mii_clause) return 'Select Make in India clause applicability';
+      if (common.mii_clause === 'Applicable' && !common.mii_justification.trim()) return 'Enter MII clause justification';
     }
     return null;
   }, [common]);
@@ -196,6 +317,8 @@ export function usePRWizard() {
     () => Math.round(((stepIndex + 1) / PR_CREATION_STEPS.length) * 100),
     [stepIndex]
   );
+
+  const hasDraft = useMemo(() => !!draft && draft.stepIndex > 0, [draft]);
 
   return {
     stepIndex,
@@ -217,5 +340,9 @@ export function usePRWizard() {
     validateItems,
     validateCommon,
     validateSubmit,
+    clearDraft,
+    dismissFileWarning,
+    filesNeedReupload,
+    hasDraft,
   };
 }

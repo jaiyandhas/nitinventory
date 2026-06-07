@@ -10,7 +10,7 @@ interface AssetTableProps {
 
 export const AssetTable: React.FC<AssetTableProps> = ({ filteredAssets, conditionColors }) => {
   return (
-    <div className="card overflow-hidden">
+    <div className="card overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">

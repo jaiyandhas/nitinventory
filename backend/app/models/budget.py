@@ -76,11 +76,13 @@ class BudgetMaster(Base):
     # Bug fix: track committed and utilized amounts
     committed_amount: Mapped[float] = mapped_column("committed_amount", Float, default=0.0)
     utilized_amount: Mapped[float] = mapped_column("utilized_amount", Float, default=0.0)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     expert1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     expert2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     director_faculty_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    allocated_initiator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     department: Mapped[Optional["Department"]] = relationship("Department", back_populates="budget_entries")  # type: ignore
     financial_year: Mapped[FinancialYear] = relationship("FinancialYear", back_populates="budget_entries")
@@ -88,6 +90,7 @@ class BudgetMaster(Base):
     expert1: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert1_id])  # type: ignore
     expert2: Mapped[Optional["User"]] = relationship("User", foreign_keys=[expert2_id])  # type: ignore
     director_faculty: Mapped[Optional["User"]] = relationship("User", foreign_keys=[director_faculty_id])  # type: ignore
+    allocated_initiator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[allocated_initiator_id])  # type: ignore
 
     @property
     def available_balance(self) -> float:

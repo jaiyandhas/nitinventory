@@ -150,6 +150,14 @@ def _combined_service_center_desc(payload: PRCreatePayload) -> Optional[str]:
 
 
 def _serialize_pr(pr: PurchaseRequest) -> dict:
+    parent_pr_data = None
+    if "parent_pr" in pr.__dict__ and pr.parent_pr:
+        parent_pr_data = {"id": pr.parent_pr.id, "icr_number": pr.parent_pr.icr_number}
+        
+    child_prs_data = []
+    if "child_prs" in pr.__dict__ and pr.child_prs:
+        child_prs_data = [{"id": c.id, "icr_number": c.icr_number} for c in pr.child_prs]
+
     return {
         "id": pr.id,
         "icr_number": pr.icr_number,
@@ -166,9 +174,10 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "procurement": {"id": pr.procurement.id, "name": pr.procurement.name} if pr.procurement else None,
         "form_data": pr.form_data,
         "parent_pr_id": pr.parent_pr_id,
-        "parent_pr": {"id": pr.parent_pr.id, "icr_number": pr.parent_pr.icr_number} if pr.parent_pr else None,
-        "child_prs": [{"id": c.id, "icr_number": c.icr_number} for c in pr.child_prs] if pr.child_prs else [],
+        "parent_pr": parent_pr_data,
+        "child_prs": child_prs_data,
     }
+
 
 
 async def _persist_pr(
@@ -212,13 +221,21 @@ async def _persist_pr(
             raise HTTPException(status_code=404, detail=f"Budget file {fid} not found")
         if bm.department_id != user.department_id:
             raise HTTPException(status_code=403, detail="Budget file belongs to a different department")
+        if user.role.group_key == "faculty" and bm.allocated_initiator_id != user.id:
+            raise HTTPException(status_code=403, detail="Budget file is not allocated to you")
         budget_by_id[fid] = bm
         
         item_data = items_by_budget.get(fid)
         if not item_data:
             raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
             
-        item_qty = item_data.quantity if item_data.quantity is not None else 1
+        # Enforce locked quantity to budget file quantity
+        if item_data.quantity is not None and item_data.quantity != bm.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quantity for budget file {bm.file_no} ({item_data.quantity}) does not match the allocated budget quantity ({bm.quantity})."
+            )
+        item_qty = bm.quantity
         item_est_total = item_qty * bm.unit_cost
         
         if item_est_total > bm.available_balance:
@@ -321,7 +338,29 @@ async def _persist_pr(
     if dept:
         faculty1_id = dept.expert1_id
         faculty2_id = dept.expert2_id
-        faculty3_id = dept.director_faculty_id
+
+    merged_form_data = payload.form_data or {}
+    merged_form_data.update({
+        "laboratory_office": payload.laboratory_office,
+        "source_of_fund": payload.source_of_fund,
+        "source_of_fund_project_code": payload.source_of_fund_project_code,
+        "source_of_fund_others": payload.source_of_fund_others,
+        "bog_resolution_no": payload.bog_resolution_no,
+        "fc_resolution_no": payload.fc_resolution_no,
+        "item_category": payload.item_category,
+        "basis_of_estimate_others": payload.basis_of_estimate_others,
+        "purpose": payload.purpose,
+        "purpose_justification": payload.purpose_justification,
+        "mii_clause": payload.mii_clause,
+        "mii_justification": payload.mii_justification,
+    })
+
+    any_training_required = False
+    specs_dict = merged_form_data.get("specs", {})
+    if isinstance(specs_dict, dict):
+        for s_val in specs_dict.values():
+            if isinstance(s_val, dict) and s_val.get("training_required") == "Yes":
+                any_training_required = True
 
     pr = PurchaseRequest(
         category_id=category.id,
@@ -345,10 +384,10 @@ async def _persist_pr(
         item_split_justification=payload.split_items_justification,
         exemption=payload.exemption,
         exemption_remarks=payload.exemption_remarks,
-        is_training_required=payload.training_required,
+        is_training_required=any_training_required,
         training_type=payload.training_type,
         training_vendor=payload.training_vendor,
-        form_data=payload.form_data,
+        form_data=merged_form_data,
         faculty1_id=faculty1_id,
         faculty2_id=faculty2_id,
         faculty3_id=faculty3_id,
@@ -365,7 +404,8 @@ async def _persist_pr(
         if not item_data:
             raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
 
-        item_qty = item_data.quantity if item_data.quantity is not None else 1
+        # Enforce locked quantity to budget file quantity
+        item_qty = bm.quantity
         item_est_total = item_qty * bm.unit_cost
 
         item = PurchaseRequestItem(
@@ -462,7 +502,6 @@ async def list_prs(
                 PurchaseRequest.faculty3_id == user.id,
                 and_(PurchaseRequest.faculty1_id == None, Department.expert1_id == user.id),
                 and_(PurchaseRequest.faculty2_id == None, Department.expert2_id == user.id),
-                and_(PurchaseRequest.faculty3_id == None, Department.director_faculty_id == user.id),
             )
         )
     elif group == "hod":
@@ -484,7 +523,6 @@ async def list_prs(
                 PurchaseRequest.faculty3_id == user.id,
                 and_(PurchaseRequest.faculty1_id == None, Department.expert1_id == user.id),
                 and_(PurchaseRequest.faculty2_id == None, Department.expert2_id == user.id),
-                and_(PurchaseRequest.faculty3_id == None, Department.director_faculty_id == user.id),
             )
         )
     elif group == "hod":
@@ -501,7 +539,8 @@ async def list_prs(
         selectinload(PurchaseRequest.flow),
         selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
         selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
-        selectinload(PurchaseRequest.history)
+        selectinload(PurchaseRequest.history),
+        selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by)
     ).order_by(PurchaseRequest.created_at.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
@@ -530,6 +569,14 @@ async def list_prs(
             phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
             phase_name = phase_res.scalar_one_or_none()
             if step:
+                expected_user_id = step.user_id
+                expected_user_name = step.user.name if step.user else None
+                if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
+                    latest_assignment = pr.assignments[-1]
+                    if latest_assignment.assigned_by:
+                        expected_user_id = latest_assignment.assigned_by_id
+                        expected_user_name = latest_assignment.assigned_by.name
+
                 flow_data = {
                     "phase_id": pr.flow.phase_id,
                     "phase_name": phase_name,
@@ -537,8 +584,8 @@ async def list_prs(
                     "expected_group": step.user_group,
                     "expected_role_id": step.role_id,
                     "expected_role_name": step.role.name if step.role else (step.user_group.replace("_", " ").title() if step.user_group else None),
-                    "expected_user_id": step.user_id,
-                    "expected_user_name": step.user.name if step.user else None,
+                    "expected_user_id": expected_user_id,
+                    "expected_user_name": expected_user_name,
                     "step_type": step.user_type,
                 }
         
@@ -623,7 +670,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.technical_evaluations),
             selectinload(PurchaseRequest.financial_evaluations),
             selectinload(PurchaseRequest.commercial_evaluations),
-            selectinload(PurchaseRequest.assignments),
+            selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by),
             selectinload(PurchaseRequest.documents),
             selectinload(PurchaseRequest.faculty1),
             selectinload(PurchaseRequest.faculty2),
@@ -672,6 +719,11 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             if step.user_type == "user" and step.user_id:
                 expected_user_id = step.user_id
                 expected_user_name = step.user.name if step.user else None
+            if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
+                latest_assignment = pr.assignments[-1]
+                if latest_assignment.assigned_by:
+                    expected_user_id = latest_assignment.assigned_by_id
+                    expected_user_name = latest_assignment.assigned_by.name
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
         phase_name = phase_res.scalar_one_or_none()
 
@@ -1112,22 +1164,6 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
 
                 if body_faculty3:
                     pr.faculty3_id = body_faculty3
-                elif not pr.faculty3_id:
-                    await db.refresh(pr, ["initiator"])
-                    if pr.initiator:
-                        await db.refresh(pr.initiator, ["department"])
-                    dept = pr.initiator.department if pr.initiator else None
-                    
-                    budget_file = None
-                    await db.refresh(pr, ["items"])
-                    if pr.items:
-                        budget_file_id = pr.items[0].budget_file_id
-                        if budget_file_id:
-                            budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
-                            budget_file = budget_res.scalar_one_or_none()
-                            
-                    faculty3_id = budget_file.director_faculty_id if (budget_file and budget_file.director_faculty_id) else (dept.director_faculty_id if dept else None)
-                    pr.faculty3_id = faculty3_id
 
                 if not pr.faculty1_id or not pr.faculty2_id:
                     raise HTTPException(
@@ -1426,6 +1462,21 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         if expected != "faculty" and step.user_type != "purchase_initiator":
             raise HTTPException(status_code=403, detail="Initiator can only submit financial bids when it is their workflow step")
         return
+
+    # Enforce that only the Superintendent who assigned the DA can perform subsequent steps
+    if step.role_id:
+        await db.refresh(step, ["role"])
+        if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1:
+            await db.refresh(pr, ["assignments"])
+            if pr.assignments:
+                latest_assignment = pr.assignments[-1]
+                if latest_assignment.assigned_by_id != user.id:
+                    await db.refresh(latest_assignment, ["assigned_by"])
+                    assigner_name = latest_assignment.assigned_by.name if latest_assignment.assigned_by else f"ID {latest_assignment.assigned_by_id}"
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Only the Superintendent who assigned the Dealing Assistant ({assigner_name}) can perform this action"
+                    )
 
     # Standard role checking
     if step.role_id and user.role_id != step.role_id and not is_initiator_acting_as_faculty:
@@ -1888,7 +1939,6 @@ async def award_bid(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), 
     return {"message": "Bid awarded successfully", "vendor_name": selected_vendor_name}
 
 
-
 @router.get("/{pr_id}/print")
 async def print_pr(
     pr_id: int,
@@ -1896,6 +1946,9 @@ async def print_pr(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    import io
+    from app.services.pdf_service import PDFService
+
     result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
     pr = result.scalar_one_or_none()
     if not pr:
@@ -1903,346 +1956,20 @@ async def print_pr(
 
     await check_pr_access(pr, user, db)
 
-    await db.refresh(pr, [
-        "initiator",
-        "purchase_category",
-        "procurement",
-        "items",
-        "history",
-        "commercial_evaluations",
-        "technical_evaluations",
-        "financial_evaluations",
-        "assignments",
-        "faculty1",
-        "faculty2",
-        "faculty3",
-        "aa_approver",
-        "bill_passing",
-        "deliveries"
-    ])
-    if pr.initiator:
-        await db.refresh(pr.initiator, ["department"])
-    if pr.faculty1:
-        await db.refresh(pr.faculty1, ["department"])
-    if pr.faculty2:
-        await db.refresh(pr.faculty2, ["department"])
-    if pr.faculty3:
-        await db.refresh(pr.faculty3, ["department"])
-    if pr.aa_approver:
-        await db.refresh(pr.aa_approver, ["department"])
-    
-    import io
-    import os
-    from app.core.config import settings
+    pdf_service = PDFService(db)
+    pdf_bytes, filename, is_fallback, html_content = await pdf_service.generate_pr_pdf(pr, module)
 
-    # Resolve HOD
-    hod_user = None
-    if pr.initiator and pr.initiator.department_id:
-        from app.models.user import RoleManager
-        hod_res = await db.execute(
-            select(User)
-            .join(RoleManager, User.role_id == RoleManager.id)
-            .where(
-                and_(
-                    User.department_id == pr.initiator.department_id,
-                    RoleManager.group_key == "hod"
-                )
-            )
-        )
-        hod_user = hod_res.scalar_one_or_none()
-
-    import urllib.parse
-    def to_file_url(rel_path):
-        if not rel_path:
-            return None
-        # Remove any leading /storage/ or storage/ from path to make it relative to settings.STORAGE_PATH
-        clean_path = rel_path
-        if clean_path.startswith("/storage/"):
-            clean_path = clean_path[9:]
-        elif clean_path.startswith("storage/"):
-            clean_path = clean_path[8:]
-        elif clean_path.startswith("/"):
-            clean_path = clean_path[1:]
-        
-        full_path = os.path.join(settings.STORAGE_PATH, clean_path)
-        return f"file://{urllib.parse.quote(full_path, safe='/')}"
-
-    def get_valid_signature_url(rel_path):
-        if not rel_path:
-            return None
-        # Clean path to check existence on disk
-        clean_path = rel_path
-        if clean_path.startswith("/storage/"):
-            clean_path = clean_path[9:]
-        elif clean_path.startswith("storage/"):
-            clean_path = clean_path[8:]
-        elif clean_path.startswith("/"):
-            clean_path = clean_path[1:]
-        full_path = os.path.join(settings.STORAGE_PATH, clean_path)
-        if os.path.exists(full_path):
-            return to_file_url(clean_path)
-        return None
-
-    dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
-    
-    # Calculate fallback nominees
-    f1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
-    f2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
-    f3_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
-    
-    # Inject fallback values in-memory
-    pr.faculty1_id = f1_id
-    pr.faculty2_id = f2_id
-    pr.faculty3_id = f3_id
-    
-    # Load user objects if null
-    if f1_id and not pr.faculty1:
-        res1 = await db.execute(select(User).options(selectinload(User.department)).where(User.id == f1_id))
-        pr.faculty1 = res1.scalar_one_or_none()
-    if f2_id and not pr.faculty2:
-        res2 = await db.execute(select(User).options(selectinload(User.department)).where(User.id == f2_id))
-        pr.faculty2 = res2.scalar_one_or_none()
-    if f3_id and not pr.faculty3:
-        res3 = await db.execute(select(User).options(selectinload(User.department)).where(User.id == f3_id))
-        pr.faculty3 = res3.scalar_one_or_none()
-
-    # Helper to find frozen signature from history for a given user ID
-    def find_frozen_signature(user_id: int, status_filter=None):
-        if not user_id:
-            return None, None
-        sorted_hist = sorted(pr.history, key=lambda x: x.acted_at or datetime.min, reverse=True)
-        for h in sorted_hist:
-            if h.current_approver_id == user_id:
-                if status_filter is None or h.status in status_filter:
-                    sig_url = get_valid_signature_url(h.frozen_signature_path)
-                    if sig_url:
-                        return sig_url, h.acted_at
-                    # Fallback to dynamic for legacy entries or missing files
-                    if user_id == pr.initiator_id and pr.initiator:
-                        sig_url = get_valid_signature_url(pr.initiator.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                    elif user_id == pr.faculty1_id and pr.faculty1:
-                        sig_url = get_valid_signature_url(pr.faculty1.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                    elif user_id == pr.faculty2_id and pr.faculty2:
-                        sig_url = get_valid_signature_url(pr.faculty2.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                    elif user_id == pr.faculty3_id and pr.faculty3:
-                        sig_url = get_valid_signature_url(pr.faculty3.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                    elif user_id == pr.aa_approver_id and pr.aa_approver:
-                        sig_url = get_valid_signature_url(pr.aa_approver.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                    elif hod_user and user_id == hod_user.id:
-                        sig_url = get_valid_signature_url(hod_user.signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-        return None, None
-
-    # Resolve signatures (frozen or fallback)
-    initiator_sig, initiator_date = find_frozen_signature(pr.initiator_id)
-    faculty1_sig, faculty1_date = find_frozen_signature(pr.faculty1_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
-    faculty2_sig, faculty2_date = find_frozen_signature(pr.faculty2_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
-    faculty3_sig, faculty3_date = find_frozen_signature(pr.faculty3_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
-    hod_sig, hod_date = find_frozen_signature(hod_user.id if hod_user else None)
-    aa_sig, aa_date = find_frozen_signature(pr.aa_approver_id)
-
-    # Find Dean/Registrar/Director/Audit from history
-    dean_sig = None
-    dean_date = None
-    director_sig = None
-    director_date = None
-    dr_ar_sp_sig = None
-    dr_ar_fa_sig = None
-    ia_sig = None
-
-    for h in pr.history:
-        if h.current_approver_id:
-            actor_res = await db.execute(
-                select(User)
-                .options(selectinload(User.role))
-                .where(User.id == h.current_approver_id)
-            )
-            actor = actor_res.scalar_one_or_none()
-            if actor and actor.role:
-                sig_url = get_valid_signature_url(h.frozen_signature_path)
-                if not sig_url and actor.signature_path:
-                    sig_url = get_valid_signature_url(actor.signature_path)
-                if sig_url:
-                    if actor.role.group_key == "dean_approver":
-                        dean_sig = sig_url
-                        dean_date = h.acted_at
-                    elif actor.role.group_key == "apex_approver":
-                        director_sig = sig_url
-                        director_date = h.acted_at
-                    elif actor.role.value in ("superintendent", "consultant_sp") or actor.role.group_key == "verifier_sp":
-                        dr_ar_sp_sig = sig_url
-                    elif actor.role.value in ("deputy_registrar", "assistant_registrar"):
-                        dr_ar_fa_sig = sig_url
-                    elif actor.role.value == "internal_audit" or "audit" in actor.role.name.lower():
-                        ia_sig = sig_url
-
-    history_serialized = []
-    # Deduplicate dual logging entries (e.g. custom action + generic Forwarded) by the same user within 60s
-    for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
-        if h.status in ("Forwarded", "Forwarded to next phase"):
-            has_specific_entry = any(
-                other.current_approver_id == h.current_approver_id
-                and other.status
-                and other.status not in ("Forwarded", "Forwarded to next phase")
-                and other.acted_at
-                and h.acted_at
-                and abs((other.acted_at - h.acted_at).total_seconds()) < 60
-                for other in pr.history
-            )
-            if has_specific_entry:
-                continue
-        actor_name = h.frozen_actor_name or "System"
-        designation = h.frozen_designation or "-"
-        signature_url = get_valid_signature_url(h.frozen_signature_path)
-        if not signature_url and h.current_approver_id:
-            actor_res = await db.execute(
-                select(User)
-                .options(selectinload(User.role))
-                .where(User.id == h.current_approver_id)
-            )
-            actor = actor_res.scalar_one_or_none()
-            if actor:
-                actor_name = actor.name
-                designation = actor.designation or (actor.role.name if actor.role else "-")
-                if actor.signature_path:
-                    signature_url = get_valid_signature_url(actor.signature_path)
-        local_acted_at = to_local_time(h.acted_at)
-        history_serialized.append({
-            "actor_name": actor_name,
-            "designation": designation,
-            "status": h.status,
-            "remarks": h.remarks or "-",
-            "signature_url": signature_url,
-            "acted_at_str": local_acted_at.strftime("%d/%m/%Y %H:%M") if local_acted_at else "-"
-        })
-
-    from fastapi.templating import Jinja2Templates
-    import weasyprint
-
-    local_created_at = to_local_time(pr.created_at)
-    local_aa_approved_at = to_local_time(pr.aa_approved_at)
-
-    # Date formatted strings
-    pr_created_at_str = local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-"
-    pr_aa_approved_at_str = local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-"
-    initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y") if initiator_date else "-"
-    faculty1_date_str = to_local_time(faculty1_date).strftime("%d/%m/%Y") if faculty1_date else "-"
-    faculty2_date_str = to_local_time(faculty2_date).strftime("%d/%m/%Y") if faculty2_date else "-"
-    faculty3_date_str = to_local_time(faculty3_date).strftime("%d/%m/%Y") if faculty3_date else "-"
-    hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y") if hod_date else "-"
-    aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y") if aa_date else "-"
-    dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y") if dean_date else "-"
-    director_date_str = to_local_time(director_date).strftime("%d/%m/%Y") if director_date else "-"
-
-    # Resolve final competent sanctioning authority details for footer
-    sanction_authority_name = None
-    sanction_authority_sig = None
-    sanction_authority_date_str = None
-
-    if pr.fs_approved_at:
-        # Category 3 (>10L) -> Director
-        if pr.amount and pr.amount > 1000000.0:
-            director_user = None
-            for h in pr.history:
-                if h.current_approver_id:
-                    actor_res = await db.execute(
-                        select(User).options(selectinload(User.role)).where(User.id == h.current_approver_id)
-                    )
-                    actor = actor_res.scalar_one_or_none()
-                    if actor and actor.role and actor.role.group_key == "apex_approver":
-                        director_user = actor
-                        break
-            if director_user:
-                sanction_authority_name = director_user.name
-                sanction_authority_sig = director_sig
-                sanction_authority_date_str = to_local_time(pr.fs_approved_at).strftime("%d/%m/%Y %H:%M")
-        # Category 2 (1L-10L) -> Dean P&D
-        elif pr.amount and pr.amount > 100000.0:
-            dean_user = None
-            for h in pr.history:
-                if h.current_approver_id:
-                    actor_res = await db.execute(
-                        select(User).options(selectinload(User.role)).where(User.id == h.current_approver_id)
-                    )
-                    actor = actor_res.scalar_one_or_none()
-                    if actor and actor.role and actor.role.group_key == "dean_approver":
-                        dean_user = actor
-                        break
-            if dean_user:
-                sanction_authority_name = dean_user.name
-                sanction_authority_sig = dean_sig
-                sanction_authority_date_str = to_local_time(pr.fs_approved_at).strftime("%d/%m/%Y %H:%M")
-
-    # Fallback to Administrative Approval
-    if not sanction_authority_name:
-        if pr.aa_approver:
-            sanction_authority_name = pr.aa_approver.name
-            sanction_authority_sig = aa_sig
-            sanction_authority_date_str = pr_aa_approved_at_str
-        else:
-            sanction_authority_name = "Sanctioning Authority"
-            sanction_authority_sig = None
-            sanction_authority_date_str = None
-
-    templates = Jinja2Templates(directory="app/templates")
-    html_content = templates.get_template("administrative_approval.html").render({
-        "pr": pr,
-        "module": module,
-        "history_serialized": history_serialized,
-        "storage_dir": settings.STORAGE_PATH,
-        "pr_created_at_str": pr_created_at_str,
-        "pr_aa_approved_at_str": pr_aa_approved_at_str,
-        "initiator_sig": initiator_sig,
-        "initiator_date_str": initiator_date_str,
-        "faculty1_sig": faculty1_sig,
-        "faculty1_date_str": faculty1_date_str,
-        "faculty2_sig": faculty2_sig,
-        "faculty2_date_str": faculty2_date_str,
-        "faculty3_sig": faculty3_sig,
-        "faculty3_date_str": faculty3_date_str,
-        "hod_sig": hod_sig,
-        "hod_date_str": hod_date_str,
-        "aa_sig": aa_sig,
-        "aa_date_str": aa_date_str,
-        "dean_sig": dean_sig,
-        "dean_date_str": dean_date_str,
-        "director_sig": director_sig,
-        "director_date_str": director_date_str,
-        "dr_ar_sp_sig": dr_ar_sp_sig,
-        "dr_ar_fa_sig": dr_ar_fa_sig,
-        "ia_sig": ia_sig,
-        "hod_user": hod_user,
-        "sanction_authority_name": sanction_authority_name,
-        "sanction_authority_sig": sanction_authority_sig,
-        "sanction_authority_date_str": sanction_authority_date_str,
-    })
-
-    try:
-        pdf_bytes = weasyprint.HTML(string=html_content, base_url=settings.STORAGE_PATH).write_pdf()
-        filename_prefix = f"module_{module}" if module else "administrative_approval"
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename_prefix}_pr_{pr_id}.pdf"'}
-        )
-    except Exception as e:
-        import logging
-        logging.exception("WeasyPrint PDF generation failed, falling back to HTML representation")
+    if is_fallback:
         return HTMLResponse(
             content=html_content,
             status_code=200
         )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 @router.post("/{pr_id}/cancel-po")
@@ -2661,7 +2388,16 @@ async def refer_pr(
     await check_pr_fy_closed(pr, db)
 
     # Validate that the user is the currently expected approver of the active step
-    await verify_current_user_group_for_pr(pr, user, db)
+    # Or, during Tendering phase, the purchase initiator is also allowed to seek consultation
+    is_initiator_in_tendering = False
+    if pr.flow:
+        phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id))
+        phase = phase_res.scalar_one_or_none()
+        if phase and phase.phase_name == "Tendering" and pr.initiator_id == user.id:
+            is_initiator_in_tendering = True
+
+    if not is_initiator_in_tendering:
+        await verify_current_user_group_for_pr(pr, user, db)
 
     # Check if there is already an active pending referral
     active_ref = await db.execute(

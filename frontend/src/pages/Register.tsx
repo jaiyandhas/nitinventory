@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { UserPlus, Eye, EyeOff, Loader2, ArrowRight, UploadCloud, CheckCircle } from 'lucide-react';
 import { authApi } from '../services/api';
+import { TitleSelect, DesignationSelect } from '../components/UserFormFields';
 import toast from 'react-hot-toast';
 
 interface Dept {
@@ -24,10 +25,12 @@ export const RegisterPage: React.FC = () => {
   const [designation, setDesignation] = useState('');
   const [gender, setGender] = useState('Male');
   const [deptId, setDeptId] = useState('');
+  const [title, setTitle] = useState('Mr.');
   const [signature, setSignature] = useState<File | null>(null);
   const [sigPreview, setSigPreview] = useState<string | null>(null);
 
   const [departments, setDepartments] = useState<Dept[]>([]);
+  const [designations, setDesignations] = useState<string[]>([]);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -39,12 +42,20 @@ export const RegisterPage: React.FC = () => {
       try {
         const deptsRes = await authApi.departments();
         setDepartments(deptsRes.data);
+        const desigsRes = await authApi.designations();
+        setDesignations(desigsRes.data);
       } catch (err: unknown) {
-        toast.error('Failed to load department options');
+        toast.error('Failed to load onboarding options');
       }
     };
     fetchOptions();
   }, []);
+
+  useEffect(() => {
+    if (designations.length > 0 && !designation) {
+      setDesignation(designations[0]);
+    }
+  }, [designations, designation]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -82,6 +93,7 @@ export const RegisterPage: React.FC = () => {
       formData.append('designation', designation);
       formData.append('gender', gender);
       formData.append('department_id', deptId);
+      formData.append('title', title);
       formData.append('signature', signature);
 
       await authApi.register(formData);
@@ -143,14 +155,20 @@ export const RegisterPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="label">Full Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Dr. John Doe"
-                  className="input-field"
-                  required
-                />
+                <div className="flex gap-2">
+                  <TitleSelect
+                    value={title}
+                    onChange={setTitle}
+                  />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="John Doe"
+                    className="input-field flex-1"
+                    required
+                  />
+                </div>
               </div>
 
               <div>
@@ -190,13 +208,11 @@ export const RegisterPage: React.FC = () => {
 
               <div>
                 <label className="label">Designation</label>
-                <input
-                  type="text"
+                <DesignationSelect
                   value={designation}
-                  onChange={(e) => setDesignation(e.target.value)}
-                  placeholder="Associate Professor"
+                  onChange={setDesignation}
+                  designations={designations}
                   className="input-field"
-                  required
                 />
               </div>
             </div>

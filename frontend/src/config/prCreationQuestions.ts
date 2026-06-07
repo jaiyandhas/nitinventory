@@ -140,9 +140,9 @@ export const COMMON_FIELDS = {
 } as const;
 
 export const PR_TERMS = [
-  'The GeM availability will be checked after the finalization of Technical Specifications and the procurement will be processed based on the GeM Availability Report and declaration of non-availability on GeM Portal.',
-  'Description of the item/equipment/service is generic and does not indicate any particular trade mark, trade name or brand. In case of Proprietary purchases or purchases from single source, the trade mark, trade name or brand may be mentioned.',
-  'The demand for goods is not divided into small quantities to make piecemeal purchases to avoid tendering or the necessity of obtaining the sanction of higher authorities required with reference to the estimated value of the total demand.',
+  'The description of the item/equipment/service indented is generic and does not indicate any trademark, trade name or brand. The specifications are generic and broad based.',
+  'The eligibility criteria is not unduly restrictive.',
+  'The demand for goods is not divided into small quantities to make piecemeal purchases to avoid tendering or necessary higher approvals.',
 ] as const;
 
 export function isGemProcurement(procurementName: string): boolean {

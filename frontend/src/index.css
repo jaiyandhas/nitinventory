@@ -56,6 +56,15 @@
   .table-row {
     @apply border-b border-slate-200 hover:bg-slate-50 transition-colors;
   }
+  .data-table {
+    @apply w-full text-sm text-left border-collapse;
+  }
+  .data-table th {
+    @apply px-5 py-3 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider whitespace-nowrap;
+  }
+  .data-table td {
+    @apply px-5 py-4 text-slate-700 align-middle border-b border-slate-100;
+  }
 }
 
 .formal-bg {

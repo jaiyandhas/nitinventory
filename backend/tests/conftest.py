@@ -36,6 +36,17 @@ async def setup_test_database():
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS legacy_asset_tag VARCHAR(100);"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS fund_source VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS supplier_address TEXT;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS bill_number VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS bill_date DATE;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS stock_register_volume VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS stock_register_page VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS delivery_date DATE;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS remarks TEXT;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP;"))
+        await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_source VARCHAR(50) DEFAULT 'legacy';"))
     
     # Run the seed function from seed.py
     from seed import seed

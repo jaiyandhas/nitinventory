@@ -42,6 +42,13 @@ export const StepReviewSubmit: React.FC<Props> = ({
     return sum + qty * f.unit_cost;
   }, 0);
 
+  const grandTotalWithGST = files.reduce((sum, f) => {
+    const item = items[f.id];
+    const qty = item?.quantity !== undefined && item?.quantity !== '' ? Number(item.quantity) : 0;
+    const gstPercent = item?.charges !== undefined && item?.charges !== '' ? Number(item.charges) : 0;
+    return sum + (qty * f.unit_cost * (1 + gstPercent / 100));
+  }, 0);
+
   return (
     <div className="space-y-6">
       <div className="card p-4 bg-slate-50 text-sm space-y-2">
@@ -50,20 +57,24 @@ export const StepReviewSubmit: React.FC<Props> = ({
           {files.map((f) => {
             const item = items[f.id];
             const qty = item?.quantity !== undefined && item?.quantity !== '' ? Number(item.quantity) : 0;
+            const gstPercent = item?.charges !== undefined && item?.charges !== '' ? Number(item.charges) : 0;
             const estTotal = qty * f.unit_cost;
+            const gstAmt = estTotal * (gstPercent / 100);
+            const totalWithGst = estTotal + gstAmt;
             return (
               <li key={f.id}>
                 <strong>{f.file_no}</strong> — {f.item_name}{' '}
                 <span className="text-slate-600 font-medium">
-                  (Qty: {qty} × {formatCurrency(f.unit_cost)} = {formatCurrency(estTotal)})
+                  (Qty: {qty} × {formatCurrency(f.unit_cost)} = {formatCurrency(estTotal)} + GST {gstPercent}% [{formatCurrency(gstAmt)}] = {formatCurrency(totalWithGst)})
                 </span>
               </li>
             );
           })}
         </ul>
-        <p className="border-t border-slate-200 pt-2 font-bold text-slate-800">
-          Estimated Grand Total: <span className="text-[#1a3a6b]">{formatCurrency(grandTotal)}</span>
-        </p>
+        <div className="border-t border-slate-200 pt-2 font-bold text-slate-800 space-y-1">
+          <p>Estimated Grand Total (excl. GST): <span className="text-slate-700">{formatCurrency(grandTotal)}</span></p>
+          <p>Estimated Grand Total (incl. GST): <span className="text-[#1a3a6b]">{formatCurrency(grandTotalWithGST)}</span></p>
+        </div>
       </div>
 
       {/* Uploaded Documents Preview Section */}

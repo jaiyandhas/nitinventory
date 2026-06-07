@@ -123,7 +123,7 @@ export const AssetDetailPage: React.FC = () => {
               <p className="font-semibold capitalize">{asset.fund_source?.replace('_', ' ') || 'N/A'}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><UserIcon size={16} /> Custodian</p>
+              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><UserIcon size={16} /> Custodian Name</p>
               <p className="font-semibold">{asset.custodian || 'N/A'}</p>
             </div>
             <div>
@@ -142,7 +142,69 @@ export const AssetDetailPage: React.FC = () => {
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Shield size={16} /> Serial Number</p>
               <p className="font-semibold font-mono">{asset.serial_number || 'N/A'}</p>
             </div>
+            <div>
+              <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Calendar size={16} /> Warranty upto</p>
+              <p className="font-semibold">
+                {asset.warranty_expiry ? new Date(asset.warranty_expiry).toLocaleDateString() : 'N/A'}
+              </p>
+            </div>
           </div>
+
+          <div className="card p-6 space-y-6">
+            <h3 className="text-base font-bold text-[#1a3a6b] border-b border-slate-200 pb-2 flex items-center gap-2">
+              <Shield size={18} /> Supplier & Bill Information
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-y-6 gap-x-4">
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Supplier Name</p>
+                <p className="font-semibold text-slate-800">{asset.supplier_name || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Bill Number</p>
+                <p className="font-semibold text-slate-800 font-mono">{asset.bill_number || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Bill Date</p>
+                <p className="font-semibold text-slate-800">
+                  {asset.bill_date ? new Date(asset.bill_date).toLocaleDateString() : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Delivery Date</p>
+                <p className="font-semibold text-slate-800">
+                  {asset.delivery_date ? new Date(asset.delivery_date).toLocaleDateString() : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Stock Vol & Page</p>
+                <p className="font-semibold text-slate-800">
+                  {asset.stock_register_volume || asset.stock_register_page ? (
+                    `Vol: ${asset.stock_register_volume || '—'} · Page: ${asset.stock_register_page || '—'}`
+                  ) : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 mb-1 flex items-center gap-1">Asset Source</p>
+                <p className="font-semibold text-slate-800 capitalize">{asset.asset_source || 'legacy'}</p>
+              </div>
+            </div>
+
+            {asset.supplier_address && (
+              <div className="pt-4 border-t border-slate-100">
+                <p className="text-sm text-slate-500 mb-1">Supplier Address</p>
+                <p className="text-slate-800 whitespace-pre-wrap leading-relaxed text-sm bg-slate-50 p-3 rounded border border-slate-100">{asset.supplier_address}</p>
+              </div>
+            )}
+          </div>
+
+          {asset.remarks && (
+            <div className="card p-6">
+              <h3 className="text-base font-bold text-[#1a3a6b] border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
+                Remarks
+              </h3>
+              <p className="text-slate-800 whitespace-pre-wrap leading-relaxed text-sm bg-slate-50 p-3 rounded border border-slate-100">{asset.remarks}</p>
+            </div>
+          )}
 
           <div className="card p-0 overflow-hidden">
             <div className="p-4 border-b border-slate-200 bg-slate-50">

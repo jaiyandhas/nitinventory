@@ -18,38 +18,43 @@ export interface PRItemFormState {
   previous_file_no_reference: string;
   tech_specs_text: string;
   tech_specs_file: File | null;
+  
+  // Item-level specifications
+  equipment_name: string;
+  pdi_required: 'Yes' | 'No' | '';
+  pdi_justification: string;
+  pre_bid_required: 'Yes' | 'No' | '';
+  installation_scope: 'Supplier' | 'Department' | '';
+  training_required: 'Yes' | 'No' | '';
+  training_location: "Purchaser's Premises" | "Supplier's Premises" | '';
+  tech_eligibility: string;
 }
-
-/** When no MSE/startup relaxation — how standard participation norms apply */
-export type MsmeNoExceptionRoute = '' | 'competitive' | 'gem' | 'institute' | 'other';
 
 export interface PRCommonFormState {
   nominee_id: string;
-  basis_of_estimate: string;
+  basis_of_estimate: 'Budgetary Quote' | 'Previous Purchase' | 'Market Survey' | 'Others' | '';
+  basis_of_estimate_others: string;
   quotation_file: File | null;
   emd: string;
   performance_security: string;
-  is_service_center_south: 'Yes' | 'No' | '';
-  /** Required when service centre in southern region is Yes */
-  service_center_location: string;
-  /** Justification for using a southern-region service centre (Yes) */
-  service_center_south_desc: string;
   delivery_location: string;
   delivery_mode: string;
-  is_quantity_split: 'Yes' | 'No' | '';
-  split_quantity_justification: string;
-  is_item_split: 'Yes' | 'No' | '';
-  split_items_justification: string;
-  exemption: 'Yes' | 'No' | '';
-  exemption_remarks: string;
-  /** When exemption is No — declared compliance route */
-  msme_no_exception_route: MsmeNoExceptionRoute;
-  training_required: 'Yes' | 'No' | '';
-  training_type: 'Yes' | 'No' | '';
-  training_vendor: 'Yes' | 'No' | '';
   termsAccepted: boolean[];
   purchase_type: 'office' | 'department' | '';
   form_data: Record<string, any>;
+
+  // New common fields
+  laboratory_office: string;
+  source_of_fund: 'OH-35' | 'OH-31' | 'SW' | 'SEED' | 'Project code' | 'Others' | '';
+  source_of_fund_project_code: string;
+  source_of_fund_others: string;
+  bog_resolution_no: string;
+  fc_resolution_no: string;
+  item_category: 'Assets' | 'Consumables' | '';
+  purpose: 'Research' | 'Others' | '';
+  purpose_justification: string;
+  mii_clause: 'Applicable' | 'Not Applicable' | '';
+  mii_justification: string;
 }
 
 export interface PRWizardSelection {
@@ -77,6 +82,16 @@ export function createEmptyItemState(budgetFileId: number): PRItemFormState {
     previous_file_no_reference: '',
     tech_specs_text: '',
     tech_specs_file: null,
+
+    // Item-level specifications
+    equipment_name: '',
+    pdi_required: '',
+    pdi_justification: '',
+    pre_bid_required: '',
+    installation_scope: '',
+    training_required: '',
+    training_location: '',
+    tech_eligibility: '',
   };
 }
 
@@ -84,26 +99,27 @@ export function createEmptyCommonState(): PRCommonFormState {
   return {
     nominee_id: '',
     basis_of_estimate: '',
+    basis_of_estimate_others: '',
     quotation_file: null,
     emd: '',
     performance_security: '',
-    is_service_center_south: '',
-    service_center_location: '',
-    service_center_south_desc: '',
     delivery_location: '',
     delivery_mode: '',
-    is_quantity_split: '',
-    split_quantity_justification: '',
-    is_item_split: '',
-    split_items_justification: '',
-    exemption: '',
-    exemption_remarks: '',
-    msme_no_exception_route: '',
-    training_required: '',
-    training_type: '',
-    training_vendor: '',
     termsAccepted: [false, false, false],
     purchase_type: '',
     form_data: {},
+
+    // New common fields
+    laboratory_office: '',
+    source_of_fund: '',
+    source_of_fund_project_code: '',
+    source_of_fund_others: '',
+    bog_resolution_no: '',
+    fc_resolution_no: '',
+    item_category: '',
+    purpose: '',
+    purpose_justification: '',
+    mii_clause: '',
+    mii_justification: '',
   };
 }

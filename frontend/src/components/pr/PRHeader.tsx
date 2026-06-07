@@ -167,15 +167,24 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowPrintDropdown(false)}></div>
                   <div className="absolute left-0 mt-2 w-80 rounded-md shadow-xl bg-white border border-slate-200 divide-y divide-slate-100 focus:outline-none z-20 origin-top-left max-h-[80vh] overflow-y-auto">
-                    <div className="p-2">
+                    <div className="p-2 space-y-1">
                       <a
-                        href={`/api/pr/${pr.id}/print`}
+                        href={`/api/pr/${pr.id}/print?module=office_document`}
                         target="_blank"
                         rel="noreferrer"
                         onClick={() => setShowPrintDropdown(false)}
                         className="group flex items-center px-3 py-2 text-xs font-bold text-[#1a3a6b] hover:bg-[#1a3a6b]/5 rounded transition-colors"
                       >
-                        Default Purchase Request PDF
+                        Office Document (Official Clean Copy)
+                      </a>
+                      <a
+                        href={`/api/pr/${pr.id}/print?module=everything_dossier`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => setShowPrintDropdown(false)}
+                        className="group flex items-center px-3 py-2 text-xs font-bold text-[#1a3a6b] hover:bg-[#1a3a6b]/5 rounded transition-colors"
+                      >
+                        Full History &amp; Dossier (Everything)
                       </a>
                     </div>
                     {printModules.map((group) => (

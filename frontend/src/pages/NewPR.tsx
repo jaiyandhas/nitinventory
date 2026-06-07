@@ -11,6 +11,7 @@ import { StepItemDetails } from '../components/pr-creation/steps/StepItemDetails
 import { StepCommonDetails } from '../components/pr-creation/steps/StepCommonDetails';
 import { StepReviewSubmit } from '../components/pr-creation/steps/StepReviewSubmit';
 import { buildPRCreateFormData } from '../utils/prPayload';
+import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
 
 export const NewPRPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,15 +29,19 @@ export const NewPRPage: React.FC = () => {
     queryFn: () => budgetApi.procurementMethods().then((r) => r.data),
   });
 
-  const { data: facultyOptions = [] } = useQuery({
-    queryKey: ['departmentFaculty'],
-    queryFn: () => budgetApi.departmentFaculty().then((r) => r.data),
-  });
 
   const selectedFiles = useMemo(
     () => budgetFiles.filter((f: any) => wizard.selection.selectedFileIds.includes(f.id)),
     [budgetFiles, wizard.selection.selectedFileIds]
   );
+
+  const totalCost = useMemo(() => {
+    return selectedFiles.reduce((acc: number, file: any) => {
+      const item = wizard.items[file.id];
+      const qty = Number(item?.quantity) || 1;
+      return acc + (file.unit_cost * qty);
+    }, 0);
+  }, [selectedFiles, wizard.items]);
 
   const procurementMethod = procurementMethods.find(
     (m: any) => m.id === wizard.selection.procurementMethodId
@@ -59,9 +64,15 @@ export const NewPRPage: React.FC = () => {
       }
     }
     if (wizard.stepId === 'common') {
-      const err = wizard.validateCommon();
+      const err = wizard.validateCommon(totalCost, procurementMethod?.form_schema);
       if (err) {
         toast.error(err);
+        // If the error is about a procurement-specific field, scroll the user to that section
+        if (procurementMethod?.form_schema && err.includes('section at the top')) {
+          setTimeout(() => {
+            document.getElementById('procurement-specific-fields')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        }
         return;
       }
     }
@@ -69,7 +80,7 @@ export const NewPRPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = wizard.validateSubmit() ?? wizard.validateCommon() ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
+    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
     if (err) {
       toast.error(err);
       return;
@@ -86,6 +97,7 @@ export const NewPRPage: React.FC = () => {
       );
       const res = await prApi.createWithFiles(formData);
       toast.success(`PR created: ${res.data.icr_number ?? res.data.id}`);
+      wizard.clearDraft();  // ← clear saved draft on success
       queryClient.invalidateQueries({ queryKey: ['prs'] });
       navigate('/pr');
     } catch (err: unknown) {
@@ -98,12 +110,46 @@ export const NewPRPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="page-header">New Purchase Request</h1>
-        <p className="page-subtitle">
-          Multi-step initiation aligned with institute procurement guidelines.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="page-header">New Purchase Request</h1>
+          <p className="page-subtitle">
+            Multi-step initiation aligned with institute procurement guidelines.
+          </p>
+        </div>
+        {/* Discard draft button — only show when past step 0 */}
+        {wizard.stepIndex > 0 && (
+          <button
+            onClick={() => {
+              if (window.confirm('Discard this draft and start a new PR?')) {
+                wizard.clearDraft();
+              }
+            }}
+            className="flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-800 border border-rose-200 hover:border-rose-400 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg font-semibold transition-colors"
+          >
+            <Trash2 size={13} /> Discard Draft
+          </button>
+        )}
       </div>
+
+      {/* File re-upload notice after session restore */}
+      {wizard.filesNeedReupload && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm text-amber-800 shadow-sm">
+          <AlertTriangle size={18} className="text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold">Draft restored — PDFs need re-uploading</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Your form progress was saved, but uploaded PDF files cannot be preserved across page refreshes. Please re-upload your PDF attachments before submitting.
+            </p>
+          </div>
+          <button
+            onClick={wizard.dismissFileWarning}
+            className="text-amber-500 hover:text-amber-700 text-xs font-bold shrink-0 mt-0.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="card p-6">
         <PRWizardStepper currentIndex={wizard.stepIndex} />
@@ -133,9 +179,9 @@ export const NewPRPage: React.FC = () => {
         {wizard.stepId === 'common' && (
           <StepCommonDetails
             common={wizard.common}
-            facultyOptions={facultyOptions}
             procurementName={procurementMethod?.name ?? ''}
             formSchema={procurementMethod?.form_schema}
+            totalCost={totalCost}
             onUpdate={wizard.updateCommon}
           />
         )}

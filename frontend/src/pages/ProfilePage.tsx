@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../services/api';
+import { TitleSelect, DesignationSelect } from '../components/UserFormFields';
 import { toast } from 'react-hot-toast';
 import { RotateCw, RotateCcw, ZoomIn, ZoomOut, Upload, User as UserIcon, Shield, Save } from 'lucide-react';
 
@@ -11,6 +12,8 @@ export const ProfilePage: React.FC = () => {
   const [name, setName] = useState('');
   const [designation, setDesignation] = useState('');
   const [gender, setGender] = useState('male');
+  const [title, setTitle] = useState('Mr.');
+  const [designations, setDesignations] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // Image editing states
@@ -36,6 +39,7 @@ export const ProfilePage: React.FC = () => {
       setName(user.name || '');
       setDesignation(user.designation || '');
       setGender(user.gender || 'male');
+      setTitle(user.title || 'Mr.');
       if (user.signature_path) {
         const sigUrl = user.signature_path.startsWith('http') || user.signature_path.startsWith('/')
           ? user.signature_path
@@ -44,6 +48,19 @@ export const ProfilePage: React.FC = () => {
       }
     }
   }, [user]);
+
+  // Load designations list
+  useEffect(() => {
+    const fetchDesignations = async () => {
+      try {
+        const res = await authApi.designations();
+        setDesignations(res.data);
+      } catch (err) {
+        console.error('Failed to load designations', err);
+      }
+    };
+    fetchDesignations();
+  }, []);
 
   // Load image on file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,6 +174,7 @@ export const ProfilePage: React.FC = () => {
       formData.append('name', name);
       formData.append('designation', designation);
       formData.append('gender', gender);
+      formData.append('title', title);
 
       if (imageObj) {
         const blob = await getCanvasBlob();
@@ -206,14 +224,20 @@ export const ProfilePage: React.FC = () => {
 
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="input-field w-full"
-                placeholder="Enter full name"
-                required
-              />
+              <div className="flex gap-2">
+                <TitleSelect
+                  value={title}
+                  onChange={setTitle}
+                />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="input-field flex-1"
+                  placeholder="Enter full name"
+                  required
+                />
+              </div>
             </div>
 
             <div>
@@ -230,13 +254,11 @@ export const ProfilePage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Designation</label>
-                <input
-                  type="text"
+                <DesignationSelect
                   value={designation}
-                  onChange={(e) => setDesignation(e.target.value)}
+                  onChange={setDesignation}
+                  designations={designations}
                   className="input-field w-full"
-                  placeholder="e.g. Assistant Professor"
-                  required
                 />
               </div>
 

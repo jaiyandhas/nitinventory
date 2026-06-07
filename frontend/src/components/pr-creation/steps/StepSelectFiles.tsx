@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { BudgetFile, ProcurementMethod } from '../../../types';
 import type { PRWizardSelection } from '../../../types/prCreation';
 
@@ -15,6 +15,8 @@ export const StepSelectFiles: React.FC<Props> = ({
   selection,
   onChange,
 }) => {
+  const [filterTexts, setFilterTexts] = useState<Record<number, string>>({});
+
   useEffect(() => {
     const count = selection.fileCount;
     if (selection.selectedFileIds.length > count) {
@@ -28,11 +30,46 @@ export const StepSelectFiles: React.FC<Props> = ({
       selection.selectedFileIds.filter((_, i) => i !== index)
     );
 
+    const filterText = (filterTexts[index] || '').toLowerCase().trim();
+    const filtered = budgetFiles.filter((f) => {
+      if (f.id === current) return true;
+      if (usedElsewhere.has(f.id)) return false;
+      if (!filterText) return true;
+      return (
+        f.file_no.toLowerCase().includes(filterText) ||
+        f.item_name.toLowerCase().includes(filterText)
+      );
+    });
+
+    const displayLimit = 50;
+    const sliced = filtered.slice(0, displayLimit);
+    const hasMore = filtered.length > displayLimit;
+
     return (
-      <div key={index}>
-        <label className="label">{index + 1}) Select budget file</label>
+      <div key={index} className="space-y-2 p-4 border border-slate-200 rounded-lg bg-slate-50/50">
+        <label className="label font-semibold text-slate-700">{index + 1}) Select budget file</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search by file no or item name..."
+            className="input-field text-sm w-full bg-white border border-slate-350"
+            value={filterTexts[index] || ''}
+            onChange={(e) => {
+              setFilterTexts((prev) => ({ ...prev, [index]: e.target.value }));
+            }}
+          />
+          {filterTexts[index] && (
+            <button
+              type="button"
+              onClick={() => setFilterTexts((prev) => ({ ...prev, [index]: '' }))}
+              className="px-3 text-xs bg-slate-200 hover:bg-slate-300 border border-slate-350 rounded font-semibold transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <select
-          className="input-field bg-white"
+          className="input-field bg-white w-full border border-slate-350"
           value={current ?? ''}
           onChange={(e) => {
             const id = Number(e.target.value);
@@ -45,17 +82,20 @@ export const StepSelectFiles: React.FC<Props> = ({
           <option value="" disabled>
             -- Select file --
           </option>
-          {budgetFiles
-            .filter((f) => !usedElsewhere.has(f.id) || f.id === current)
-            .map((f) => {
-              const isExhausted = (f.available_balance ?? f.available_amount) < f.unit_cost;
-              return (
-                <option key={f.id} value={f.id} disabled={isExhausted}>
-                  {f.file_no} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}
-                </option>
-              );
-            })}
+          {sliced.map((f) => {
+            const isExhausted = (f.available_balance ?? f.available_amount) < f.unit_cost;
+            return (
+              <option key={f.id} value={f.id} disabled={isExhausted}>
+                {f.file_no} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}
+              </option>
+            );
+          })}
         </select>
+        {hasMore && (
+          <p className="text-[11px] text-slate-500 font-medium">
+            Showing first {displayLimit} of {filtered.length} matching files. Type in search box above to filter.
+          </p>
+        )}
       </div>
     );
   };

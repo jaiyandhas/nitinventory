@@ -118,66 +118,98 @@ class AssetService:
             year_suffix = str(datetime.utcnow().date().year)[-2:]
             
         # Auto-generate next asset tag sequence using Postgres sequence (atomic & race-free)
-        seq_list = await self._get_tag_sequences(dept_code, 1)
-        seq = seq_list[0]
-        asset_tag = f"NIT-{dept_code}-{year_suffix}-{seq:03d}"
+        quantity = int(data.get("quantity") or 1)
+        seq_list = await self._get_tag_sequences(dept_code, quantity)
         
-        # Check if asset_tag is unique (should be since sequence works, but safe check)
-        check_q = await self.db.execute(select(Asset).where(Asset.asset_tag == asset_tag))
-        if check_q.scalar_one_or_none():
-            from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail="Generated asset tag already exists")
+        first_asset = None
+        for i in range(quantity):
+            seq = seq_list[i]
+            asset_tag = f"NIT-{dept_code}-{year_suffix}-{seq:03d}"
             
-        # Parse optional dates
-        purchase_date = None
-        if data.get("purchase_date"):
-            purchase_date = datetime.strptime(data["purchase_date"], "%Y-%m-%d").date()
+            # Check if asset_tag is unique (should be since sequence works, but safe check)
+            check_q = await self.db.execute(select(Asset).where(Asset.asset_tag == asset_tag))
+            if check_q.scalar_one_or_none():
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Generated asset tag {asset_tag} already exists")
+                
+            # Parse optional dates
+            purchase_date = None
+            if data.get("purchase_date"):
+                purchase_date = datetime.strptime(data["purchase_date"], "%Y-%m-%d").date()
+                
+            warranty_expiry = None
+            if data.get("warranty_expiry"):
+                warranty_expiry = datetime.strptime(data["warranty_expiry"], "%Y-%m-%d").date()
+
+            bill_date = None
+            if data.get("bill_date"):
+                bill_date = datetime.strptime(data["bill_date"], "%Y-%m-%d").date()
+
+            delivery_date = None
+            if data.get("delivery_date"):
+                delivery_date = datetime.strptime(data["delivery_date"], "%Y-%m-%d").date()
+                
+            # Generate QR code
+            qr_url = self.qr_svc.generate(asset_tag)
             
-        warranty_expiry = None
-        if data.get("warranty_expiry"):
-            warranty_expiry = datetime.strptime(data["warranty_expiry"], "%Y-%m-%d").date()
+            legacy_tag = data.get("legacy_asset_tag")
+            if legacy_tag and quantity > 1:
+                legacy_tag = f"{legacy_tag}-{i+1}"
+
+            asset = Asset(
+                asset_tag=asset_tag,
+                legacy_asset_tag=legacy_tag,
+                fund_source=data.get("fund_source"),
+                name=data["name"],
+                category=data["category"],
+                department_id=dept_id,
+                building=data.get("building"),
+                room=data.get("room"),
+                custodian=data.get("custodian"),
+                serial_number=data.get("serial_number") if quantity == 1 else None,
+                condition=data.get("condition") or "working",
+                disposal_status=DisposalStatus.ACTIVE,
+                qr_code_url=qr_url,
+                purchase_date=purchase_date,
+                unit_cost=float(data["unit_cost"]) if data.get("unit_cost") else None,
+                warranty_expiry=warranty_expiry,
+                remarks=data.get("remarks"),
+                asset_source=data.get("asset_source") or "legacy",
+                # New Stock Register / Supplier / Bill fields
+                supplier_name=data.get("supplier_name"),
+                supplier_address=data.get("supplier_address"),
+                bill_number=data.get("bill_number"),
+                bill_date=bill_date,
+                stock_register_volume=data.get("stock_register_volume"),
+                stock_register_page=data.get("stock_register_page"),
+                delivery_date=delivery_date,
+            )
+            self.db.add(asset)
+            await self.db.flush()
             
-        # Generate QR code
-        qr_url = self.qr_svc.generate(asset_tag)
-        
-        asset = Asset(
-            asset_tag=asset_tag,
-            legacy_asset_tag=data.get("legacy_asset_tag"),
-            fund_source=data.get("fund_source"),
-            name=data["name"],
-            category=data["category"],
-            department_id=dept_id,
-            building=data.get("building"),
-            room=data.get("room"),
-            custodian=data.get("custodian"),
-            serial_number=data.get("serial_number"),
-            condition=data.get("condition") or "working",
-            disposal_status=DisposalStatus.ACTIVE,
-            qr_code_url=qr_url,
-            purchase_date=purchase_date,
-            unit_cost=float(data["unit_cost"]) if data.get("unit_cost") else None,
-            warranty_expiry=warranty_expiry,
-        )
-        self.db.add(asset)
-        await self.db.flush()
-        
-        # Log manual registration
-        log = AssetLog(
-            asset_id=asset.id,
-            action="asset_registered",
-            performed_by_id=user.id,
-            old_value=None,
-            new_value={
-                "asset_tag": asset_tag,
-                "legacy_asset_tag": asset.legacy_asset_tag,
-                "fund_source": asset.fund_source,
-                "condition": asset.condition
-            },
-            performed_at=datetime.utcnow(),
-        )
-        self.db.add(log)
-        await self.db.flush()
-        return asset
+            # Log manual registration
+            log = AssetLog(
+                asset_id=asset.id,
+                action="asset_registered",
+                performed_by_id=user.id,
+                old_value=None,
+                new_value={
+                    "asset_tag": asset_tag,
+                    "legacy_asset_tag": asset.legacy_asset_tag,
+                    "fund_source": asset.fund_source,
+                    "condition": asset.condition,
+                    "remarks": asset.remarks,
+                    "asset_source": asset.asset_source
+                },
+                performed_at=datetime.utcnow(),
+            )
+            self.db.add(log)
+            await self.db.flush()
+            
+            if i == 0:
+                first_asset = asset
+
+        return first_asset
 
     async def update_condition(self, asset_id: int, new_condition: str, user: User) -> Asset:
         """Update the condition profile of a registered asset and log it."""
@@ -305,9 +337,9 @@ class AssetService:
                     return headers.index(normalized)
             return -1
 
-        idx_year = get_col_index(["year", "asset_year"])
-        idx_legacy = get_col_index(["legacy_asset_tag", "legacy_tag", "existing_asset_number", "existing_asset_no"])
-        idx_name = get_col_index(["name", "asset_name"])
+        idx_year = get_col_index(["purchase_year", "year", "asset_year"])
+        idx_legacy = get_col_index(["asset_tag", "legacy_asset_tag", "legacy_tag", "existing_asset_number", "existing_asset_no"])
+        idx_name = get_col_index(["asset_name", "name"])
         idx_category = get_col_index(["category"])
         idx_fund = get_col_index(["fund_source", "funding", "funding_type", "fund_type"])
         idx_cost = get_col_index(["unit_cost", "cost", "price", "unit_price"])
@@ -319,11 +351,12 @@ class AssetService:
         idx_purchase = get_col_index(["purchase_date", "purchase_day"])
         idx_warranty = get_col_index(["warranty_expiry", "warranty_date"])
         idx_dept = get_col_index(["department", "dept", "department_code", "dept_code", "department_id"])
+        idx_remarks = get_col_index(["remarks", "remarks_field"])
 
         if idx_name == -1:
             raise HTTPException(status_code=400, detail="CSV must contain a 'name' or 'asset_name' column")
         if idx_legacy == -1:
-            raise HTTPException(status_code=400, detail="CSV must contain a 'legacy_asset_tag' or 'existing_asset_number' column")
+            raise HTTPException(status_code=400, detail="CSV must contain an 'Asset Tag' column")
 
         imported_count = 0
         errors = []
@@ -345,7 +378,7 @@ class AssetService:
                 errors.append(f"Row {i}: Asset name is required")
                 continue
             if not legacy_tag:
-                errors.append(f"Row {i}: Existing Asset / Reference Number is required")
+                errors.append(f"Row {i}: Asset Tag is required")
                 continue
 
             # Determine department
@@ -481,6 +514,8 @@ class AssetService:
                     "purchase_date": purchase_date.strftime("%Y-%m-%d") if purchase_date else None,
                     "unit_cost": cost_val,
                     "warranty_expiry": warranty_expiry.strftime("%Y-%m-%d") if warranty_expiry else None,
+                    "remarks": val(idx_remarks) or None,
+                    "asset_source": "legacy",
                 }, user)
                 imported_count += 1
             except Exception as e:

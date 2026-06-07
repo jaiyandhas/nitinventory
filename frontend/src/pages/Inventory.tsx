@@ -29,7 +29,7 @@ export const DeliveriesPage: React.FC = () => {
       {isLoading ? (
         <div className="card p-8 text-center text-slate-500 font-medium">Loading deliveries...</div>
       ) : (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">

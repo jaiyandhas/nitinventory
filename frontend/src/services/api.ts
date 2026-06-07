@@ -35,6 +35,7 @@ export const authApi = {
     api.post('/auth/profile', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   departments: () => api.get('/auth/departments'),
   roles: () => api.get('/auth/roles'),
+  designations: () => api.get('/auth/designations'),
 };
 
 // Purchase Requests
@@ -87,8 +88,10 @@ export const budgetApi = {
   directorGetCommittees: () => api.get('/budget/director/committees'),
   directorUpdateCommittee: (data: object) => api.post('/budget/director/committees', data),
   allFaculties: () => api.get('/budget/all-faculties'),
-  assignCommittee: (budgetId: number, data: { expert1_id: number | null; expert2_id: number | null }) =>
-    api.post(`/budget/files/${budgetId}/committee`, data),
+  assignCommittee: (
+    budgetId: number,
+    data: { expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }
+  ) => api.post(`/budget/files/${budgetId}/committee`, data),
   assignDirectorCommittee: (budgetId: number, data: { director_faculty_id: number | null }) =>
     api.post(`/budget/files/${budgetId}/director-committee`, data),
   allUsers: () => api.get('/budget/users'),
@@ -138,7 +141,7 @@ export const adminApi = {
   rolloverFinancialYear: () => api.post('/admin/financial-years/rollover', {}),
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
-  budget: (params?: { skip?: number; limit?: number }) => api.get('/admin/budget', { params }),
+  budget: (params?: { skip?: number; limit?: number; search?: string; department_id?: number; financial_year_id?: number }) => api.get('/admin/budget', { params }),
   createBudget: (data: object) => api.post('/admin/budget', data),
   updateBudget: (id: number, data: object) => api.put(`/admin/budget/${id}`, data),
   workflows: () => api.get('/admin/workflows'),
@@ -175,4 +178,6 @@ export const adminApi = {
     api.get('/admin/budget/next-file-number', { params }),
   forceAdvancePr: (prId: number, remarks: string) =>
     api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),
+  addDesignation: (value: string) => api.post('/admin/designations', { value }),
+  deleteDesignation: (value: string) => api.delete('/admin/designations', { params: { value } }),
 };

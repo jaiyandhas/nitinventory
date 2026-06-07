@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, set_auth_cookie, clear_auth_cookie, get_password_hash
 from app.core.deps import get_current_user
 from app.models.user import User, RoleManager, Department
+from app.models.budget import Settings
 from app.core.config import settings
 from app.core.limiter import limiter
 
@@ -63,6 +64,15 @@ async def public_roles(db: AsyncSession = Depends(get_db)):
     return [{"id": r.id, "name": r.name, "value": r.value, "group_key": r.group_key} for r in roles]
 
 
+@router.get("/designations")
+async def public_designations(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Settings).where(Settings.key_name == "designations"))
+    setting = result.scalar_one_or_none()
+    if setting:
+        return [d.strip() for d in setting.value.split(",") if d.strip()]
+    return ["Assistant Professor", "Associate Professor", "Professor", "Dean P&D (Budget)", "Dean P&D", "Director", "Registrar"]
+
+
 @router.post("/register")
 @limiter.limit("20/minute")
 async def register(
@@ -73,6 +83,7 @@ async def register(
     designation: str = Form(...),
     gender: str = Form(...),
     department_id: int = Form(...),
+    title: Optional[str] = Form("Mr."),
     signature: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db)
 ):
@@ -94,6 +105,7 @@ async def register(
         raise HTTPException(status_code=400, detail="Invalid department selected")
 
     user = User(
+        title=title,
         name=name,
         email=email,
         hashed_password=get_password_hash(password),
@@ -128,6 +140,7 @@ async def update_profile(
     name: str = Form(...),
     designation: str = Form(...),
     gender: str = Form(...),
+    title: Optional[str] = Form("Mr."),
     signature: Optional[UploadFile] = File(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -135,6 +148,7 @@ async def update_profile(
     user.name = name
     user.designation = designation
     user.gender = gender
+    user.title = title
 
     if signature:
         os.makedirs(os.path.join(settings.STORAGE_PATH, "signatures"), exist_ok=True)
@@ -159,6 +173,7 @@ async def update_profile(
     return {
         "message": "Profile updated successfully",
         "id": user.id,
+        "title": user.title,
         "name": user.name,
         "email": user.email,
         "designation": user.designation,
@@ -196,6 +211,7 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
 
     return {
         "id": user.id,
+        "title": user.title,
         "name": user.name,
         "email": user.email,
         "designation": user.designation,
@@ -224,6 +240,7 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
     full_user = result.scalar_one()
     return {
         "id": full_user.id,
+        "title": full_user.title,
         "name": full_user.name,
         "email": full_user.email,
         "designation": full_user.designation,

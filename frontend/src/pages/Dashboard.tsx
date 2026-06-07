@@ -28,7 +28,7 @@ export const DashboardPage: React.FC = () => {
   const { data: budget } = useQuery({
     queryKey: ['budget-overview'],
     queryFn: () => budgetApi.overview().then(r => r.data),
-    enabled: isRole('faculty', 'hod', 'admin'),
+    enabled: isRole('faculty', 'hod', 'admin', 'dean_approver'),
   });
 
   const { data: assetsData } = useQuery({
@@ -99,6 +99,10 @@ export const DashboardPage: React.FC = () => {
     return `₹${(n / 100000).toFixed(2)}L`;
   };
 
+  const formatRupee = (n: number) => {
+    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   const safeBudget = {
     total: budget?.total || 0,
     available: budget?.available || 0,
@@ -117,130 +121,188 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
-        <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
-        <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
-        <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
-      </div>
-
-      {/* Open discrepancies alert */}
-      {discrepancies.filter((d: { status: string }) => d.status === 'open').length > 0 && (
-        <div className="card border-l-4 border-l-orange-500 p-4 flex items-center gap-4 bg-orange-50">
-          <AlertTriangle size={24} className="text-orange-600 flex-shrink-0" />
-          <div>
-            <div className="text-sm font-bold text-orange-800">{discrepancies.filter((d: { status: string }) => d.status === 'open').length} Open Discrepanc{discrepancies.filter((d: { status: string }) => d.status === 'open').length > 1 ? 'ies' : 'y'}</div>
-            <div className="text-xs font-medium text-orange-700 mt-0.5">Quantity mismatches detected. Payments are currently blocked.</div>
+      {user?.designation !== 'Dean P&D (Budget)' ? (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
+            <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
+            <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
+            <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
           </div>
-          <Link to="/inventory/discrepancies" className="ml-auto btn-primary text-xs py-1.5 px-3">Resolve Now</Link>
+
+          {/* Open discrepancies alert */}
+          {discrepancies.filter((d: { status: string }) => d.status === 'open').length > 0 && (
+            <div className="card border-l-4 border-l-orange-500 p-4 flex items-center gap-4 bg-orange-50">
+              <AlertTriangle size={24} className="text-orange-600 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-bold text-orange-800">{discrepancies.filter((d: { status: string }) => d.status === 'open').length} Open Discrepanc{discrepancies.filter((d: { status: string }) => d.status === 'open').length > 1 ? 'ies' : 'y'}</div>
+                <div className="text-xs font-medium text-orange-700 mt-0.5">Quantity mismatches detected. Payments are currently blocked.</div>
+              </div>
+              <Link to="/inventory/discrepancies" className="ml-auto btn-primary text-xs py-1.5 px-3">Resolve Now</Link>
+            </div>
+          )}
+
+          {/* My Pending Actions Widget */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <Layers size={18} className="text-[#1a3a6b]" />
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">My Pending Actions</h3>
+              </div>
+              <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-xs font-bold">
+                {pendingActions.length} Action(s) Required
+              </span>
+            </div>
+
+            {pendingActions.length === 0 ? (
+              <div className="text-center py-8 text-slate-500 text-xs font-semibold flex flex-col items-center justify-center gap-2">
+                <CheckCircle size={32} className="text-green-500" />
+                <div>All caught up! No pending procurement actions at this moment.</div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendingActions.map((pr: any) => {
+                  const hasReferralForMe = pr.referrals?.some(
+                    (ref: any) => ref.referred_to?.id === user?.id && ref.status === 'pending'
+                  );
+                  let actionTitle = "Awaiting Action";
+                  let badgeColor = "bg-blue-100 text-blue-800";
+                  
+                  if (hasReferralForMe) {
+                    actionTitle = "Opinion Requested";
+                    badgeColor = "bg-amber-100 text-amber-800 border border-amber-300";
+                  } else if (pr.flow) {
+                    actionTitle = `${pr.flow.phase_name || 'N/A'}`;
+                  }
+
+                  return (
+                    <div key={pr.id} className="p-4 bg-slate-50 border border-slate-200 hover:border-[#1a3a6b] transition-all flex flex-col justify-between rounded-lg shadow-sm hover:shadow-md">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            {pr.icr_number || `#${pr.id}`}
+                          </span>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${badgeColor}`}>
+                            {actionTitle}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-black text-slate-800 uppercase line-clamp-1">{pr.category?.title}</h4>
+                        <div className="text-[10.5px] text-slate-500 space-y-1">
+                          <p><span className="font-semibold text-slate-600">Method:</span> {pr.procurement?.name}</p>
+                          <p><span className="font-semibold text-slate-600">Initiator:</span> {pr.initiator?.name}</p>
+                          <p><span className="font-semibold text-slate-600">Total:</span> {formatCurrency(pr.amount)}</p>
+                        </div>
+                      </div>
+                      <Link to={`/pr/${pr.id}`} className="text-[11px] font-bold text-[#1a3a6b] hover:underline mt-4 inline-flex items-center gap-1 self-start">
+                        Go to Action Desk →
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Recent PRs table */}
+          <div className="card">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Requests</h3>
+              <Link to="/pr" className="text-xs font-semibold text-[#1a3a6b] hover:underline">View All</Link>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">
+                    <th className="text-left px-5 py-3 font-semibold">ICR / ID</th>
+                    <th className="text-left px-5 py-3 font-semibold">Initiator</th>
+                    <th className="text-left px-5 py-3 font-semibold">Amount</th>
+                    <th className="text-left px-5 py-3 font-semibold">Status</th>
+                    <th className="text-left px-5 py-3 font-semibold">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {prs.slice(0, 8).map((pr: PurchaseRequest) => (
+                    <tr key={pr.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-3">
+                        <Link to={`/pr/${pr.id}`} className="text-[#1a3a6b] hover:underline font-bold">
+                          {pr.icr_number || `#${pr.id}`}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-3 text-slate-700">{pr.initiator?.name || '—'}</td>
+                      <td className="px-5 py-3 text-slate-700 font-medium">
+                        {formatCurrency(pr.amount)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="status-badge border-slate-300 bg-slate-100 text-slate-700">
+                          {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-slate-500 font-medium">{new Date(pr.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                  {prs.length === 0 && (
+                    <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase requests yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* Dean Budget Portal Analytics & Operations Dashboard */
+        <div className="space-y-6">
+
+
+
+          {/* Quick Operations and Workspaces Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[#1a3a6b]">
+                  <Wallet size={18} />
+                  <h3 className="text-sm font-bold uppercase tracking-wide">Manage Budget Files</h3>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  View and search all departmental allocations, assign technical committee experts, and update ledger details.
+                </p>
+              </div>
+              <Link to="/budget" className="btn-primary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
+                Go to Budget Dashboard
+              </Link>
+            </div>
+
+            <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[#1a3a6b]">
+                  <Layers size={18} />
+                  <h3 className="text-sm font-bold uppercase tracking-wide">Expenditure Categories</h3>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  Maintain the administrative expenditure category structure (CAPEX, OPEX, custom sources) and item categories.
+                </p>
+              </div>
+              <Link to="/budget" className="btn-secondary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
+                View Categories
+              </Link>
+            </div>
+
+            <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[#1a3a6b]">
+                  <Package size={18} />
+                  <h3 className="text-sm font-bold uppercase tracking-wide">Active Financial Year</h3>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  Check active year start/end dates, roll over assets and balances, and view locked budget configurations.
+                </p>
+              </div>
+              <Link to="/budget" className="btn-secondary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
+                Verify Fiscal Years
+              </Link>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* My Pending Actions Widget */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-          <div className="flex items-center gap-2">
-            <Layers size={18} className="text-[#1a3a6b]" />
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">My Pending Actions</h3>
-          </div>
-          <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-xs font-bold">
-            {pendingActions.length} Action(s) Required
-          </span>
-        </div>
-
-        {pendingActions.length === 0 ? (
-          <div className="text-center py-8 text-slate-500 text-xs font-semibold flex flex-col items-center justify-center gap-2">
-            <CheckCircle size={32} className="text-green-500" />
-            <div>All caught up! No pending procurement actions at this moment.</div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingActions.map((pr: any) => {
-              const hasReferralForMe = pr.referrals?.some(
-                (ref: any) => ref.referred_to?.id === user?.id && ref.status === 'pending'
-              );
-              let actionTitle = "Awaiting Action";
-              let badgeColor = "bg-blue-100 text-blue-800";
-              
-              if (hasReferralForMe) {
-                actionTitle = "Opinion Requested";
-                badgeColor = "bg-amber-100 text-amber-800 border border-amber-300";
-              } else if (pr.flow) {
-                actionTitle = `${pr.flow.phase_name || 'N/A'}`;
-              }
-
-              return (
-                <div key={pr.id} className="p-4 bg-slate-50 border border-slate-200 hover:border-[#1a3a6b] transition-all flex flex-col justify-between rounded-lg shadow-sm hover:shadow-md">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-start">
-                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                        {pr.icr_number || `#${pr.id}`}
-                      </span>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${badgeColor}`}>
-                        {actionTitle}
-                      </span>
-                    </div>
-                    <h4 className="text-xs font-black text-slate-800 uppercase line-clamp-1">{pr.category?.title}</h4>
-                    <div className="text-[10.5px] text-slate-500 space-y-1">
-                      <p><span className="font-semibold text-slate-600">Method:</span> {pr.procurement?.name}</p>
-                      <p><span className="font-semibold text-slate-600">Initiator:</span> {pr.initiator?.name}</p>
-                      <p><span className="font-semibold text-slate-600">Total:</span> {formatCurrency(pr.amount)}</p>
-                    </div>
-                  </div>
-                  <Link to={`/pr/${pr.id}`} className="text-[11px] font-bold text-[#1a3a6b] hover:underline mt-4 inline-flex items-center gap-1 self-start">
-                    Go to Action Desk →
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Recent PRs table */}
-      <div className="card">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Requests</h3>
-          <Link to="/pr" className="text-xs font-semibold text-[#1a3a6b] hover:underline">View All</Link>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">
-                <th className="text-left px-5 py-3 font-semibold">ICR / ID</th>
-                <th className="text-left px-5 py-3 font-semibold">Initiator</th>
-                <th className="text-left px-5 py-3 font-semibold">Amount</th>
-                <th className="text-left px-5 py-3 font-semibold">Status</th>
-                <th className="text-left px-5 py-3 font-semibold">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {prs.slice(0, 8).map((pr: PurchaseRequest) => (
-                <tr key={pr.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-3">
-                    <Link to={`/pr/${pr.id}`} className="text-[#1a3a6b] hover:underline font-bold">
-                      {pr.icr_number || `#${pr.id}`}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-slate-700">{pr.initiator?.name || '—'}</td>
-                  <td className="px-5 py-3 text-slate-700 font-medium">
-                    {formatCurrency(pr.amount)}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="status-badge border-slate-300 bg-slate-100 text-slate-700">
-                      {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-xs text-slate-500 font-medium">{new Date(pr.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {prs.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase requests yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 };

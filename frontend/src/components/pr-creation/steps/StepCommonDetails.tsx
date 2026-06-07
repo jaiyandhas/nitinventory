@@ -1,30 +1,22 @@
 import React from 'react';
 import type { User } from '../../../types';
-import type { MsmeNoExceptionRoute, PRCommonFormState } from '../../../types/prCreation';
+import type { PRCommonFormState } from '../../../types/prCreation';
 import { EMD_PERCENT_OPTIONS, PERFORMANCE_SECURITY_OPTIONS } from '../../../config/prCreationQuestions';
-import { YesNoSelect } from '../YesNoSelect';
 import { DynamicFormRenderer } from '../../pr/DynamicFormRenderer';
 
 interface Props {
   common: PRCommonFormState;
-  facultyOptions: Pick<User, 'id' | 'name' | 'email'>[];
   procurementName: string;
   formSchema?: any;
+  totalCost?: number;
   onUpdate: (patch: Partial<PRCommonFormState>) => void;
 }
 
-const MSME_NO_ROUTE_OPTIONS: { value: MsmeNoExceptionRoute; label: string }[] = [
-  { value: 'competitive', label: 'Full competitive criteria — no relaxation' },
-  { value: 'gem', label: 'GeM / e-marketplace route — no relaxation' },
-  { value: 'institute', label: 'Institute procurement policy — no relaxation' },
-  { value: 'other', label: 'Other (specify)' },
-];
-
 export const StepCommonDetails: React.FC<Props> = ({
   common,
-  facultyOptions,
   procurementName,
   formSchema,
+  totalCost = 0,
   onUpdate,
 }) => (
   <div className="space-y-8">
@@ -33,11 +25,19 @@ export const StepCommonDetails: React.FC<Props> = ({
     </p>
 
     {formSchema && (
-      <DynamicFormRenderer
-        schema={formSchema}
-        value={common.form_data || {}}
-        onChange={(val) => onUpdate({ form_data: val })}
-      />
+      <div id="procurement-specific-fields" className="scroll-mt-6">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-1 h-4 rounded-full bg-amber-500 inline-block" />
+          <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+            {formSchema.title ?? 'Procurement-Specific Details'} — Fill all required fields below
+          </span>
+        </div>
+        <DynamicFormRenderer
+          schema={formSchema}
+          value={common.form_data || {}}
+          onChange={(val) => onUpdate({ form_data: val })}
+        />
+      </div>
     )}
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -55,19 +55,101 @@ export const StepCommonDetails: React.FC<Props> = ({
         </select>
       </div>
 
+      <div className="md:col-span-2">
+        <label className="label">Laboratory / Office *</label>
+        <input
+          type="text"
+          required
+          className="input-field"
+          placeholder="Name of laboratory / office"
+          value={common.laboratory_office}
+          onChange={(e) => onUpdate({ laboratory_office: e.target.value })}
+        />
+      </div>
+
       <div>
-        <label className="label">Additional faculty (optional)</label>
+        <label className="label">Source of Fund *</label>
         <select
+          required
           className="input-field bg-white"
-          value={common.nominee_id}
-          onChange={(e) => onUpdate({ nominee_id: e.target.value })}
+          value={common.source_of_fund}
+          onChange={(e) => onUpdate({
+            source_of_fund: e.target.value as any,
+            source_of_fund_project_code: '',
+            source_of_fund_others: '',
+          })}
         >
-          <option value="">— None —</option>
-          {facultyOptions.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name} ({f.email})
-            </option>
-          ))}
+          <option value="" disabled>Select Source of Fund</option>
+          <option value="OH-35">OH-35</option>
+          <option value="OH-31">OH-31</option>
+          <option value="SW">SW</option>
+          <option value="SEED">SEED</option>
+          <option value="Project code">Project code</option>
+          <option value="Others">Others</option>
+        </select>
+      </div>
+
+      {common.source_of_fund === 'Project code' && (
+        <div>
+          <label className="label">Project Code *</label>
+          <input
+            type="text"
+            required
+            className="input-field"
+            placeholder="Enter project code details"
+            value={common.source_of_fund_project_code}
+            onChange={(e) => onUpdate({ source_of_fund_project_code: e.target.value })}
+          />
+        </div>
+      )}
+
+      {common.source_of_fund === 'Others' && (
+        <div>
+          <label className="label">Specify other source of fund *</label>
+          <input
+            type="text"
+            required
+            className="input-field"
+            placeholder="Enter source of fund details"
+            value={common.source_of_fund_others}
+            onChange={(e) => onUpdate({ source_of_fund_others: e.target.value })}
+          />
+        </div>
+      )}
+
+      <div>
+        <label className="label">BoG Resolution No (if applicable)</label>
+        <input
+          type="text"
+          className="input-field"
+          placeholder="e.g. BoG 64.3"
+          value={common.bog_resolution_no}
+          onChange={(e) => onUpdate({ bog_resolution_no: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <label className="label">FC Resolution No (if applicable)</label>
+        <input
+          type="text"
+          className="input-field"
+          placeholder="e.g. FC 52.4"
+          value={common.fc_resolution_no}
+          onChange={(e) => onUpdate({ fc_resolution_no: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <label className="label">Item Category *</label>
+        <select
+          required
+          className="input-field bg-white"
+          value={common.item_category}
+          onChange={(e) => onUpdate({ item_category: e.target.value as any })}
+        >
+          <option value="" disabled>Select Item Category</option>
+          <option value="Assets">Assets</option>
+          <option value="Consumables">Consumables</option>
         </select>
       </div>
 
@@ -88,16 +170,38 @@ export const StepCommonDetails: React.FC<Props> = ({
         )}
       </div>
 
-      <div className="md:col-span-2">
-        <label className="label">How basis of estimate has been made? *</label>
-        <input
-          type="text"
+      <div>
+        <label className="label">Basis of Estimation *</label>
+        <select
           required
-          className="input-field"
+          className="input-field bg-white"
           value={common.basis_of_estimate}
-          onChange={(e) => onUpdate({ basis_of_estimate: e.target.value })}
-        />
+          onChange={(e) => onUpdate({
+            basis_of_estimate: e.target.value as any,
+            basis_of_estimate_others: '',
+          })}
+        >
+          <option value="" disabled>Select Basis of Estimation</option>
+          <option value="Budgetary Quote">Budgetary Quote</option>
+          <option value="Previous Purchase">Previous Purchase</option>
+          <option value="Market Survey">Market Survey</option>
+          <option value="Others">Others</option>
+        </select>
       </div>
+
+      {common.basis_of_estimate === 'Others' && (
+        <div className="md:col-span-2">
+          <label className="label">Describe other basis of estimation *</label>
+          <input
+            type="text"
+            required
+            className="input-field"
+            placeholder="Enter basis of estimation details"
+            value={common.basis_of_estimate_others}
+            onChange={(e) => onUpdate({ basis_of_estimate_others: e.target.value })}
+          />
+        </div>
+      )}
 
       <div>
         <label className="label">EMD (%) *</label>
@@ -107,13 +211,9 @@ export const StepCommonDetails: React.FC<Props> = ({
           value={common.emd}
           onChange={(e) => onUpdate({ emd: e.target.value })}
         >
-          <option value="" disabled>
-            Select
-          </option>
+          <option value="" disabled>Select</option>
           {EMD_PERCENT_OPTIONS.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
+            <option key={n} value={n}>{n}</option>
           ))}
         </select>
       </div>
@@ -126,67 +226,13 @@ export const StepCommonDetails: React.FC<Props> = ({
           value={common.performance_security}
           onChange={(e) => onUpdate({ performance_security: e.target.value })}
         >
-          <option value="" disabled>
-            Select
-          </option>
+          <option value="" disabled>Select</option>
           {PERFORMANCE_SECURITY_OPTIONS.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
+            <option key={n} value={n}>{n}</option>
           ))}
         </select>
       </div>
-    </div>
 
-    {/* Southern region service centre — Yes opens justification */}
-    <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-[#1a3a6b]">Southern region service centre</h3>
-      <YesNoSelect
-        label="Will a service centre in the southern region be used?"
-        required
-        value={common.is_service_center_south}
-        onChange={(v) =>
-          onUpdate({
-            is_service_center_south: v,
-            service_center_location: '',
-            service_center_south_desc: '',
-          })
-        }
-      />
-      {common.is_service_center_south === 'Yes' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 border-t border-slate-200/80">
-          <div className="md:col-span-2">
-            <label className="label">Service centre location *</label>
-            <input
-              type="text"
-              required
-              className="input-field"
-              placeholder="City, centre name, or address"
-              value={common.service_center_location}
-              onChange={(e) => onUpdate({ service_center_location: e.target.value })}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">Justification for using this service centre *</label>
-            <input
-              type="text"
-              required
-              className="input-field"
-              placeholder="Why procurement is routed through this southern-region centre"
-              value={common.service_center_south_desc}
-              onChange={(e) => onUpdate({ service_center_south_desc: e.target.value })}
-            />
-          </div>
-        </div>
-      )}
-      {common.is_service_center_south === 'No' && (
-        <p className="text-sm text-slate-600 border-t border-slate-200/80 pt-3">
-          No southern-region service centre is declared for this procurement. Delivery details below still apply.
-        </p>
-      )}
-    </section>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <div>
         <label className="label">Delivery location *</label>
         <input
@@ -209,147 +255,75 @@ export const StepCommonDetails: React.FC<Props> = ({
         />
       </div>
 
-      <YesNoSelect
-        label="Splitting of quantity?"
-        required
-        value={common.is_quantity_split}
-        onChange={(v) => onUpdate({ is_quantity_split: v })}
-      />
+      <div>
+        <label className="label">Purpose *</label>
+        <select
+          required
+          className="input-field bg-white"
+          value={common.purpose}
+          onChange={(e) => onUpdate({
+            purpose: e.target.value as any,
+            purpose_justification: '',
+          })}
+        >
+          <option value="" disabled>Select Purpose</option>
+          <option value="Research">Research</option>
+          <option value="Others">Others</option>
+        </select>
+      </div>
 
-      {common.is_quantity_split === 'No' && (
-        <div>
-          <label className="label">Justification for non-splitting of quantity *</label>
+      {common.purpose === 'Others' && (
+        <div className="md:col-span-2">
+          <label className="label">Purpose Justification / Details *</label>
           <input
             type="text"
             required
             className="input-field"
-            value={common.split_quantity_justification}
-            onChange={(e) => onUpdate({ split_quantity_justification: e.target.value })}
-          />
-        </div>
-      )}
-
-      <YesNoSelect
-        label="Splitting of items?"
-        required
-        value={common.is_item_split}
-        onChange={(v) => onUpdate({ is_item_split: v })}
-      />
-
-      {common.is_item_split === 'No' && (
-        <div>
-          <label className="label">Justification for non-splitting of items *</label>
-          <input
-            type="text"
-            required
-            className="input-field"
-            value={common.split_items_justification}
-            onChange={(e) => onUpdate({ split_items_justification: e.target.value })}
+            placeholder="Enter justification details"
+            value={common.purpose_justification}
+            onChange={(e) => onUpdate({ purpose_justification: e.target.value })}
           />
         </div>
       )}
     </div>
 
-    {/* MSE / startup — Yes: exception justification; No: structured compliance path */}
-    <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-[#1a3a6b]">MSE / startup (experience &amp; turnover)</h3>
-      <YesNoSelect
-        label="Request exception for MSE/startup in experience & turnover?"
-        required
-        value={common.exemption}
-        onChange={(v) =>
-          onUpdate({
-            exemption: v,
-            exemption_remarks: '',
-            msme_no_exception_route: '',
-          })
-        }
-      />
-
-      {common.exemption === 'Yes' && (
-        <div className="pt-1 border-t border-slate-200/80">
-          <label className="label">Justification for the exception *</label>
-          <textarea
-            required
-            rows={3}
-            className="input-field min-h-[88px]"
-            placeholder="Why relaxation from standard MSE/startup norms is needed"
-            value={common.exemption_remarks}
-            onChange={(e) => onUpdate({ exemption_remarks: e.target.value })}
-          />
-        </div>
-      )}
-
-      {common.exemption === 'No' && (
-        <div className="space-y-3 pt-1 border-t border-slate-200/80">
-          <p className="text-sm text-slate-600">
-            No exception — choose how standard participation rules will apply (streamlined declaration).
-          </p>
-          <fieldset className="space-y-2">
-            <legend className="sr-only">Compliance when no MSE exception</legend>
-            {MSME_NO_ROUTE_OPTIONS.map((opt) => (
-              <label
-                key={opt.value}
-                className="flex items-start gap-3 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300"
-              >
-                <input
-                  type="radio"
-                  name="msme_no_route"
-                  required
-                  className="mt-1"
-                  checked={common.msme_no_exception_route === opt.value}
-                  onChange={() =>
-                    onUpdate({
-                      msme_no_exception_route: opt.value,
-                      exemption_remarks: opt.value === 'other' ? common.exemption_remarks : '',
-                    })
-                  }
-                />
-                <span className="text-sm text-slate-800">{opt.label}</span>
-              </label>
-            ))}
-          </fieldset>
-          {common.msme_no_exception_route === 'other' && (
+    {totalCost > 500000 && (
+      <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-[#1a3a6b] uppercase tracking-wider">
+          Make in India (MII) Clause (Total Cost &gt; ₹5 Lakhs)
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">MII Clause Applicability *</label>
+            <select
+              required
+              className="input-field bg-white"
+              value={common.mii_clause}
+              onChange={(e) => onUpdate({
+                mii_clause: e.target.value as any,
+                mii_justification: '',
+              })}
+            >
+              <option value="" disabled>Select Applicability</option>
+              <option value="Applicable">Applicable</option>
+              <option value="Not Applicable">Not Applicable</option>
+            </select>
+          </div>
+          {common.mii_clause === 'Applicable' && (
             <div>
-              <label className="label">Describe the compliance route *</label>
-              <textarea
+              <label className="label">MII Clause Justification / Remarks *</label>
+              <input
+                type="text"
                 required
-                rows={2}
-                className="input-field min-h-[72px]"
-                placeholder="Briefly state which norms apply"
-                value={common.exemption_remarks}
-                onChange={(e) => onUpdate({ exemption_remarks: e.target.value })}
+                className="input-field"
+                placeholder="Provide MII compliance justification"
+                value={common.mii_justification}
+                onChange={(e) => onUpdate({ mii_justification: e.target.value })}
               />
             </div>
           )}
         </div>
-      )}
-    </section>
-
-    <div className="md:col-span-2">
-      <YesNoSelect
-        label="Training or skill required?"
-        required
-        value={common.training_required}
-        onChange={(v) => onUpdate({ training_required: v })}
-      />
-    </div>
-
-    {common.training_required === 'Yes' && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <YesNoSelect
-          label="User already trained?"
-          required
-          value={common.training_type}
-          onChange={(v) => onUpdate({ training_type: v })}
-        />
-        <YesNoSelect
-          label="Training part of procurement?"
-          required
-          value={common.training_vendor}
-          onChange={(v) => onUpdate({ training_vendor: v })}
-        />
-      </div>
+      </section>
     )}
   </div>
 );

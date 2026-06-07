@@ -106,6 +106,16 @@ export const AssetListPage: React.FC = () => {
       unit_cost: formData.unitCost ? parseFloat(formData.unitCost) : undefined,
       warranty_expiry: formData.warrantyExpiry || undefined,
       department_id: parseInt(formData.deptId),
+      // New fields mapped to backend names
+      quantity: formData.quantity ? parseInt(formData.quantity) : 1,
+      remarks: formData.remarks || undefined,
+      supplier_name: formData.supplierName || undefined,
+      supplier_address: formData.supplierAddress || undefined,
+      bill_number: formData.billNumber || undefined,
+      bill_date: formData.billDate || undefined,
+      stock_register_volume: formData.stockRegisterVolume || undefined,
+      stock_register_page: formData.stockRegisterPage || undefined,
+      delivery_date: formData.deliveryDate || undefined,
     });
   };
 

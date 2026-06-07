@@ -48,11 +48,14 @@ export const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
         {Object.entries(schema.properties).map(([fieldName, prop]) => {
           const isRequired = schema.required?.includes(fieldName);
           const currentValue = value[fieldName] !== undefined ? value[fieldName] : '';
+          // Strip any trailing asterisk (with optional surrounding spaces) from the title
+          // to prevent "* *" duplication when isRequired also appends one
+          const cleanTitle = (prop.title || fieldName).replace(/\s*\*\s*$/, '');
 
           return (
             <div key={fieldName} className="space-y-1">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                {prop.title || fieldName}
+                {cleanTitle}
                 {isRequired && <span className="text-red-500 ml-1">*</span>}
               </label>
 
@@ -92,7 +95,7 @@ export const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                   }}
                   className="input-field w-full text-sm bg-white"
                   required={isRequired}
-                  placeholder={`Enter ${prop.title?.toLowerCase() || 'value'}...`}
+                  placeholder={`Enter ${cleanTitle.toLowerCase() || 'value'}...`}
                 />
               ) : (
                 <input
@@ -101,7 +104,7 @@ export const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                   onChange={(e) => handleFieldChange(fieldName, e.target.value)}
                   className="input-field w-full text-sm bg-white"
                   required={isRequired}
-                  placeholder={`Enter ${prop.title?.toLowerCase() || 'value'}...`}
+                  placeholder={`Enter ${cleanTitle.toLowerCase() || 'value'}...`}
                 />
               )}
             </div>

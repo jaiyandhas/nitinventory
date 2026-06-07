@@ -171,6 +171,7 @@ class PurchaseRequestHistory(Base):
 
     # Frozen actor details for immutable snapshots
     frozen_actor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    frozen_title: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     frozen_designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     frozen_department: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     frozen_signature_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

@@ -501,7 +501,7 @@ export const PRDetailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {selectedStageKey === activeStageKey && isActionable ? (
+                  {selectedStageKey === activeStageKey && (isActionable || (pr.flow?.phase_name === 'Tendering' && user?.id === pr.initiator_id)) ? (
                     <PRActionPanel pr={pr} user={user} refetch={refetch} faculties={faculties} />
                   ) : null}
                 </div>

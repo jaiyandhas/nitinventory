@@ -23,6 +23,7 @@ export const BudgetFormPage: React.FC = () => {
   const [quantity, setQuantity] = useState<number>(1);
   const [fileNo, setFileNo] = useState<string>('');
   const [isAutoRolling, setIsAutoRolling] = useState<boolean>(!isEdit);
+  const [remarks, setRemarks] = useState<string>('');
 
   // Modal / Inline states for adding custom categories
   const [newExpVal, setNewExpVal] = useState<string>('');
@@ -66,6 +67,7 @@ export const BudgetFormPage: React.FC = () => {
       setUnitCost(budgetDetail.unit_cost);
       setQuantity(budgetDetail.quantity);
       setFileNo(budgetDetail.file_no);
+      setRemarks(budgetDetail.remarks || '');
       // For existing files, default auto-rolling to false so we don't accidentally overwrite their file number
       setIsAutoRolling(false);
     }
@@ -95,7 +97,7 @@ export const BudgetFormPage: React.FC = () => {
       })
       .then(res => {
         if (res.data && res.data.file_no) {
-          setFileNo(res.data.file_no);
+          setFileNo(res.data.file_no.toUpperCase());
         }
       })
       .catch(err => {
@@ -217,6 +219,7 @@ export const BudgetFormPage: React.FC = () => {
       unit_cost: unitCost,
       quantity: quantity,
       file_no: fileNo,
+      remarks: remarks,
     };
     saveMutation.mutate(payload);
   };
@@ -311,7 +314,7 @@ export const BudgetFormPage: React.FC = () => {
                     Expenditure Category <span className="text-rose-500">*</span>
                   </label>
                   <div className="flex gap-2">
-                    {isAdmin() && cats.added_by_dean?.expenditure?.includes(expenditureCategory) && !isEdit && (
+                    {isAdmin() && !isEdit && (
                       <button
                         type="button"
                         onClick={() => handleDeleteCategory('expenditure', expenditureCategory)}
@@ -321,7 +324,7 @@ export const BudgetFormPage: React.FC = () => {
                         <Trash2 size={12} /> Delete Selected
                       </button>
                     )}
-                    {!showAddExp && (
+                    {isAdmin() && !showAddExp && (
                       <button
                         type="button"
                         onClick={() => setShowAddExp(true)}
@@ -381,7 +384,7 @@ export const BudgetFormPage: React.FC = () => {
                     Item Category <span className="text-rose-500">*</span>
                   </label>
                   <div className="flex gap-2">
-                    {isAdmin() && cats.added_by_dean?.item?.includes(category) && !isEdit && (
+                    {isAdmin() && !isEdit && (
                       <button
                         type="button"
                         onClick={() => handleDeleteCategory('item', category)}
@@ -391,7 +394,7 @@ export const BudgetFormPage: React.FC = () => {
                         <Trash2 size={12} /> Delete Selected
                       </button>
                     )}
-                    {!showAddItem && (
+                    {isAdmin() && !showAddItem && (
                       <button
                         type="button"
                         onClick={() => setShowAddItem(true)}
@@ -519,9 +522,24 @@ export const BudgetFormPage: React.FC = () => {
 
               {isAutoRolling && (
                 <p className="text-xs text-slate-500 flex items-center gap-1">
-                  <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">nitt/dept/source/fy/num</code>
+                  <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/DEPT/SOURCE/FY/NUM</code>
                 </p>
               )}
+            </div>
+
+            {/* Remarks / Details */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-800 flex justify-between items-center" htmlFor="budgetRemarks">
+                <span>Remarks / Justification <span className="text-xs text-slate-400 font-normal">(Optional)</span></span>
+              </label>
+              <textarea
+                id="budgetRemarks"
+                rows={3}
+                placeholder="Enter optional comments or remarks for HODs to view..."
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                className="input-field w-full text-sm resize-none bg-white"
+              />
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
@@ -555,18 +573,18 @@ export const BudgetFormPage: React.FC = () => {
         <div className="space-y-6">
           <div className="card bg-[#1a3a6b] text-white p-6 rounded-xl shadow-md space-y-4">
             <h3 className="text-sm font-semibold tracking-wider text-blue-200 uppercase">Cost Summary</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-baseline">
-                <span className="text-sm text-blue-100">Unit Cost</span>
-                <span className="font-mono text-lg font-medium">₹ {unitCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <div className="space-y-4">
+              <div className="border-b border-blue-500/20 pb-2">
+                <span className="block text-xs text-blue-200 font-medium uppercase tracking-wider mb-1">Unit Cost</span>
+                <span className="block font-mono text-lg font-semibold break-all">₹ {unitCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between items-baseline">
-                <span className="text-sm text-blue-100">Quantity</span>
-                <span className="font-mono text-lg font-medium">× {quantity}</span>
+              <div className="border-b border-blue-500/20 pb-2">
+                <span className="block text-xs text-blue-200 font-medium uppercase tracking-wider mb-1">Quantity</span>
+                <span className="block font-mono text-lg font-semibold">× {quantity}</span>
               </div>
-              <div className="border-t border-blue-500/50 pt-3 flex justify-between items-baseline">
-                <span className="text-base font-bold text-white">Total Allocated</span>
-                <span className="font-mono text-2xl font-bold text-amber-300">
+              <div className="pt-1">
+                <span className="block text-xs text-blue-200 font-bold uppercase tracking-wider mb-1">Total Allocated</span>
+                <span className="block font-mono text-xl font-bold text-amber-300 break-all">
                   ₹ {totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>

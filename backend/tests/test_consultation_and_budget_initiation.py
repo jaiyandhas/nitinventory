@@ -65,7 +65,7 @@ async def test_budget_categories_and_auto_roll(db_session):
         db=db_session,
         _=admin
     )
-    expected_no = f"nitt/{dept.short_code.lower()}/special_funds/{fy.label.lower()}/1"
+    expected_no = f"NITT/{dept.short_code.upper()}/SPECIAL_FUNDS/{fy.label.upper()}/1"
     assert file_res["file_no"] == expected_no
 
     # 4. Create budget with this file number
@@ -89,7 +89,7 @@ async def test_budget_categories_and_auto_roll(db_session):
         db=db_session,
         _=admin
     )
-    expected_next_no = f"nitt/{dept.short_code.lower()}/special_funds/{fy.label.lower()}/2"
+    expected_next_no = f"NITT/{dept.short_code.upper()}/SPECIAL_FUNDS/{fy.label.upper()}/2"
     assert next_file_res["file_no"] == expected_next_no
 
 

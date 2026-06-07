@@ -103,7 +103,8 @@ async def test_strict_signing_and_nominee_locking(db_session):
     )
     last_history = hist_res.scalars().first()
     assert last_history is not None
-    assert last_history.frozen_actor_name == faculty.name
+    expected_full_name = f"{faculty.title} {faculty.name}" if faculty.title else faculty.name
+    assert last_history.frozen_actor_name == expected_full_name
     assert last_history.frozen_designation == faculty.designation
     assert last_history.frozen_signature_path is not None
     assert "signatures/snapshots/" in last_history.frozen_signature_path
@@ -143,7 +144,8 @@ async def test_strict_signing_and_nominee_locking(db_session):
     )
     hod_history = hist_res2.scalars().first()
     assert hod_history is not None
-    assert hod_history.frozen_actor_name == hod.name
+    expected_hod_full = f"{hod.title} {hod.name}" if hod.title else hod.name
+    assert hod_history.frozen_actor_name == expected_hod_full
     assert hod_history.frozen_signature_path is not None
 
     # Verify that now budget nominee configuration updates DO NOT propagate to the PR

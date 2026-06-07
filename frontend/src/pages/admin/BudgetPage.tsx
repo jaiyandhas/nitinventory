@@ -12,6 +12,7 @@ export const BudgetPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   
+  const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [fyFilter, setFyFilter] = useState<string>('all');
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -25,6 +26,7 @@ export const BudgetPage: React.FC = () => {
   const [selectedBudgetForCommittee, setSelectedBudgetForCommittee] = useState<any>(null);
   const [expert1Id, setExpert1Id] = useState<number | null>(null);
   const [expert2Id, setExpert2Id] = useState<number | null>(null);
+  const [allocatedInitiatorId, setAllocatedInitiatorId] = useState<number | null>(null);
 
   const [selectedBudgetForDirector, setSelectedBudgetForDirector] = useState<any>(null);
   const [directorFacultyId, setDirectorFacultyId] = useState<number | null>(null);
@@ -34,8 +36,14 @@ export const BudgetPage: React.FC = () => {
   const limit = 50;
 
   const { data: budgetsData, isLoading: loadingBudgets } = useQuery({ 
-    queryKey: ['admin_budgets', page], 
-    queryFn: () => adminApi.budget({ skip: (page - 1) * limit, limit }).then(res => res.data) 
+    queryKey: ['admin_budgets', page, searchTerm, deptFilter, fyFilter], 
+    queryFn: () => adminApi.budget({ 
+      skip: (page - 1) * limit, 
+      limit,
+      search: searchTerm || undefined,
+      department_id: deptFilter !== 'all' ? parseInt(deptFilter) : undefined,
+      financial_year_id: fyFilter !== 'all' ? parseInt(fyFilter) : undefined
+    }).then(res => res.data) 
   });
 
   const budgets = budgetsData?.items || [];
@@ -69,8 +77,8 @@ export const BudgetPage: React.FC = () => {
 
   // Committee assignment mutations
   const assignCommitteeMutation = useMutation({
-    mutationFn: ({ budgetId, expert1_id, expert2_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null }) =>
-      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id }),
+    mutationFn: ({ budgetId, expert1_id, expert2_id, allocated_initiator_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }) =>
+      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id, allocated_initiator_id }),
     onSuccess: () => {
       toast.success('Technical committee updated successfully');
       setSelectedBudgetForCommittee(null);
@@ -106,28 +114,9 @@ export const BudgetPage: React.FC = () => {
     }
   });
 
-  const clearBudgetsMutation = useMutation({
-    mutationFn: () => adminApi.clearBudgets(),
-    onSuccess: (res: any) => {
-      toast.success(res.data?.message || 'Unlinked budgets cleared successfully!');
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || 'Failed to clear budgets');
-    }
-  });
 
-  const handleClearBudgets = () => {
-    if (window.confirm("Are you sure you want to clear all unlinked budget entries? This action cannot be undone.")) {
-      clearBudgetsMutation.mutate();
-    }
-  };
 
-  const filteredBudgets = budgets.filter((b: any) => {
-    if (deptFilter !== 'all' && b.department_id !== parseInt(deptFilter)) return false;
-    if (fyFilter !== 'all' && b.financial_year_id !== parseInt(fyFilter)) return false;
-    return true;
-  });
+  const filteredBudgets = budgets;
 
   const handleCsvSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +138,7 @@ export const BudgetPage: React.FC = () => {
     setSelectedBudgetForCommittee(budget);
     setExpert1Id(budget.expert1_id || null);
     setExpert2Id(budget.expert2_id || null);
+    setAllocatedInitiatorId(budget.allocated_initiator_id || null);
   };
 
   const openDirectorModal = (budget: any) => {
@@ -166,6 +156,7 @@ export const BudgetPage: React.FC = () => {
       budgetId: selectedBudgetForCommittee.id,
       expert1_id: expert1Id,
       expert2_id: expert2Id,
+      allocated_initiator_id: allocatedInitiatorId,
     });
   };
 
@@ -194,13 +185,6 @@ export const BudgetPage: React.FC = () => {
         {isWriteAllowed && (
           <div className="flex gap-2">
             <button
-              onClick={handleClearBudgets}
-              disabled={clearBudgetsMutation.isPending}
-              className="px-4 py-2 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg font-semibold text-sm transition-all"
-            >
-              Clear Budgets
-            </button>
-            <button
               onClick={() => {
                 setUploadResult(null);
                 setCsvFile(null);
@@ -221,23 +205,30 @@ export const BudgetPage: React.FC = () => {
       </div>
 
       {/* Filters section */}
-      <div className="card p-4 flex gap-4 bg-white border border-slate-200 shadow-sm">
+      <div className="card p-4 flex gap-4 bg-white border border-slate-200 shadow-sm items-center">
         <div className="flex items-center gap-2">
           <Filter size={16} className="text-slate-500" />
           <span className="text-sm font-medium text-slate-700">Filters:</span>
         </div>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="input-field max-w-[200px]">
+        <input 
+          type="text"
+          placeholder="Search File No or Item Name..."
+          value={searchTerm}
+          onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+          className="input-field max-w-[250px] text-sm"
+        />
+        <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); setPage(1); }} className="input-field max-w-[200px] text-sm">
           <option value="all">All Departments</option>
           {depts.map((d: any) => <option key={d.id} value={d.id}>{d.short_code} - {d.name}</option>)}
         </select>
-        <select value={fyFilter} onChange={e => setFyFilter(e.target.value)} className="input-field max-w-[200px]">
+        <select value={fyFilter} onChange={e => { setFyFilter(e.target.value); setPage(1); }} className="input-field max-w-[200px] text-sm">
           <option value="all">All Financial Years</option>
           {fys.map((f: any) => <option key={f.id} value={f.id}>{f.label}</option>)}
         </select>
       </div>
 
       {/* Main budgets table */}
-      <div className="card overflow-hidden border border-slate-200 shadow-sm">
+      <div className="card overflow-x-auto border border-slate-200 shadow-sm">
         <table className="data-table">
           <thead>
             <tr>
@@ -245,7 +236,7 @@ export const BudgetPage: React.FC = () => {
               <th>Dept</th>
               <th>Item Name</th>
               <th>Total Allocation</th>
-              <th>Committed Amount</th>
+              <th>Locked Fund</th>
               <th>Available Balance</th>
               <th>Technical Committee</th>
               <th>Actions</th>
@@ -285,7 +276,14 @@ export const BudgetPage: React.FC = () => {
                       </div>
                     </td>
                     <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
-                    <td className="max-w-[150px] truncate" title={b.item_name}>{b.item_name}</td>
+                    <td className="max-w-[200px]" title={b.item_name}>
+                      <div className="font-medium text-slate-800">{b.item_name}</div>
+                      {b.remarks && (
+                        <div className="text-[11px] text-slate-500 italic mt-0.5 max-w-[190px] truncate" title={b.remarks}>
+                          Remarks: {b.remarks}
+                        </div>
+                      )}
+                    </td>
                     <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
                     <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
                     <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
@@ -301,7 +299,11 @@ export const BudgetPage: React.FC = () => {
                         </div>
                         <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
                           <span className="text-slate-400">Nominee:</span>
-                          <span className="font-medium text-slate-800 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
+                          <span className="font-medium text-slate-850 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
+                          <span className="text-slate-400">Initiator:</span>
+                          <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
                         </div>
                       </div>
                     </td>
@@ -468,6 +470,23 @@ export const BudgetPage: React.FC = () => {
                   className="input-field w-full"
                 >
                   <option value="">Select Faculty Expert...</option>
+                  {deptFaculties.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={allocatedInitiatorId || ''}
+                  onChange={e => setAllocatedInitiatorId(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Purchase Initiator...</option>
                   {deptFaculties.map((f: any) => (
                     <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                   ))}

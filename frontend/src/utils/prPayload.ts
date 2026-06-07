@@ -1,60 +1,66 @@
 import { yesNoToBool } from '../config/prCreationQuestions';
 import type { PRCommonFormState, PRItemFormState } from '../types/prCreation';
 
-/** Final text stored on PR when requesting or declining MSE/startup relaxation. */
-export function buildExemptionRemarks(common: PRCommonFormState): string | null {
-  if (common.exemption === 'Yes') {
-    const t = common.exemption_remarks.trim();
-    return t || null;
-  }
-  if (common.exemption === 'No') {
-    const route = common.msme_no_exception_route;
-    const fixed: Record<string, string> = {
-      competitive:
-        'Standard competitive eligibility (turnover/experience) will apply; no MSE/startup relaxation requested.',
-      gem: 'Procurement via GeM / e-marketplace; no MSE/startup relaxation in experience & turnover.',
-      institute: 'Institute procurement policy; no MSE/startup relaxation in experience & turnover.',
-    };
-    if (!route) return null;
-    if (route === 'other') {
-      const detail = common.exemption_remarks.trim();
-      return detail ? `[No MSE/startup exception] Other: ${detail}` : null;
-    }
-    return `[No MSE/startup exception] ${fixed[route]}`;
-  }
-  return null;
-}
-
 export function buildPRCreateFormData(
   selectedFileIds: number[],
   procurementMethodId: number,
   items: Record<number, PRItemFormState>,
   common: PRCommonFormState
 ): FormData {
+  const specs: Record<string, any> = {};
+  selectedFileIds.forEach((fileId) => {
+    const item = items[fileId];
+    specs[String(fileId)] = {
+      equipment_name: item.equipment_name,
+      pdi_required: item.pdi_required,
+      pdi_justification: item.pdi_required === 'Yes' ? item.pdi_justification : '',
+      pre_bid_required: item.pre_bid_required,
+      installation_scope: item.installation_required === 'Yes' ? item.installation_scope : '',
+      training_required: item.training_required,
+      training_location: item.training_required === 'Yes' ? item.training_location : '',
+      tech_eligibility: item.tech_eligibility,
+    };
+  });
+
   const payload = {
     selected_file_ids: selectedFileIds,
     mop: procurementMethodId,
     purchase_type: common.purchase_type || 'departmental',
     nominee_id: common.nominee_id ? Number(common.nominee_id) : null,
-    basis_of_estimate: common.basis_of_estimate,
+    basis_of_estimate: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : common.basis_of_estimate,
+    basis_of_estimate_others: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : null,
     emd: Number(common.emd),
     performance_security: Number(common.performance_security),
-    is_service_center_south: yesNoToBool(common.is_service_center_south),
-    service_center_location:
-      common.is_service_center_south === 'Yes' ? common.service_center_location.trim() || null : null,
-    service_center_south_desc:
-      common.is_service_center_south === 'Yes' ? common.service_center_south_desc.trim() || null : null,
     delivery_location: common.delivery_location,
     delivery_mode: common.delivery_mode,
-    is_quantity_split: yesNoToBool(common.is_quantity_split),
-    split_quantity_justification: common.split_quantity_justification || null,
-    is_item_split: yesNoToBool(common.is_item_split),
-    split_items_justification: common.split_items_justification || null,
-    exemption: yesNoToBool(common.exemption),
-    exemption_remarks: buildExemptionRemarks(common),
-    training_required: yesNoToBool(common.training_required),
-    training_type: common.training_required === 'Yes' ? common.training_type : null,
-    training_vendor: common.training_required === 'Yes' ? common.training_vendor : null,
+
+    // GFR defaults
+    is_service_center_south: false,
+    service_center_location: null,
+    service_center_south_desc: null,
+    is_quantity_split: false,
+    split_quantity_justification: null,
+    is_item_split: false,
+    split_items_justification: null,
+    exemption: false,
+    exemption_remarks: null,
+    training_required: false,
+    training_type: null,
+    training_vendor: null,
+
+    // New common fields
+    laboratory_office: common.laboratory_office,
+    source_of_fund: common.source_of_fund,
+    source_of_fund_project_code: common.source_of_fund === 'Project code' ? common.source_of_fund_project_code : null,
+    source_of_fund_others: common.source_of_fund === 'Others' ? common.source_of_fund_others : null,
+    bog_resolution_no: common.bog_resolution_no || null,
+    fc_resolution_no: common.fc_resolution_no || null,
+    item_category: common.item_category,
+    purpose: common.purpose,
+    purpose_justification: common.purpose === 'Others' ? common.purpose_justification : null,
+    mii_clause: common.mii_clause,
+    mii_justification: common.mii_clause === 'Applicable' ? common.mii_justification : null,
+
     items: selectedFileIds.map((fileId) => {
       const item = items[fileId];
       return {
@@ -76,7 +82,10 @@ export function buildPRCreateFormData(
         tech_specs_text: item.tech_specs_text,
       };
     }),
-    form_data: common.form_data || {},
+    form_data: {
+      ...(common.form_data || {}),
+      specs,
+    },
   };
 
   const form = new FormData();

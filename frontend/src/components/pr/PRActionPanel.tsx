@@ -30,6 +30,32 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   const isHOD = user?.role?.group_key === 'hod';
   const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
 
+  // Calculate if the current user can act on the expected step
+  let canActOn = false;
+  if (user?.role?.group_key === 'admin') {
+    canActOn = true;
+  } else if (pr?.flow) {
+    const phaseName = pr.flow?.phase_name;
+    if (phaseName === 'Technical Evaluation' && pr.flow.step_order === 1) {
+      const committeeIds = [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
+      canActOn = committeeIds.includes(user?.id);
+    } else if (pr.flow.expected_user_id) {
+      if (user?.id === pr.flow.expected_user_id) {
+        canActOn = true;
+      }
+    } else if (pr.flow.expected_role_name === 'Faculty' || pr.flow.expected_group === 'faculty') {
+      canActOn = user?.id === pr.initiator?.id;
+    } else if (pr.flow.expected_role_id) {
+      if (user?.role_id === pr.flow.expected_role_id) {
+        canActOn = true;
+      }
+    } else if (pr.flow.expected_group) {
+      if (user?.role?.group_key === pr.flow.expected_group) {
+        canActOn = true;
+      }
+    }
+  }
+
   const [expert1Id, setExpert1Id] = useState<number | ''>('');
   const [expert2Id, setExpert2Id] = useState<number | ''>('');
   const [directorFacultyId, setDirectorFacultyId] = useState<number | ''>('');
@@ -393,7 +419,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         </div>
       )}
 
-      {renderStageAction()}
+      {canActOn && renderStageAction()}
 
       <ReferralPanel
         pr={pr}
