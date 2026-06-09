@@ -35,6 +35,9 @@ export interface PRCommonFormState {
   basis_of_estimate: 'Budgetary Quote' | 'Previous Purchase' | 'Market Survey' | 'Others' | '';
   basis_of_estimate_others: string;
   quotation_file: File | null;
+  dept_pac_file?: File | null;
+  oem_pac_file?: File | null;
+  oem_auth_file?: File | null;
   emd: string;
   performance_security: string;
   delivery_location: string;
@@ -101,6 +104,9 @@ export function createEmptyCommonState(): PRCommonFormState {
     basis_of_estimate: '',
     basis_of_estimate_others: '',
     quotation_file: null,
+    dept_pac_file: null,
+    oem_pac_file: null,
+    oem_auth_file: null,
     emd: '',
     performance_security: '',
     delivery_location: '',

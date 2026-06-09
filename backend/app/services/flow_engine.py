@@ -6,15 +6,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from fastapi import BackgroundTasks
 
 from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestFlow, PurchaseRequestHistory,
-    WorkFlowHierarchy, RequestStatus
+    WorkFlowHierarchy, RequestStatus,
+    CommercialEvaluation, TechnicalEvaluation,
 )
 from app.models.budget import PhaseManager, BudgetMaster
 from app.models.user import User, RoleManager
+from app.services.tech_committee import dedupe_committee_ids, resolve_tech_committee_ids, sync_tech_committee_to_pr
 
 
 
@@ -87,11 +89,24 @@ class FlowEngineService:
                     # at this stage and would always be 0, causing the Director step to
                     # incorrectly fire every time.
                     # During TE/FS phases: count qualified TechnicalEvaluations instead.
-                    await self.db.refresh(pr, ["commercial_evaluations", "technical_evaluations"])
                     if phase.phase_name == "Tendering":
-                        val = sum(1 for ce in pr.commercial_evaluations if ce.is_qualified)
+                        val = await self.db.scalar(
+                            select(func.count()).select_from(CommercialEvaluation).where(
+                                and_(
+                                    CommercialEvaluation.purchase_request_id == pr.id,
+                                    CommercialEvaluation.is_qualified == True,
+                                )
+                            )
+                        )
                     else:
-                        val = sum(1 for te in pr.technical_evaluations if te.is_qualified)
+                        val = await self.db.scalar(
+                            select(func.count()).select_from(TechnicalEvaluation).where(
+                                and_(
+                                    TechnicalEvaluation.purchase_request_id == pr.id,
+                                    TechnicalEvaluation.is_qualified == True,
+                                )
+                            )
+                        )
                 
                 if val is not None:
                     op = step.condition_operator or "<"
@@ -117,8 +132,11 @@ class FlowEngineService:
                         continue
             elif step.tender_vendors_threshold is not None:
                 # Legacy fallback
-                await self.db.refresh(pr, ["commercial_evaluations"])
-                vendor_count = len(pr.commercial_evaluations)
+                vendor_count = await self.db.scalar(
+                    select(func.count()).select_from(CommercialEvaluation).where(
+                        CommercialEvaluation.purchase_request_id == pr.id
+                    )
+                )
                 
                 op = step.tender_vendors_comparison or "<="
                 is_met = False
@@ -190,11 +208,24 @@ class FlowEngineService:
         # _get_next_step_in_phase to keep them in sync.
         val = None
         if guarded_step.condition_field == "qualified_vendor_count":
-            await self.db.refresh(pr, ["commercial_evaluations", "technical_evaluations"])
             if phase.phase_name == "Tendering":
-                val = sum(1 for ce in pr.commercial_evaluations if ce.is_qualified)
+                val = await self.db.scalar(
+                    select(func.count()).select_from(CommercialEvaluation).where(
+                        and_(
+                            CommercialEvaluation.purchase_request_id == pr.id,
+                            CommercialEvaluation.is_qualified == True,
+                        )
+                    )
+                )
             else:
-                val = sum(1 for te in pr.technical_evaluations if te.is_qualified)
+                val = await self.db.scalar(
+                    select(func.count()).select_from(TechnicalEvaluation).where(
+                        and_(
+                            TechnicalEvaluation.purchase_request_id == pr.id,
+                            TechnicalEvaluation.is_qualified == True,
+                        )
+                    )
+                )
 
         if val is None:
             return False  # Unknown field — fail-secure, require manual approval
@@ -349,35 +380,15 @@ class FlowEngineService:
             return
             
         elif step.user_type == "tech_evaluation":
-            await self.db.refresh(pr, ["initiator"])
-            if pr.initiator:
-                await self.db.refresh(pr.initiator, ["department"])
-            
-            # Check department committee in order
-            from app.models.user import RoleManager
-            hod_res = await self.db.execute(
-                select(User)
-                .join(RoleManager, User.role_id == RoleManager.id)
-                .where(
-                    and_(
-                        User.department_id == (pr.initiator.department_id if pr.initiator else None),
-                        RoleManager.group_key == "hod"
-                    )
-                )
-            )
-            hod = hod_res.scalar_one_or_none()
-            hod_id = hod.id if hod else None
-
-            # Fallback to department defaults if PR fields are None (heals existing PRs)
-            dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
-            expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
-            expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
-            director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
+            await sync_tech_committee_to_pr(self.db, pr)
+            _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(self.db, pr)
 
             raw_committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
             if any(x is None for x in raw_committee_ids):
-                raise ValueError("The department purchase committee is not fully formed or configured yet.")
-            # De-duplicate while preserving order (same person may fill multiple roles)
+                raise ValueError(
+                    "The technical evaluation committee is not fully configured. "
+                    "Ensure Expert 1, Expert 2, and Director nominee are assigned on the budget file."
+                )
             seen_ids: set = set()
             committee_ids: list = []
             for cid in raw_committee_ids:
@@ -385,21 +396,9 @@ class FlowEngineService:
                     committee_ids.append(cid)
                     seen_ids.add(cid)
 
-            # Must be one of the committee members
+            # Must be one of the committee members (advance is allowed after signing via /technical-eval)
             if user.id not in committee_ids:
                 raise ValueError("Only the department purchase committee nominees can perform technical evaluation")
-
-            # Check if user has already signed
-            since = pr.te_initiated_at or pr.created_at or datetime.min
-            await self.db.refresh(pr, ["history"])
-            approved_ids = {
-                h.current_approver_id for h in pr.history 
-                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
-                and (h.acted_at is None or h.acted_at >= since)
-            }
-
-            if user.id in approved_ids:
-                raise ValueError("You have already signed the technical evaluation.")
             return
 
         # Standard role/group checking
@@ -412,7 +411,10 @@ class FlowEngineService:
 
         # Enforce that only the Superintendent who assigned the DA can perform subsequent steps
         if step.role_id:
-            if step.role and step.role.value == "superintendent" and pr.flow and pr.flow.step_order > 1:
+            # IMPORTANT: do not access pr.flow here.
+            # In some API flows (especially list/get queries), PurchaseRequest.flow may be lazy-loaded,
+            # and touching it can trigger async IO outside the awaited context.
+            if step.role and step.role.value == "superintendent" and flow.step_order > 1:
                 await self.db.refresh(pr, ["assignments"])
                 if pr.assignments:
                     latest_assignment = pr.assignments[-1]
@@ -443,16 +445,7 @@ class FlowEngineService:
         budget_svc = BudgetService(self.db)
         await budget_svc.lock_amount(pr)
 
-        # Populate committee from budget file nominees if present
-        budget_file = None
-        await self.db.refresh(pr, ["items"])
-        if pr.items:
-            budget_file_id = pr.items[0].budget_file_id
-            if budget_file_id:
-                budget_res = await self.db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
-                budget_file = budget_res.scalar_one_or_none()
-
-
+        await sync_tech_committee_to_pr(self.db, pr)
 
         first_phase = await self._get_first_phase()
         first_step = await self._get_first_step(pr, first_phase)
@@ -522,45 +515,35 @@ class FlowEngineService:
                 and (h.acted_at is None or h.acted_at >= since)
                 for h in pr.history
             )
-            if not has_approval_log:
+            
+            await sync_tech_committee_to_pr(self.db, pr)
+            _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(self.db, pr)
+            if any(x is None for x in (expert1_id, expert2_id, director_faculty_id)):
+                if has_approval_log:
+                    raise ValueError("You have already signed/approved this technical evaluation round.")
                 default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
                 await self._add_history(pr, acted_by, status or default_status, remarks)
-            
-            # Check if all required committee members have approved
-            from app.models.user import RoleManager
-            hod_res = await self.db.execute(
-                select(User)
-                .join(RoleManager, User.role_id == RoleManager.id)
-                .where(
-                    and_(
-                        User.department_id == pr.initiator.department_id,
-                        RoleManager.group_key == "hod"
-                    )
-                )
-            )
-            hod = hod_res.scalar_one_or_none()
-            hod_id = hod.id if hod else None
-
-            # Fallback to department defaults if PR fields are None (heals existing PRs)
-            dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
-            expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
-            expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
-            director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
-
-            required_ids = {pr.initiator_id, expert1_id, expert2_id, director_faculty_id}
-            
-            if None in required_ids or any(x is None for x in required_ids):
                 should_advance = False
                 flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS
             else:
+                required_ids = set(
+                    dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id)
+                )
                 await self.db.refresh(pr, ["history"])
                 approved_ids = {
-                    h.current_approver_id for h in pr.history 
+                    h.current_approver_id for h in pr.history
                     if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
                     and (h.acted_at is None or h.acted_at >= since)
                 }
-                
+                if has_approval_log:
+                    if not required_ids.issubset(approved_ids):
+                        raise ValueError("You have already signed/approved this technical evaluation round.")
+                else:
+                    default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
+                    await self._add_history(pr, acted_by, status or default_status, remarks)
+                    approved_ids.add(acted_by.id)
+
                 if not required_ids.issubset(approved_ids):
                     should_advance = False
                     flow.step_order = current_step
@@ -606,6 +589,7 @@ class FlowEngineService:
                                 pr.current_status = RequestStatus.IN_PROGRESS
                                 if next_phase.phase_name == "Technical Evaluation":
                                     pr.te_initiated_at = datetime.utcnow()
+                                    await sync_tech_committee_to_pr(self.db, pr)
                                 await self._add_history(
                                     pr, acted_by,
                                     "Forwarded to next phase (partial approver auto-advanced)",
@@ -631,6 +615,7 @@ class FlowEngineService:
                     pr.current_status = RequestStatus.IN_PROGRESS
                     if next_phase.phase_name == "Technical Evaluation":
                         pr.te_initiated_at = datetime.utcnow()
+                        await sync_tech_committee_to_pr(self.db, pr)
                     if not is_tech_eval_step:
                         await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
                 else:

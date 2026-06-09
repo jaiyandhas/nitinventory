@@ -5,6 +5,7 @@ import {
 import { prApi } from '../../../services/api';
 import { PurchaseRequest } from '../../../types';
 import toast from 'react-hot-toast';
+import { resolveTechCommitteeIds, resolveTechCommitteeMember } from '../../../utils/techCommittee';
 
 interface TechEvalActionProps {
   pr: PurchaseRequest;
@@ -50,22 +51,20 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
     (!since || !h.acted_at || new Date(h.acted_at) >= since)
   );
 
-  const isCommitteeMember = [
-    pr.initiator_id,
-    pr.faculty1_id,
-    pr.faculty2_id,
-    pr.faculty3_id,
-  ].filter(Boolean).includes(user?.id);
+  const isCommitteeMember = resolveTechCommitteeIds(pr).includes(user?.id ?? -1);
 
   const userTechEvalDocKey = `tech_eval_doc_${user?.id}`;
   const userTechEvalDoc = pr.documents?.find((d: any) => d.doc_key === userTechEvalDocKey);
 
   const committeeProgress = (() => {
+    const expert1Id = resolveTechCommitteeMember(pr, 'expert1');
+    const expert2Id = resolveTechCommitteeMember(pr, 'expert2');
+    const directorId = resolveTechCommitteeMember(pr, 'director');
     const rawMembers = [
       { id: pr.initiator_id, name: pr.initiator?.name || 'Purchase Initiator', email: pr.initiator?.email, roleLabel: 'Purchase Initiator' },
-      { id: pr.faculty1_id, name: pr.faculty1?.name || 'Expert 1', email: pr.faculty1?.email, roleLabel: 'Expert Nominated by HOD 1' },
-      { id: pr.faculty2_id, name: pr.faculty2?.name || 'Expert 2', email: pr.faculty2?.email, roleLabel: 'Expert Nominated by HOD 2' },
-      { id: pr.faculty3_id, name: pr.faculty3?.name || 'Director Nominated Faculty', email: pr.faculty3?.email, roleLabel: 'Faculty Nominated by Director' },
+      { id: expert1Id, name: pr.faculty1?.name || pr.budget_file?.expert1?.name || 'Expert 1', email: pr.faculty1?.email || pr.budget_file?.expert1?.email, roleLabel: 'Expert Nominated by HOD 1' },
+      { id: expert2Id, name: pr.faculty2?.name || pr.budget_file?.expert2?.name || 'Expert 2', email: pr.faculty2?.email || pr.budget_file?.expert2?.email, roleLabel: 'Expert Nominated by HOD 2' },
+      { id: directorId, name: pr.faculty3?.name || pr.budget_file?.director_faculty?.name || 'Director Nominated Faculty', email: pr.faculty3?.email || pr.budget_file?.director_faculty?.email, roleLabel: 'Faculty Nominated by Director' },
     ].filter(m => m.id !== null && m.id !== undefined) as { id: number; name: string; email?: string; roleLabel: string }[];
 
     const members: typeof rawMembers = [];
@@ -90,6 +89,27 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
   })();
 
   const isMyTurnToSign = isCommitteeMember && !hasUserSigned;
+  const allCommitteeSigned =
+    committeeProgress.length > 0 && committeeProgress.every((m) => m.hasSigned);
+
+  const handleCommitteeAdvance = async () => {
+    if (!remarks.trim()) {
+      toast.error('Remarks are required to advance the workflow');
+      return;
+    }
+    if (!window.confirm('All committee members have signed. Advance to the next workflow step?')) return;
+    setActionLoading(true);
+    try {
+      await prApi.advance(pr.id, remarks);
+      toast.success('PR advanced to next step');
+      setRemarks('');
+      refetch();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Action failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (pr.commercial_evaluations) {
@@ -306,20 +326,42 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
       </div>          
       
       {hasUserSigned ? (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-4 text-sm space-y-1">
-          <div className="font-semibold flex items-center gap-2 text-emerald-900">
-            <CheckCircle2 size={16} className="text-emerald-600" /> Technical Evaluation Submitted
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-4 text-sm space-y-3">
+          <div className="space-y-1">
+            <div className="font-semibold flex items-center gap-2 text-emerald-900">
+              <CheckCircle2 size={16} className="text-emerald-600" /> Technical Evaluation Submitted
+            </div>
+            <p className="text-xs text-emerald-700">
+              {allCommitteeSigned
+                ? 'All committee members have signed. Forward the PR to the next approval step.'
+                : 'You have successfully submitted your Technical Evaluation Report. Waiting for other committee members to sign.'}
+            </p>
+            {userTechEvalDoc && (
+              <div className="mt-2 flex items-center gap-2 text-xs bg-white border border-emerald-100 rounded px-2 py-1.5">
+                <FileText size={13} className="text-emerald-600 shrink-0" />
+                <span className="font-semibold text-slate-700">Your uploaded report:</span>
+                <a href={userTechEvalDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate font-semibold">
+                  {userTechEvalDoc.original_name}
+                </a>
+              </div>
+            )}
           </div>
-          <p className="text-xs text-emerald-700">
-            You have successfully submitted your Technical Evaluation Report. Waiting for other committee members to sign.
-          </p>
-          {userTechEvalDoc && (
-            <div className="mt-2 flex items-center gap-2 text-xs bg-white border border-emerald-100 rounded px-2 py-1.5">
-              <FileText size={13} className="text-emerald-600 shrink-0" />
-              <span className="font-semibold text-slate-700">Your uploaded report:</span>
-              <a href={userTechEvalDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate font-semibold">
-                {userTechEvalDoc.original_name}
-              </a>
+          {allCommitteeSigned && isCommitteeMember && (
+            <div className="border-t border-emerald-200 pt-3 space-y-2">
+              <textarea
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Remarks for forwarding to HOD..."
+                className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm"
+                required
+              />
+              <button
+                onClick={handleCommitteeAdvance}
+                disabled={actionLoading || !remarks.trim()}
+                className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+              >
+                <CheckCircle2 size={14} /> Forward to Next Step
+              </button>
             </div>
           )}
         </div>

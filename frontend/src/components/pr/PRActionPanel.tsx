@@ -14,7 +14,9 @@ import { POAction } from './actions/POAction';
 import { GRNAction } from './actions/GRNAction';
 import { DirectorApprovalAction } from './actions/DirectorApprovalAction';
 import { ReferralPanel } from './actions/ReferralPanel';
+import { ClarificationPanel } from './actions/ClarificationPanel';
 import { CancelPOModal } from './actions/CancelPOModal';
+import { resolveTechCommitteeIds } from '../../utils/techCommittee';
 
 interface PRActionPanelProps {
   pr: PurchaseRequest;
@@ -37,8 +39,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   } else if (pr?.flow) {
     const phaseName = pr.flow?.phase_name;
     if (phaseName === 'Technical Evaluation' && pr.flow.step_order === 1) {
-      const committeeIds = [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
-      canActOn = committeeIds.includes(user?.id);
+      canActOn = resolveTechCommitteeIds(pr).includes(user?.id ?? -1);
     } else if (pr.flow.expected_user_id) {
       if (user?.id === pr.flow.expected_user_id) {
         canActOn = true;
@@ -428,6 +429,17 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         actionLoading={actionLoading}
         setActionLoading={setActionLoading}
       />
+
+      {/* Technical Clarification panel — Tendering phase only */}
+      {phaseName === 'Tendering' && (
+        <ClarificationPanel
+          pr={pr}
+          user={user}
+          refetch={refetch}
+          actionLoading={actionLoading}
+          setActionLoading={setActionLoading}
+        />
+      )}
 
       {showSendBackModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left">

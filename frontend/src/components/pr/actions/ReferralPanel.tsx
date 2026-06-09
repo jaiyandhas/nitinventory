@@ -157,7 +157,9 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
     enabled: !!user,
   });
 
-  const allReferrals: PRReferral[] = pr.referrals || [];
+  const allReferrals: PRReferral[] = (pr.referrals || []).filter(
+    (r: PRReferral) => !r.referral_type || r.referral_type === 'consultation'
+  );
   const activeReferral = allReferrals.find((r) => r.status === 'pending');
   const pastReferrals = allReferrals.filter((r) => r.status !== 'pending');
   const isReferralForMe = activeReferral && activeReferral.referred_to?.id === user?.id;

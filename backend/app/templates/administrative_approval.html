@@ -130,6 +130,7 @@
 </head>
 <body>
 
+    {% if module != 'po_cancel' %}
     <!-- Header bar -->
     <table style="width: 100%; margin-bottom: 20px; border-bottom: 2px double #1a3a6b; padding-bottom: 10px; border-collapse: collapse;">
         <tr>
@@ -183,6 +184,7 @@
             Administrative Approval & Procurement Report
         {% endif %}
     </div>
+    {% endif %}
 
     <!-- ============================================== -->
     <!-- FORM 1: PURCHASE INDENT                        -->
@@ -248,7 +250,7 @@
                 <th style="width: 8%; border: 1px solid #333; padding: 6px; text-align: center;">Qty</th>
                 <th style="width: 12%; border: 1px solid #333; padding: 6px; text-align: right;">Unit Cost (Rs.)</th>
                 <th style="width: 8%; border: 1px solid #333; padding: 6px; text-align: center;">GST in %</th>
-                <th style="width: 12%; border: 1px solid #333; padding: 6px; text-align: right;">GST amount (Rs.)</th>
+                <th style="width: 12%; border: 1px solid #333; padding: 6px; text-align: right;">Total GST (Rs.)</th>
                 <th style="width: 15%; border: 1px solid #333; padding: 6px; text-align: right;">Total Cost (Rs.)</th>
             </tr>
         </thead>
@@ -1019,9 +1021,31 @@
 
     <div class="checkbox-container">
         <p class="italic text-slate-700">"The department proposed to procure the following item(s) on Proprietary Article Certificate (PAC) basis. The items are proprietary in nature. In case of discrepancy of proprietary nature, the department shall be responsible."</p>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> PAC executed by the Department is attached: <strong>Yes</strong></div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> PAC from the OEM is attached: <strong>Yes</strong></div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> Sole-authorization certificate from OEM is attached (if authorized dealer): <strong>Yes</strong></div>
+        {% set pac_docs = namespace(dept=false, oem=false, auth=false) %}
+        {% for d in pr.documents %}
+            {% if d.doc_key == 'dept_pac_file' %}
+                {% set pac_docs.dept = true %}
+            {% elif d.doc_key == 'oem_pac_file' %}
+                {% set pac_docs.oem = true %}
+            {% elif d.doc_key == 'oem_auth_file' %}
+                {% set pac_docs.auth = true %}
+            {% endif %}
+        {% endfor %}
+        <div class="checkbox-row">
+            <div class="checkbox-box">{% if pac_docs.dept %}✓{% endif %}</div> 
+            PAC executed by the Department is attached: 
+            <strong>{% if pac_docs.dept %}Yes{% else %}No (Not Attached){% endif %}</strong>
+        </div>
+        <div class="checkbox-row">
+            <div class="checkbox-box">{% if pac_docs.oem %}✓{% endif %}</div> 
+            PAC from the OEM is attached: 
+            <strong>{% if pac_docs.oem %}Yes{% else %}No (Not Attached){% endif %}</strong>
+        </div>
+        <div class="checkbox-row">
+            <div class="checkbox-box">{% if pac_docs.auth %}✓{% endif %}</div> 
+            Sole-authorization certificate from OEM is attached (if authorized dealer): 
+            <strong>{% if pac_docs.auth %}Yes{% else %}No (Not Attached){% endif %}</strong>
+        </div>
     </div>
 
     <div class="section-title">Signatures</div>
@@ -1369,66 +1393,264 @@
     <!-- FORM 9: MINUTES FOR PO CANCELLATION            -->
     <!-- ============================================== -->
     {% elif module == 'po_cancel' %}
-    <table class="details-table">
+    <!-- Bilingual Institutional Header for PO Cancellation -->
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; border: none;">
+        <tr style="border: none;">
+            <td style="width: 65px; padding: 0; border: none; vertical-align: middle;">
+                <img src="file://{{ storage_dir }}/NITLOGO.png" style="height: 60px; width: 60px; object-fit: contain;" />
+            </td>
+            <td style="text-align: center; padding: 0 0 0 10px; border: none; vertical-align: middle;">
+                <div style="font-size: 14pt; font-weight: bold; font-family: 'Times New Roman', Times, serif; margin: 0; line-height: 1.2;">राष्ट्रीय प्रौद्योगिकी संस्थान तिरुच्चिरापल्ली - 620015</div>
+                <div style="font-size: 11pt; font-weight: bold; font-family: 'Times New Roman', Times, serif; margin: 2px 0 0 0; line-height: 1.2;">NATIONAL INSTITUTE OF TECHNOLOGY, TIRUCHIRAPPALLI 620015</div>
+                <div style="font-size: 10pt; font-weight: bold; margin-top: 4px; line-height: 1.2; letter-spacing: 0.5px;">DEPARTMENT OF {{ pr.initiator.department.name|upper if (pr.initiator and pr.initiator.department) else '____________________' }}</div>
+            </td>
+        </tr>
+    </table>
+    <div style="border-top: 2px double #000; border-bottom: 2px double #000; padding: 4px 0; margin-top: 5px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 10.5pt;">
+        MINUTES OF THE PURCHASE COMMITTEE MEETING FOR PO CANCELLATION
+    </div>
+
+    <table class="details-table" style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #333;">
+        {% set first_item = pr.items[0] if pr.items else none %}
         <tr>
-            <th>PO Number & Date</th>
-            <td class="bold">NITT/PO/{{ pr.id }} · {{ pr_created_at_str }}</td>
-            <th>PO Value</th>
-            <td class="bold">₹{{ "%.2f"|format(pr.amount) }}</td>
+            <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">File No:</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else (pr.file_no or '-') }}</td>
         </tr>
         <tr>
-            <th>Contracted Vendor</th>
-            <td class="bold">Contracted OEM / Supplier</td>
-            <th>Mode of Purchase</th>
-            <td>{{ pr.procurement.name if pr.procurement else '-' }}</td>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Name of the Department</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Name of the Purchase Indentor</td>
+            <td style="border: 1px solid #333; padding: 6px; vertical-align: top;">
+                <table style="width: 100%; border: none; margin: 0; padding: 0; font-size: 9pt; border-collapse: collapse;">
+                    <tr style="border: none;"><td style="border: none; padding: 2px 0; font-weight: bold; width: 90px; background: transparent;">Name:</td><td style="border: none; padding: 2px 0; background: transparent;">{{ pr.initiator.name }}</td></tr>
+                    <tr style="border: none;"><td style="border: none; padding: 2px 0; font-weight: bold; background: transparent;">Designation:</td><td style="border: none; padding: 2px 0; background: transparent;">{{ pr.initiator.designation or 'Faculty' }}</td></tr>
+                    <tr style="border: none;"><td style="border: none; padding: 2px 0; font-weight: bold; background: transparent;">Contact:</td><td style="border: none; padding: 2px 0; background: transparent;">{{ pr.initiator.email }}</td></tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Name of the laboratory/office</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ pr.form_data.get('laboratory_office', '-') }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Source of fund</td>
+            <td style="border: 1px solid #333; padding: 6px; line-height: 1.6;">
+                {% set selected_fund = pr.form_data.get('source_of_fund', '') %}
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'OH-35' %}✓{% endif %}</span> OH-35 /
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'OH-31' %}✓{% endif %}</span> OH-31 /
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'SW' %}✓{% endif %}</span> SW /
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'SEED' %}✓{% endif %}</span> SEED
+                <br/>
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'Project code' %}✓{% endif %}</span> Project code: {{ pr.form_data.get('source_of_fund_project_code', '_______________') }} /
+                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; margin-right: 4px; vertical-align: middle; text-align: center; line-height: 10px; font-weight: bold; font-size: 8pt; background-color: #fff;">{% if selected_fund == 'Others' %}✓{% endif %}</span> Others (Specify): {{ pr.form_data.get('source_of_fund_others', '_______________') }}
+            </td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Estimated amount (incl.GST)</td>
+            <td style="border: 1px solid #333; padding: 6px; font-weight: bold; color: #1a3a6b;">Rs. {{ "%.2f"|format(grand_total) }}</td>
         </tr>
     </table>
 
-    <div class="section-title">Reasons for Cancellation</div>
-    <p class="italic text-slate-700">"Due to critical supply delays, default on specifications, or business default by the supplier, the committee recommends to cancel the PO and reallocate the budget."</p>
-    <table class="details-table">
+    <div style="font-weight: bold; margin-bottom: 5px; margin-top: 15px; font-size: 10pt;"><u>PO details:</u></div>
+    <table class="details-table" style="width: 100%; border-collapse: collapse; border: 1px solid #333; margin-bottom: 15px;">
+        {% set awarded_vendor = pr.financial_evaluations|selectattr("is_awarded", "equalto", true)|first %}
         <tr>
-            <th>Primary Reason</th>
-            <td>{{ pr.po_cancellations[0].reason if pr.po_cancellations else 'Supplier failed to deliver within the stipulated timeline and defaults on contract terms.' }}</td>
+            <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">Purchase Order No and Date</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ pr.form_data.get('po_number', 'NITT/PO/' ~ pr.id) }} &amp; {{ pr.po_approved_at.strftime('%d/%m/%Y') if pr.po_approved_at else '-' }}</td>
         </tr>
         <tr>
-            <th>Re-initiation Preference</th>
-            <td class="bold">{{ pr.po_cancellations[0].reinitiation_method|upper if pr.po_cancellations else 'DIRECT / GeM / CPPP' }}</td>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Purchase Order value</td>
+            <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Rs. {{ "%.2f"|format(awarded_vendor.quoted_amount) if awarded_vendor else "%.2f"|format(pr.amount) }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Mode of Purchase</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ pr.procurement.name if pr.procurement else '-' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">PO issued to (Company Name)</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ awarded_vendor.vendor_name if awarded_vendor else '-' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Name of the Item</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ pr.items|map(attribute='item_description')|join(', ') }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Quantity</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ pr.items|map(attribute='quantity')|join(', ') }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Last Date of Delivery</td>
+            <td style="border: 1px solid #333; padding: 6px;">
+                {% set del_period = awarded_vendor.delivery_period if (awarded_vendor and awarded_vendor.delivery_period) else (pr.items[0].delivery_period if (pr.items and pr.items[0].delivery_period) else '-') %}
+                {% if pr.po_approved_at and del_period and del_period != '-' %}
+                    {{ del_period }} days from PO date
+                {% else %}
+                    {{ del_period }}
+                {% endif %}
+            </td>
         </tr>
     </table>
 
-    <div class="section-title">Committee Recommendations Signatures</div>
-    <table class="data-table">
-        <thead>
+    <table style="width: 100%; border-collapse: collapse; margin-top: 15px; border: 1px solid #333; margin-bottom: 15px;">
+        <tr>
+            <th colspan="2" style="text-align: center; font-weight: bold; background-color: #f5f8fa; color: #1a3a6b; border: 1px solid #333; padding: 6px;">
+                Reason for Cancellation of Purchase Order
+            </th>
+        </tr>
+        {% if pr.po_cancellations and pr.po_cancellations[0].reason %}
+            {% set reasons = pr.po_cancellations[0].reason.split('\n') %}
+            {% for r in reasons if r.strip() %}
+                <tr>
+                    <td style="width: 8%; text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">{{ loop.index }}.</td>
+                    <td style="border: 1px solid #333; padding: 6px;">{{ r.strip() }}</td>
+                </tr>
+            {% endfor %}
+        {% else %}
             <tr>
-                <th>Member Role</th>
-                <th>Name</th>
-                <th>Signature</th>
+                <td style="width: 8%; text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">1.</td>
+                <td style="border: 1px solid #333; padding: 6px;">Supplier failed to deliver within the stipulated timeline and defaults on contract terms.</td>
+            </tr>
+        {% endif %}
+    </table>
+
+    <div style="font-size: 9.5pt; line-height: 1.5; margin-top: 15px; margin-bottom: 15px; text-align: justify;">
+        Due to above mentioned reason, members of the purchase committee jointly recommend to cancel the purchase Order issued to the vendor M/s <strong>{{ awarded_vendor.vendor_name if awarded_vendor else '____________________' }}</strong> for the value of Rs. <strong>{{ "%.2f"|format(awarded_vendor.quoted_amount) if awarded_vendor else "%.2f"|format(pr.amount) }}/-</strong> (Rupees <strong>{{ grand_total_words }}</strong> only).
+        <br/><br/>
+        And recommends to reinitiate the purchase through <span style="text-decoration: underline; font-weight: bold;">{{ pr.po_cancellations[0].reinitiation_method|upper if pr.po_cancellations else 'DIRECT / GeM / LIMITED TENDER / CPPP' }}</span>.
+        <br/><br/>
+        Hence the competent authority is requested to approve the cancellation of purchase order and reinitiate the procurement. The Dean P&D office is requested to reallocate the sanctioned amount for the above mentioned File No: <strong>{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else (pr.file_no or '_______________') }}</strong> to enable reinitiating the procurement for the same item.
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-top: 20px; border: 1px solid #333; font-size: 8.5pt;">
+        <thead>
+            <tr style="background-color: #f5f8fa;">
+                <th style="width: 8%; border: 1px solid #333; padding: 6px; text-align: center; color: #1a3a6b;">S.No</th>
+                <th style="width: 42%; border: 1px solid #333; padding: 6px; text-align: left; color: #1a3a6b;">Authority / Member Role</th>
+                <th style="width: 50%; border: 1px solid #333; padding: 6px; text-align: left; color: #1a3a6b;">Signature &amp; Date</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td class="bold">HoD, Chairperson</td>
-                <td>{{ hod_user.name if hod_user else 'Chairperson' }}</td>
-                <td>{% if hod_sig %}<img src="{{ hod_sig }}" style="max-height: 25px;" />{% endif %}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">1)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">HoD, Chairperson</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if hod_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ hod_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">{{ hod_user.name if hod_user else '' }} (Date: {{ hod_date_str }})</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
             </tr>
             <tr>
-                <td class="bold">Purchase Initiator</td>
-                <td>{{ pr.initiator.name }}</td>
-                <td>{% if initiator_sig %}<img src="{{ initiator_sig }}" style="max-height: 25px;" />{% endif %}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">2)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Purchase Initiator</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if initiator_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ initiator_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">{{ pr.initiator.name }} (Date: {{ initiator_date_str }})</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
             </tr>
             <tr>
-                <td class="bold">Technical expert 1</td>
-                <td>{{ pr.faculty1.name if pr.faculty1 else 'Expert 1' }}</td>
-                <td>{% if faculty1_sig %}<img src="{{ faculty1_sig }}" style="max-height: 25px;" />{% endif %}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">3)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 1/ Technical expert nominated by HoD</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if faculty1_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ faculty1_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">{{ pr.faculty1.name if pr.faculty1 else '' }} (Date: {{ faculty1_date_str }})</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
             </tr>
             <tr>
-                <td class="bold">Faculty - Nominated by Director</td>
-                <td>{{ pr.faculty3.name if pr.faculty3 else 'Director Nominee' }}</td>
-                <td>{% if faculty3_sig %}<img src="{{ faculty3_sig }}" style="max-height: 25px;" />{% endif %}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">4)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 2/ Technical expert nominated by HoD</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if faculty2_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ faculty2_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">{{ pr.faculty2.name if pr.faculty2 else '' }} (Date: {{ faculty2_date_str }})</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">5)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Faculty - Nominated by the Director</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if faculty3_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ faculty3_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">{{ pr.faculty3.name if pr.faculty3 else '' }} (Date: {{ faculty3_date_str }})</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">6)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">
+                    DR/AR (S&P)<br/>
+                    DR (R&C) for R&C
+                </td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if dr_ar_sp_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ dr_ar_sp_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">Date: {{ dr_ar_sp_date_str }}</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">7)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">DR/AR (F&A)</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if dr_ar_fa_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ dr_ar_fa_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">Date: {{ dr_ar_fa_date_str }}</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold;">8)</td>
+                <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">IA</td>
+                <td style="border: 1px solid #333; padding: 6px; min-height: 40px; vertical-align: middle;">
+                    {% if ia_sig %}
+                        <div style="display: inline-block; vertical-align: middle;">
+                            <img src="{{ ia_sig }}" style="max-height: 30px;" /><br/>
+                            <span style="font-size: 7.5pt; color: #555;">Date: {{ ia_date_str }}</span>
+                        </div>
+                    {% else %}
+                        <span style="color: #999;">Pending Signature</span>
+                    {% endif %}
+                </td>
             </tr>
         </tbody>
     </table>
+
+    <p class="italic" style="font-size: 8.5pt; margin-top: 15px;"><strong>Note:</strong> The department has to get the approval of the competent authority as per DFPR through DDFS.</p>
 
     <!-- ============================================== -->
     <!-- MODULE 9: TECHNICAL COMPARATIVE STATEMENT      -->

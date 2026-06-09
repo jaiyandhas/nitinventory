@@ -265,7 +265,6 @@ export const PRDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
       <PRHeader
         pr={pr}
         user={user}
@@ -275,6 +274,7 @@ export const PRDetailPage: React.FC = () => {
         adminDepts={adminDepts}
         updateWfMutation={updateWfMutation}
         formatCurrency={formatCurrency}
+        refetch={refetch}
       />
 
       {(

@@ -3,6 +3,7 @@ IRIS database bootstrap: drop/create tables and seed demo data.
 Workflow definitions match NIT Tiruchirappalli procurement policy (3 categories × 4 procurement methods × 2 purchase types).
 """
 import asyncio
+import os
 from datetime import date, datetime
 
 from sqlalchemy import text, select
@@ -28,6 +29,7 @@ engine = create_async_engine(settings.DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 DEMO_PASSWORD = get_password_hash("password")
+RESET_DEMO_DATA = os.getenv("RESET_DEMO_DATA", "false").strip().lower() in ("1", "true", "yes", "y")
 
 
 async def create_tables():
@@ -259,6 +261,14 @@ async def seed():
             for u in users_res.scalars():
                 users[u.email] = u
 
+        # Seed dummy digital signatures for workflow approval steps.
+        # Some demo users might not have uploaded signatures yet, and PO approvals require signature_path.
+        default_sig_rel_path = "signatures/6_ae8ad3496eae4809b4a946314e0c79e1_signature.png"
+        for u in users.values():
+            if not u.signature_path:
+                u.signature_path = default_sig_rel_path
+        await db.flush()
+
         # 4. Financial Year
         fy_labels = ["2025-26", "2026-27", "2027-28"]
         seeded_fys = {}
@@ -318,10 +328,8 @@ async def seed():
                     form_schema={
                         "type": "object",
                         "title": "Limited Tender Details",
-                        "properties": {
-                            "invited_vendors": { "type": "string", "title": "List of Invited Vendors (comma separated)" }
-                        },
-                        "required": ["invited_vendors"]
+                        "properties": {},
+                        "required": []
                     }
                 ),
                 ProcurementManager(
@@ -382,6 +390,16 @@ async def seed():
                 await db.flush()
             procs_res = await db.execute(select(ProcurementManager))
             procs = list(procs_res.scalars())
+            # Synchronize schema for existing methods
+            for p_item in procs:
+                if p_item.name == "Limited Tender":
+                    p_item.form_schema = {
+                        "type": "object",
+                        "title": "Limited Tender Details",
+                        "properties": {},
+                        "required": []
+                    }
+            await db.flush()
 
         # 6. Purchase Categories
         cat_check = await db.execute(select(PurchaseCategory).limit(1))
@@ -517,31 +535,34 @@ async def seed():
             print("  All workflow hierarchies are already present.")
 
         # 9. Clear and Reseed Transactional & Budget Data
-        print("🧹 Clearing previous transactional and budget data...")
-        tables_to_truncate = [
-            "asset_logs", "asset_movements", "assets", "payments", "discrepancies",
-            "stores_asset_logs", "dept_asset_logs", "delivery_items", "deliveries",
-            "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
-            "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
-            "technical_evaluations", "financial_evaluations", "commercial_evaluations",
-            "documents", "purchase_request_items", "purchase_requests", "budget_master"
-        ]
-        try:
-            await db.execute(text(f"TRUNCATE TABLE {', '.join(tables_to_truncate)} RESTART IDENTITY CASCADE;"))
-            print("✓ Transactional tables cleared successfully.")
-        except Exception as e:
-            print(f"⚠ Failed to truncate tables via cascade: {e}. Trying simple delete...")
-            for table in reversed(tables_to_truncate):
-                try:
-                    await db.execute(text(f"DELETE FROM {table};"))
-                    await db.execute(text(f"ALTER SEQUENCE IF EXISTS {table}_id_seq RESTART WITH 1;"))
-                except Exception as ex:
-                    print(f"  Could not clear {table}: {ex}")
+        if RESET_DEMO_DATA:
+            print("🧹 Clearing previous transactional and budget data...")
+            tables_to_truncate = [
+                "asset_logs", "asset_movements", "assets", "payments", "discrepancies",
+                "stores_asset_logs", "dept_asset_logs", "delivery_items", "deliveries",
+                "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
+                "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
+                "technical_evaluations", "financial_evaluations", "commercial_evaluations",
+                "documents", "purchase_request_items", "purchase_requests", "budget_master"
+            ]
+            try:
+                await db.execute(text(f"TRUNCATE TABLE {', '.join(tables_to_truncate)} RESTART IDENTITY CASCADE;"))
+                print("✓ Transactional tables cleared successfully.")
+            except Exception as e:
+                print(f"⚠ Failed to truncate tables via cascade: {e}. Trying simple delete...")
+                for table in reversed(tables_to_truncate):
+                    try:
+                        await db.execute(text(f"DELETE FROM {table};"))
+                        await db.execute(text(f"ALTER SEQUENCE IF EXISTS {table}_id_seq RESTART WITH 1;"))
+                    except Exception as ex:
+                        print(f"  Could not clear {table}: {ex}")
 
         # Update CSE department with committee experts
-        cse.expert1_id = users["faculty1.cse@nitt.edu"].id
-        cse.expert2_id = users["faculty2.cse@nitt.edu"].id
-        cse.director_faculty_id = users["faculty2.cse@nitt.edu"].id
+        faculty_expert1 = users.get("faculty1.cse@nitt.edu") or users.get("faculty.cse@nitt.edu")
+        faculty_expert2 = users.get("faculty2.cse@nitt.edu") or faculty_expert1
+        cse.expert1_id = faculty_expert1.id if faculty_expert1 else None
+        cse.expert2_id = faculty_expert2.id if faculty_expert2 else None
+        cse.director_faculty_id = faculty_expert2.id if faculty_expert2 else None
         db.add(cse)
         await db.flush()
 
@@ -565,7 +586,32 @@ async def seed():
             db.add(Settings(key_name="designations", value=default_desigs))
             await db.flush()
 
-        # Reseed 8 representative purchase requests at various stages of completion
+        # Ensure E2E free budget files are visible/allocatable to the seeded faculty.
+        # E2E test uses /api/budget/files and requires available_amount >= unit_cost, and
+        # the budget file must be in the faculty's scoped list (allocated_initiator_id or referenced by PR).
+        faculty_user = users.get("faculty.cse@nitt.edu")
+        if faculty_user:
+            await db.execute(
+                text("""
+                    UPDATE budget_master
+                    SET allocated_initiator_id = :faculty_id
+                    WHERE file_no LIKE '%/E2E/FREE-%'
+                      AND allocated_initiator_id IS NULL
+                """),
+                {"faculty_id": faculty_user.id},
+            )
+            await db.flush()
+
+        # Reseed 8 representative purchase requests at various stages of completion.
+        # Default behavior is to preserve existing PRs (prevents "PR disappearance" during routine seeding).
+        from app.models.purchase_request import PurchaseRequest
+        if not RESET_DEMO_DATA:
+            pr_exists = (await db.execute(select(PurchaseRequest.id).limit(1))).scalar_one_or_none()
+            if pr_exists is not None:
+                await db.commit()
+                print("✅ Workflow/masters reseeded. Existing purchase requests preserved.")
+                return
+
         print("🌱 Seeding 8 representative workflow-centric purchase requests...")
         from app.models.purchase_request import (
             PurchaseRequest,
@@ -1078,6 +1124,7 @@ async def seed():
                 is_revision=False,
                 committed_amount=0.0,
                 utilized_amount=0.0,
+                allocated_initiator_id=faculty.id,
                 expert1_id=faculty1.id,
                 expert2_id=faculty2.id,
                 director_faculty_id=faculty2.id

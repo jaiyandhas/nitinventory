@@ -330,7 +330,7 @@ async def _persist_pr(
         if not nominee_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Invalid nominee faculty")
 
-    # Load department experts and director nominee to default
+    # Load committee defaults: budget file nominees take precedence over department defaults
     dept = user.department
     faculty1_id = None
     faculty2_id = None
@@ -338,6 +338,13 @@ async def _persist_pr(
     if dept:
         faculty1_id = dept.expert1_id
         faculty2_id = dept.expert2_id
+        faculty3_id = dept.director_faculty_id
+    if selected_file_ids:
+        primary_budget = budget_by_id.get(selected_file_ids[0])
+        if primary_budget:
+            faculty1_id = primary_budget.expert1_id or faculty1_id
+            faculty2_id = primary_budget.expert2_id or faculty2_id
+            faculty3_id = primary_budget.director_faculty_id or faculty3_id
 
     merged_form_data = payload.form_data or {}
     merged_form_data.update({
@@ -442,6 +449,18 @@ async def _persist_pr(
     quotation = uploads.get("quotation_file")
     if quotation and quotation.filename:
         await doc_svc.save_upload(pr, "quotation_file", quotation, user.id)
+
+    dept_pac = uploads.get("dept_pac_file")
+    if dept_pac and dept_pac.filename:
+        await doc_svc.save_upload(pr, "dept_pac_file", dept_pac, user.id)
+
+    oem_pac = uploads.get("oem_pac_file")
+    if oem_pac and oem_pac.filename:
+        await doc_svc.save_upload(pr, "oem_pac_file", oem_pac, user.id)
+
+    oem_auth = uploads.get("oem_auth_file")
+    if oem_auth and oem_auth.filename:
+        await doc_svc.save_upload(pr, "oem_auth_file", oem_auth, user.id)
 
     dept_code = user.department.short_code if user.department else "GEN"
     pr.icr_number = f"ICR/S&P/{financial_year.label}/{dept_code}/{pr.id}"
@@ -690,6 +709,15 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         raise HTTPException(status_code=404, detail="Purchase request not found")
 
     await check_pr_access(pr, user, db)
+
+    if pr.flow:
+        from app.models.budget import PhaseManager
+        phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
+        phase_name_for_sync = phase_res.scalar_one_or_none()
+        if phase_name_for_sync == "Technical Evaluation" and pr.flow.step_order == 1:
+            from app.services.tech_committee import sync_tech_committee_to_pr
+            await sync_tech_committee_to_pr(db, pr)
+            await db.refresh(pr, ["faculty1", "faculty2", "faculty3"])
                            
     expected_group = None
     expected_role_id = None
@@ -1035,6 +1063,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 "response": ref.response,
                 "response_document_path": ref.response_document_path,
                 "status": ref.status,
+                "referral_type": ref.referral_type,
                 "created_at": ref.created_at.isoformat() + "Z" if ref.created_at else None,
                 "responded_at": ref.responded_at.isoformat() + "Z" if ref.responded_at else None,
             }
@@ -1358,30 +1387,17 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         return
 
     elif step.user_type == "tech_evaluation":
-        from app.models.user import RoleManager
-        hod_res = await db.execute(
-            select(User)
-            .join(RoleManager, User.role_id == RoleManager.id)
-            .where(
-                and_(
-                    User.department_id == pr.initiator.department_id,
-                    RoleManager.group_key == "hod"
-                )
-            )
-        )
-        hod = hod_res.scalar_one_or_none()
-        hod_id = hod.id if hod else None
-
-        # Fallback to department defaults if PR fields are None (heals existing PRs)
-        await db.refresh(pr.initiator, ["department"])
-        dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
-        expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
-        expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
-        director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
+        from app.services.tech_committee import resolve_tech_committee_ids, sync_tech_committee_to_pr
+        await sync_tech_committee_to_pr(db, pr)
+        _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
 
         committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
         if any(x is None for x in committee_ids):
-            raise HTTPException(status_code=400, detail="The department purchase committee is not fully formed/configured yet by HOD and Director. Please contact them.")
+            raise HTTPException(
+                status_code=400,
+                detail="The technical evaluation committee is not fully configured on the budget file. "
+                       "Assign Expert 1, Expert 2, and Director nominee before proceeding.",
+            )
 
         # Must be one of the committee members
         if user.id not in committee_ids:
@@ -1439,16 +1455,16 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         if step.user_type != "tech_evaluation":
             raise HTTPException(status_code=403, detail="Evaluator can only submit evaluation when it is their workflow step")
 
-        # Fallback to department defaults if PR fields are None (heals existing PRs)
-        await db.refresh(pr.initiator, ["department"])
-        dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
-        expert1_id = pr.faculty1_id or (dept.expert1_id if dept else None)
-        expert2_id = pr.faculty2_id or (dept.expert2_id if dept else None)
-        director_faculty_id = pr.faculty3_id or (dept.director_faculty_id if dept else None)
+        from app.services.tech_committee import resolve_tech_committee_ids, sync_tech_committee_to_pr
+        await sync_tech_committee_to_pr(db, pr)
+        _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
 
         committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
         if any(x is None for x in committee_ids):
-            raise HTTPException(status_code=400, detail="The department purchase committee is not fully formed/configured yet by HOD and Director. Please contact them.")
+            raise HTTPException(
+                status_code=400,
+                detail="The technical evaluation committee is not fully configured on the budget file.",
+            )
 
         if user.id not in committee_ids:
             raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
@@ -1831,6 +1847,29 @@ async def add_technical_eval(
         acted_at=datetime.utcnow(),
     )
     db.add(history)
+    await db.flush()
+
+    # Auto-advance when every committee member has signed (same request as /advance after submit)
+    from app.services.flow_engine import FlowEngineService
+    from app.services.tech_committee import dedupe_committee_ids, resolve_tech_committee_ids, sync_tech_committee_to_pr
+    await sync_tech_committee_to_pr(db, pr)
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+    since = pr.te_initiated_at or pr.created_at or datetime.min
+    await db.refresh(pr, ["history", "flow"])
+    if not any(x is None for x in (expert1_id, expert2_id, director_faculty_id)):
+        required_ids = set(dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id))
+        approved_ids = {
+            h.current_approver_id for h in pr.history
+            if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+            and (h.acted_at is None or h.acted_at >= since)
+        }
+        if required_ids.issubset(approved_ids) and pr.flow:
+            flow_engine = FlowEngineService(db)
+            try:
+                await flow_engine.advance(pr, user, body.get("remarks") or "All committee members signed — advancing")
+            except ValueError:
+                pass
+
     await db.commit()
     return {"message": "Technical evaluation saved"}
 
@@ -2545,3 +2584,201 @@ async def respond_referral(
 
     await db.commit()
     return {"message": "Consultation response submitted successfully"}
+
+
+# ─── Technical Clarification endpoints (PI ↔ Superintendent, non-blocking) ──
+
+@router.post("/{pr_id}/clarify")
+async def send_clarification(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Send a technical clarification query between the Purchase Initiator and
+    the Superintendent at the first Tendering step.  Non-blocking — does NOT
+    freeze the workflow.  Both parties may initiate."""
+
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
+    await db.refresh(pr, ["flow", "initiator"])
+
+    # Determine who may send a clarification: initiator OR the current
+    # superintendent (expected_role_name === 'Superintendent' at step 1)
+    is_initiator = pr.initiator_id == user.id
+
+    is_superintendent = False
+    await db.refresh(user, ["role"])
+    group = user.role.group_key if user.role else None
+    if group in ("superintendent", "verifier_sp"):
+        is_superintendent = True
+
+    if not is_initiator and not is_superintendent:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the Purchase Initiator or Superintendent may send technical clarifications"
+        )
+
+    # Determine the recipient: if sender is initiator → superintendent, and vice versa
+    if is_initiator:
+        # Find the superintendent who is assigned to this PR (via assignment or expected user)
+        await db.refresh(pr, ["assignments"])
+        # Try the active assignment first
+        if pr.assignments:
+            last_assignment = pr.assignments[-1]
+            await db.refresh(last_assignment, ["assigned_by"])
+            target_user_id = last_assignment.assigned_by_id
+        elif pr.flow and pr.flow.expected_user_id:
+            target_user_id = pr.flow.expected_user_id
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot determine the Superintendent recipient. Tendering must be in progress."
+            )
+    else:
+        # Superintendent → send to Purchase Initiator
+        target_user_id = pr.initiator_id
+
+    # Parse body
+    content_type = request.headers.get("content-type", "")
+    query_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        query_file = form.get("query_document")
+        if query_file and not getattr(query_file, "filename", None):
+            query_file = None
+    else:
+        body = await request.json()
+
+    query_text = body.get("query", "").strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Clarification query text is required")
+
+    # Validate recipient exists
+    target_res = await db.execute(select(User).where(User.id == target_user_id))
+    target_user = target_res.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=400, detail="Recipient user not found")
+
+    # Create a clarification referral (non-blocking, type='clarification')
+    clarification = PRReferral(
+        purchase_request_id=pr.id,
+        referred_by_id=user.id,
+        referred_to_id=target_user_id,
+        query=query_text,
+        status="pending",
+        referral_type="clarification",
+    )
+    db.add(clarification)
+    await db.flush()
+
+    # Optionally save attachment
+    if query_file:
+        from app.services.document_service import DocumentService
+        doc_svc = DocumentService(db)
+        doc_record = await doc_svc.save_upload(pr, f"clarification_{clarification.id}_query", query_file, user.id)
+        clarification.query_document_path = f"/static/uploads/{doc_record.doc_value.get('path')}"
+
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Technical Clarification Sent",
+        remarks=f"Clarification from {user.name} to {target_user.name}: {query_text}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Clarification sent successfully", "clarification_id": clarification.id}
+
+
+@router.post("/{pr_id}/clarify/{clarification_id}/respond")
+async def respond_clarification(
+    pr_id: int,
+    clarification_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Reply to a specific technical clarification thread item."""
+
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
+
+    # Fetch the specific clarification record
+    clar_res = await db.execute(
+        select(PRReferral).where(
+            and_(
+                PRReferral.id == clarification_id,
+                PRReferral.purchase_request_id == pr.id,
+                PRReferral.referred_to_id == user.id,
+                PRReferral.referral_type == "clarification",
+                PRReferral.status == "pending",
+            )
+        )
+    )
+    clarification = clar_res.scalar_one_or_none()
+    if not clarification:
+        raise HTTPException(
+            status_code=403,
+            detail="No pending clarification found for you on this purchase request"
+        )
+
+    # Parse body
+    content_type = request.headers.get("content-type", "")
+    response_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        response_file = form.get("response_document")
+        if response_file and not getattr(response_file, "filename", None):
+            response_file = None
+    else:
+        body = await request.json()
+
+    response_text = body.get("response", "").strip()
+    if not response_text:
+        raise HTTPException(status_code=400, detail="Response text is required")
+
+    # Save attachment if provided
+    doc_path = None
+    if response_file:
+        from app.services.document_service import DocumentService
+        doc_svc = DocumentService(db)
+        doc_record = await doc_svc.save_upload(pr, f"clarification_{clarification.id}_response", response_file, user.id)
+        doc_path = f"/static/uploads/{doc_record.doc_value.get('path')}"
+
+    clarification.response = response_text
+    clarification.response_document_path = doc_path
+    clarification.status = "responded"
+    clarification.responded_at = datetime.utcnow()
+
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Technical Clarification Response Submitted",
+        remarks=f"Clarification reply by {user.name}: {response_text}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Clarification response submitted successfully"}
+

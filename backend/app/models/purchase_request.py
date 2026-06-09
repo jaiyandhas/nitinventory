@@ -372,6 +372,7 @@ class PRReferral(Base):
     response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     response_document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    referral_type: Mapped[str] = mapped_column(String(50), default="consultation", nullable=False, server_default="consultation")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

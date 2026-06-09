@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  CheckCircle2, XCircle, RotateCcw, UserPlus, Plus, Trash2, ShieldAlert
+  CheckCircle2, XCircle, RotateCcw, UserPlus, Plus, Trash2, ShieldAlert, AlertCircle
 } from 'lucide-react';
 import { prApi } from '../../../services/api';
 import { PurchaseRequest } from '../../../types';
@@ -373,6 +373,15 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
           {(pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc')) && (
             <div className="space-y-2 pt-2 border-t border-slate-100 animate-fadeIn">
               <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Limited Purchase Committee Approval</h5>
+              
+              <div className="flex items-start gap-2.5 bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-950 shadow-xs my-2">
+                <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <h5 className="font-bold text-[10px] uppercase tracking-wide text-amber-800 mb-0.5">Local Purchase Committee (LPC) - GFR 155 Disclaimer</h5>
+                  <p className="text-[11px] leading-relaxed text-amber-700 italic">"The department proposed to procure the above item(s) through Local Purchase Committee (LPC) as per GFR 155. It will be ensured that the indented item(s) are not available in GeM portal before processing the LPC. Further, the committee shall survey the market and record the certificate as per GFR 155 before placing the PO."</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label text-slate-600 font-semibold text-xs">LPC Committee Members *</label>

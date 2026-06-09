@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertCircle } from 'lucide-react';
 import type { User } from '../../../types';
 import type { PRCommonFormState } from '../../../types/prCreation';
 import { EMD_PERCENT_OPTIONS, PERFORMANCE_SECURITY_OPTIONS } from '../../../config/prCreationQuestions';
@@ -18,11 +19,50 @@ export const StepCommonDetails: React.FC<Props> = ({
   formSchema,
   totalCost = 0,
   onUpdate,
-}) => (
-  <div className="space-y-8">
-    <p className="text-sm text-slate-600">
-      Common fields for this request (procurement mode: <strong>{procurementName}</strong>).
-    </p>
+}) => {
+  const getDisclaimer = () => {
+    const name = procurementName.toLowerCase();
+    if (name.includes('proprietary') || name.includes('pac')) {
+      return {
+        title: "Proprietary Article Certificate (PAC) Disclaimer",
+        text: "The department proposed to procure the following item(s) on Proprietary Article Certificate (PAC) basis. The items are proprietary in nature. In case of discrepancy of proprietary nature, the department shall be responsible."
+      };
+    }
+    if (name.includes('committee') || name.includes('lpc') || name.includes('limited tender')) {
+      return {
+        title: "Local Purchase Committee (LPC) - GFR 155 Disclaimer",
+        text: "The department proposed to procure the above item(s) through Local Purchase Committee (LPC) as per GFR 155. It will be ensured that the indented item(s) are not available in GeM portal before processing the LPC. Further, the committee shall survey the market and record the certificate as per GFR 155 before placing the PO."
+      };
+    }
+    if (name.includes('nomination') || name.includes('single tender') || name.includes('single source')) {
+      return {
+        title: "Nomination on Single Source Basis - GFR 194 Disclaimer",
+        text: "The department proposed to procure the above item(s) through nomination on single source basis as per GFR 194. It is certified that these goods proposed to purchase are of the requisite quality and specification, the prices are reasonable, and the supplier is reliable."
+      };
+    }
+    return null;
+  };
+
+  const disclaimer = getDisclaimer();
+  const isPac = procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac');
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-slate-600">
+          Common fields for this request (procurement mode: <strong>{procurementName}</strong>).
+        </p>
+
+        {disclaimer && (
+          <div className="flex items-start gap-3 bg-amber-50/80 border border-amber-200 rounded-lg p-4 text-sm text-amber-950 shadow-xs">
+            <AlertCircle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <h5 className="font-bold text-xs uppercase tracking-wide text-amber-800 mb-1">{disclaimer.title}</h5>
+              <p className="text-xs leading-relaxed text-amber-700 italic">"{disclaimer.text}"</p>
+            </div>
+          </div>
+        )}
+      </div>
 
     {formSchema && (
       <div id="procurement-specific-fields" className="scroll-mt-6">
@@ -170,6 +210,61 @@ export const StepCommonDetails: React.FC<Props> = ({
         )}
       </div>
 
+      {isPac && (
+        <>
+          <div>
+            <label className="label">Department PAC (PDF) *</label>
+            <input
+              type="file"
+              accept="application/pdf"
+              required={!common.dept_pac_file}
+              className="input-field"
+              onChange={(e) => onUpdate({ dept_pac_file: e.target.files?.[0] ?? null })}
+            />
+            {common.dept_pac_file && (
+              <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+                <span>📄 Selected:</span>
+                <span className="font-semibold">{common.dept_pac_file.name}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="label">OEM PAC Certificate (PDF) *</label>
+            <input
+              type="file"
+              accept="application/pdf"
+              required={!common.oem_pac_file}
+              className="input-field"
+              onChange={(e) => onUpdate({ oem_pac_file: e.target.files?.[0] ?? null })}
+            />
+            {common.oem_pac_file && (
+              <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+                <span>📄 Selected:</span>
+                <span className="font-semibold">{common.oem_pac_file.name}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="label">OEM Authorization Certificate (PDF) *</label>
+            <input
+              type="file"
+              accept="application/pdf"
+              required={!common.oem_auth_file}
+              className="input-field"
+              onChange={(e) => onUpdate({ oem_auth_file: e.target.files?.[0] ?? null })}
+            />
+            {common.oem_auth_file && (
+              <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
+                <span>📄 Selected:</span>
+                <span className="font-semibold">{common.oem_auth_file.name}</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
       <div>
         <label className="label">Basis of Estimation *</label>
         <select
@@ -309,14 +404,14 @@ export const StepCommonDetails: React.FC<Props> = ({
               <option value="Not Applicable">Not Applicable</option>
             </select>
           </div>
-          {common.mii_clause === 'Applicable' && (
+          {common.mii_clause === 'Not Applicable' && (
             <div>
-              <label className="label">MII Clause Justification / Remarks *</label>
+              <label className="label">Justification for MII Not Applicable *</label>
               <input
                 type="text"
                 required
                 className="input-field"
-                placeholder="Provide MII compliance justification"
+                placeholder="State reason why MII clause is not applicable"
                 value={common.mii_justification}
                 onChange={(e) => onUpdate({ mii_justification: e.target.value })}
               />
@@ -326,4 +421,5 @@ export const StepCommonDetails: React.FC<Props> = ({
       </section>
     )}
   </div>
-);
+  );
+};

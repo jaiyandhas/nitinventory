@@ -105,6 +105,7 @@ export interface PRItem {
   item_description: string;
   estimated_total: number;
   quantity?: number;
+  charges?: number | null;   // GST percentage (e.g. 8 for 8%)
   requirement_type?: string;
   tech_specs_text?: string;
   installation_required?: boolean;
@@ -234,6 +235,7 @@ export interface PRReferral {
   response: string | null;
   response_document_path: string | null;
   status: string;
+  referral_type: string; // 'consultation' | 'clarification'
   created_at: string | null;
   responded_at: string | null;
 }

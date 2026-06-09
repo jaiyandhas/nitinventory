@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 from sqlalchemy import select
 from app.services.flow_engine import FlowEngineService
 from app.models.purchase_request import PurchaseRequest, PurchaseRequestFlow, RequestStatus, WorkFlowHierarchy
@@ -280,6 +281,71 @@ async def test_technical_evaluation_committee_signatures(db_session):
     # Verify no redundant "Forwarded" or "Forwarded to next phase" status exists in the history logs for TE step 1
     redundant_logs = [h for h in pr.history if h.status in ("Forwarded", "Forwarded to next phase")]
     assert len(redundant_logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_technical_evaluation_advance_after_prior_signature(db_session):
+    """Committee members sign via /technical-eval first; /advance must still work."""
+    flow_service = FlowEngineService(db_session)
+
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    faculty1_res = await db_session.execute(select(User).where(User.email == "faculty1.cse@nitt.edu"))
+    faculty1 = faculty1_res.scalar_one()
+    faculty2_res = await db_session.execute(select(User).where(User.email == "faculty2.cse@nitt.edu"))
+    faculty2 = faculty2_res.scalar_one()
+    vg_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    vg = vg_res.scalar_one()
+
+    phase_te_res = await db_session.execute(select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation"))
+    phase_te = phase_te_res.scalar_one()
+
+    pr = PurchaseRequest(
+        amount=250000.0,
+        purchase_type="department",
+        initiator_id=faculty.id,
+        category_id=2,
+        financial_year_id=1,
+        procurement_id=1,
+        current_status="in_progress",
+        faculty1_id=faculty1.id,
+        faculty2_id=faculty2.id,
+        faculty3_id=vg.id,
+        te_initiated_at=datetime.utcnow(),
+    )
+    db_session.add(pr)
+    await db_session.flush()
+
+    flow = PurchaseRequestFlow(
+        purchase_request_id=pr.id,
+        phase_id=phase_te.id,
+        step_order=1,
+        rejected=False,
+    )
+    db_session.add(flow)
+    await db_session.flush()
+
+    from app.models.purchase_request import PurchaseRequestHistory
+    for signer, status in [
+        (faculty, "Technical Evaluation Completed"),
+        (faculty1, "Technical Evaluation Approved"),
+        (faculty2, "Technical Evaluation Approved"),
+        (vg, "Technical Evaluation Approved"),
+    ]:
+        db_session.add(
+            PurchaseRequestHistory(
+                purchase_request_id=pr.id,
+                current_approver_id=signer.id,
+                status=status,
+                remarks="Signed via technical-eval endpoint",
+                acted_at=datetime.utcnow(),
+            )
+        )
+    await db_session.flush()
+
+    await flow_service.advance(pr, vg, remarks="Forward after all committee signed")
+    await db_session.refresh(flow)
+    assert flow.step_order == 2
 
 
 @pytest.mark.asyncio

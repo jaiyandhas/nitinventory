@@ -303,7 +303,7 @@ export function usePRWizard() {
     if (common.purpose === 'Others' && !common.purpose_justification.trim()) return 'Enter purpose justification';
     if (totalCost > 500000) {
       if (!common.mii_clause) return 'Select Make in India clause applicability';
-      if (common.mii_clause === 'Applicable' && !common.mii_justification.trim()) return 'Enter MII clause justification';
+      if (common.mii_clause === 'Not Applicable' && !common.mii_justification.trim()) return 'Enter justification for MII Not Applicable';
     }
     return null;
   }, [common]);

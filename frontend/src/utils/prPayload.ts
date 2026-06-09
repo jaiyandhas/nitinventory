@@ -59,7 +59,7 @@ export function buildPRCreateFormData(
     purpose: common.purpose,
     purpose_justification: common.purpose === 'Others' ? common.purpose_justification : null,
     mii_clause: common.mii_clause,
-    mii_justification: common.mii_clause === 'Applicable' ? common.mii_justification : null,
+    mii_justification: common.mii_clause === 'Not Applicable' ? common.mii_justification : null,
 
     items: selectedFileIds.map((fileId) => {
       const item = items[fileId];
@@ -93,6 +93,16 @@ export function buildPRCreateFormData(
 
   if (common.quotation_file) {
     form.append('quotation_file', common.quotation_file);
+  }
+
+  if (common.dept_pac_file) {
+    form.append('dept_pac_file', common.dept_pac_file);
+  }
+  if (common.oem_pac_file) {
+    form.append('oem_pac_file', common.oem_pac_file);
+  }
+  if (common.oem_auth_file) {
+    form.append('oem_auth_file', common.oem_auth_file);
   }
 
   selectedFileIds.forEach((fileId, index) => {

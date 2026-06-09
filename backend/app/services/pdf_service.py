@@ -127,6 +127,8 @@ class PDFService:
                     selectinload(PRReferral.referred_by),
                     selectinload(PRReferral.referred_to),
                 ),
+                selectinload(PurchaseRequest.po_cancellations),
+                selectinload(PurchaseRequest.tender_cancellations),
             )
             .where(PurchaseRequest.id == pr.id)
         )
@@ -351,8 +353,10 @@ class PDFService:
             qty = item.quantity or 1
             unit_cost = item.estimated_total / qty
             gst_pct = item.charges or 0.0
-            gst_amount = qty * unit_cost * gst_pct / 100.0
-            total_cost = (qty * unit_cost) + gst_amount
+            # Total GST = base cost (estimated_total) × GST %
+            # Total Cost = estimated_total + Total GST
+            gst_amount = item.estimated_total * gst_pct / 100.0
+            total_cost = item.estimated_total + gst_amount
             calculated_grand_total += total_cost
             items_details.append({
                 "s_no": idx + 1,

@@ -363,8 +363,7 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     b.expert2_id = expert2_id
     b.allocated_initiator_id = allocated_initiator_id
 
-    # Update active PRs associated with this budget file to use the new committee
-    # Only update PRs that are in the "Administrative Approval" phase (or haven't started flow yet)
+    # Sync committee to active PRs still in AA, Tendering, or TE step 1
     from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
     from app.models.budget import PhaseManager
     from sqlalchemy import or_
@@ -378,9 +377,13 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
                 PurchaseRequestItem.budget_file_id == budget_id,
                 PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
                 or_(
-                    PhaseManager.phase_name == "Administrative Approval",
-                    PurchaseRequestFlow.id == None
-                )
+                    PurchaseRequestFlow.id == None,
+                    PhaseManager.phase_name.in_(["Administrative Approval", "Tendering"]),
+                    and_(
+                        PhaseManager.phase_name == "Technical Evaluation",
+                        PurchaseRequestFlow.step_order == 1,
+                    ),
+                ),
             )
         )
     )
@@ -417,8 +420,6 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
 
     b.director_faculty_id = director_faculty_id
 
-    # Update active PRs associated with this budget file to use the new director nominee
-    # Only update PRs that are in the "Administrative Approval" phase (or haven't started flow yet)
     from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
     from app.models.budget import PhaseManager
     from sqlalchemy import or_
@@ -432,9 +433,13 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
                 PurchaseRequestItem.budget_file_id == budget_id,
                 PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
                 or_(
-                    PhaseManager.phase_name == "Administrative Approval",
-                    PurchaseRequestFlow.id == None
-                )
+                    PurchaseRequestFlow.id == None,
+                    PhaseManager.phase_name.in_(["Administrative Approval", "Tendering"]),
+                    and_(
+                        PhaseManager.phase_name == "Technical Evaluation",
+                        PurchaseRequestFlow.step_order == 1,
+                    ),
+                ),
             )
         )
     )

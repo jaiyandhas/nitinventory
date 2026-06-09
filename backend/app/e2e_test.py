@@ -49,6 +49,11 @@ def create_pr(session: requests.Session, budget_id: int, mop_id: int) -> dict | 
         "delivery_location": "CSE Lab",
         "delivery_mode": "Door delivery",
         "basis_of_estimate": "Market survey",
+        # GeM procurement schema requires these fields.
+        "form_data": {
+            "gem_link": "https://example.com/gem-bid-ra-link",
+            "gem_nac_attached": True,
+        },
         "items": [{
             "budget_file_id": budget_id,
             "requirement_type": "Research",

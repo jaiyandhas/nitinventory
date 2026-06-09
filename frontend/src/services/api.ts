@@ -74,6 +74,10 @@ export const prApi = {
     api.post(`/pr/${id}/refer`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   respondReferral: (id: number, formData: FormData) =>
     api.post(`/pr/${id}/refer/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  clarifyPr: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/clarify`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  respondClarification: (id: number, clarificationId: number, formData: FormData) =>
+    api.post(`/pr/${id}/clarify/${clarificationId}/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
 
 // Budget

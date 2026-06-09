@@ -35,43 +35,51 @@ export const LoginPage: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen formal-bg flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="login-page-container">
+      {/* Background and Ambient Orbs */}
+      <div className="login-bg-image" />
+      <div className="login-bg-overlay" />
+      <div className="login-ambient-orb orb-1" />
+      <div className="login-ambient-orb orb-2" />
+      <div className="login-ambient-orb orb-3" />
+
+      {/* Main Content */}
+      <div className="w-full max-w-md relative z-10">
         {/* Header */}
         <div className="text-center mb-6">
-          <img src="/NITLOGO.png" alt="NIT Logo" className="w-20 h-20 object-contain mx-auto mb-4 drop-shadow-md" />
-          <h1 className="text-3xl font-bold text-white drop-shadow-md">NIT Inventory</h1>
-          <p className="text-sm text-slate-200 mt-1 font-semibold drop-shadow-sm">Institutional Resource & Inventory System</p>
-          <p className="text-xs text-slate-300 mt-0.5 drop-shadow-sm">National Institute of Technology, Tiruchirappalli</p>
+          <img src="/NITLOGO.png" alt="NIT Logo" className="w-20 h-20 object-contain mx-auto mb-4 drop-shadow-sm" />
+          <h1 className="text-3xl font-bold text-[#1a3a6b]">NIT Inventory</h1>
+          <p className="text-sm text-slate-700 mt-1 font-semibold">Institutional Resource & Inventory System</p>
+          <p className="text-xs text-slate-500 mt-0.5">National Institute of Technology, Tiruchirappalli</p>
         </div>
 
         {/* Card */}
-        <div className="glass-card p-8">
-          <h2 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-200 pb-2">Sign in to your account</h2>
+        <div className="glass-login-card p-8">
+          <h2 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-200 pb-3">Sign in to your account</h2>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="label">Email Address</label>
+              <label className="glass-login-label">Email Address</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your.email@nitt.edu"
-                className="input-field"
+                className="glass-login-input"
                 required
                 autoFocus
               />
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label className="glass-login-label">Password</label>
               <div className="relative">
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="input-field pr-10"
+                  className="glass-login-input pr-10"
                   required
                 />
                 <button
@@ -87,7 +95,7 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 mt-2"
+              className="glass-login-btn mt-2"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -99,14 +107,14 @@ export const LoginPage: React.FC = () => {
 
           <div className="mt-6 pt-4 border-t border-slate-200 text-center text-sm text-slate-600">
             Need to onboard?{' '}
-            <Link to="/register" className="font-semibold text-[#1a3a6b] hover:underline">
+            <Link to="/register" className="font-semibold text-[#1a3a6b] hover:text-[#12284c] transition-colors hover:underline">
               Register here
             </Link>
           </div>
 
         </div>
 
-        <p className="text-center text-xs text-slate-300 mt-6 drop-shadow-sm">
+        <p className="text-center text-xs text-slate-500 mt-6">
           © {new Date().getFullYear()} NIT Tiruchirappalli — NIT Inventory v1.0
         </p>
       </div>

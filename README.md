@@ -1,4 +1,4 @@
-# IRIS — Institutional Resource & Inventory System
+# NIT Inventory — Institutional Resource & Inventory System
 **NIT Tiruchirappalli** | v1.0
 
 A full-stack procurement workflow, budget allocation, and asset tracking system built for academic departments and central administration.
@@ -20,16 +20,26 @@ A full-stack procurement workflow, budget allocation, and asset tracking system 
 Ensure you have Docker and Docker Compose installed, then run:
 
 ```bash
-cd iris
 docker compose up --build
 ```
 
 The system initializes automatically:
 1. **`nitinventory-db`** — PostgreSQL database (port `5432`)
-2. **`nitinventory-backend`** — FastAPI backend (port `8000`), automatically runs migrations and seeds demo data on start
+2. **`nitinventory-backend`** — FastAPI backend (port `8000`), runs `seed.py` on start, then serves the API
 3. **`nitinventory-frontend`** — React SPA dev server (port `5173`)
 
 Access the application at: **[http://localhost:5173](http://localhost:5173)**
+
+### Database seeding
+
+`seed.py` runs on every backend container start. By default it **preserves existing purchase requests** and only refreshes workflow definitions, master data, and demo users.
+
+| Mode | Command | Behavior |
+|------|---------|----------|
+| **Preserve** (default) | `docker exec nitinventory-backend python seed.py` | Reseeds workflows/masters; skips truncating PRs, budgets, and related transactional data if any PRs exist |
+| **Full demo reset** | `docker exec nitinventory-backend env RESET_DEMO_DATA=true python seed.py` | Clears PRs, budgets, assets, and related tables, then reseeds 8 demo PRs and E2E budget files |
+
+Set `RESET_DEMO_DATA=true` in `docker-compose.yml` only when you want a clean slate on every container restart (e.g. local E2E runs). Leaving it unset avoids purchase requests disappearing after restarts.
 
 ---
 
@@ -134,6 +144,15 @@ To run tests inside the active running docker container:
 docker exec -e PYTHONPATH=. nitinventory-backend pytest
 ```
 
+### End-to-end workflow tests
+
+Full procurement flows (Categories 1–3) can be exercised against a running stack. Run a full demo reset first so E2E budget files and demo PRs are in a known state:
+
+```bash
+docker exec nitinventory-backend env RESET_DEMO_DATA=true python seed.py
+cd backend && python3 -m app.e2e_test
+```
+
 ### Test Suites
 - **`test_asset_service.py`**: Validates isolated sequence generation per department, concurrent worker thread resilience, and deletion checks.
 - **`test_budget_service.py`**: Checks race-safe concurrency for lock/unlock operations and enforces constraints against negative amounts.
@@ -149,7 +168,6 @@ docker exec -e PYTHONPATH=. nitinventory-backend pytest
 ## 📁 Directory Structure
 
 ```
-iris/
 ├── backend/                  FastAPI + SQLAlchemy backend
 │   ├── app/
 │   │   ├── core/             DB configuration, auth, dependencies

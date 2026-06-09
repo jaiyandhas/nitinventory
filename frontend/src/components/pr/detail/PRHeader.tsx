@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Check, ShieldAlert, Settings, Users, Award, X } from 'lucide-react';
+import { Download, Check, ShieldAlert, Settings, Users, Award, X, XCircle } from 'lucide-react';
 import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { budgetApi } from '../../../services/api';
 import toast from 'react-hot-toast';
+import { CancelPOModal } from '../actions/CancelPOModal';
 
 interface PRHeaderProps {
   pr: PurchaseRequest;
@@ -15,6 +16,7 @@ interface PRHeaderProps {
   adminDepts: any[];
   updateWfMutation: any;
   formatCurrency: (n?: number) => string;
+  refetch: () => void;
 }
 
 export const PRHeader: React.FC<PRHeaderProps> = ({
@@ -26,11 +28,19 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   adminDepts,
   updateWfMutation,
   formatCurrency,
+  refetch,
 }) => {
   const queryClient = useQueryClient();
   const [showNominationModal, setShowNominationModal] = useState(false);
   const [showPrintDropdown, setShowPrintDropdown] = useState(false);
   const [expert1Id, setExpert1Id] = useState<number | ''>('');
+  
+  // Cancellation states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelType, setCancelType] = useState<'tender' | 'po' | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const isAuthorizedToCancel = user?.id === pr.initiator_id || user?.id === pr.hod_id || user?.role?.group_key === 'admin';
 
   const printModules = [
     {
@@ -212,6 +222,19 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                 </>
               )}
             </div>
+
+            {isAuthorizedToCancel && ['pr_submitted', 'in_progress', 'sent_back', 'rolled_over', 'po_issued'].includes(pr.current_status) && (
+              <button
+                onClick={() => {
+                  setCancelType(pr.current_status === 'po_issued' ? 'po' : 'tender');
+                  setShowCancelModal(true);
+                }}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 text-sm bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 px-3 py-1.5 rounded transition font-medium focus:outline-none cursor-pointer"
+              >
+                <XCircle size={14} className="text-red-600 animate-pulse" /> Cancel Request
+              </button>
+            )}
           </div>
           <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PR #${pr.id}`}</h1>
           <p className="text-sm font-medium text-slate-600 mt-1">
@@ -336,9 +359,11 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                 </select>
               ) : (
                 <span className="font-semibold text-slate-700">
-                  {pr.flow.expected_user_name
-                    ? `${pr.flow.expected_user_name} (User)`
-                    : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}
+                  {pr.flow.step_type === 'tech_evaluation' && pr.flow.step_order === 1
+                    ? 'TSC Committee (all members must sign)'
+                    : pr.flow.expected_user_name
+                      ? `${pr.flow.expected_user_name} (User)`
+                      : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}
                 </span>
               )}
             </div>
@@ -610,6 +635,20 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {showCancelModal && (
+        <CancelPOModal
+          prId={pr.id}
+          cancelType={cancelType}
+          onClose={() => {
+            setShowCancelModal(false);
+            setCancelType(null);
+          }}
+          refetch={refetch}
+          actionLoading={actionLoading}
+          setActionLoading={setActionLoading}
+        />
       )}
     </div>
   );

@@ -63,7 +63,12 @@ export const DashboardPage: React.FC = () => {
     if (user?.role?.group_key === 'admin') return true;
 
     if (pr.flow.phase_name === 'Technical Evaluation' && pr.flow.step_order === 1) {
-      const committeeIds = [pr.initiator?.id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
+      const committeeIds = [
+        pr.initiator?.id,
+        pr.faculty1_id ?? pr.budget_file?.expert1_id,
+        pr.faculty2_id ?? pr.budget_file?.expert2_id,
+        pr.faculty3_id ?? pr.budget_file?.director_faculty_id,
+      ].filter(Boolean);
       if (committeeIds.includes(user?.id)) {
         const since = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
         const hasUserSigned = pr.history?.some((h: any) => 

@@ -185,24 +185,38 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
                     <tr>
                       <th className="px-3 py-2 text-left">S.No</th>
                       <th className="px-3 py-2 text-left">Description of the Item</th>
-                      <th className="px-3 py-2 text-left">Qty</th>
-                      <th className="px-3 py-2 text-left">Unit Cost</th>
-                      <th className="px-3 py-2 text-left">Total Cost</th>
+                      <th className="px-3 py-2 text-center">Qty</th>
+                      <th className="px-3 py-2 text-right">Unit Cost (Rs.)</th>
+                      <th className="px-3 py-2 text-center">GST %</th>
+                      <th className="px-3 py-2 text-right">Total GST (Rs.)</th>
+                      <th className="px-3 py-2 text-right">Total Cost (Rs.)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {itemsList.map((item, idx) => (
-                      <tr key={item.id || idx} className="border-b border-slate-100">
-                        <td className="px-3 py-2">{idx + 1}</td>
-                        <td className="px-3 py-2 font-medium">{item.item_description}</td>
-                        <td className="px-3 py-2">{item.quantity || 1}</td>
-                        <td className="px-3 py-2">{formatCurrency((item.estimated_total) / (item.quantity || 1))}</td>
-                        <td className="px-3 py-2 font-semibold text-[#1a3a6b]">{formatCurrency(item.estimated_total)}</td>
-                      </tr>
-                    ))}
+                    {itemsList.map((item, idx) => {
+                      const qty = item.quantity || 1;
+                      const unitCost = item.estimated_total / qty;
+                      const gstPct = (item.charges || 0);
+                      const gstAmt = item.estimated_total * gstPct / 100;
+                      const totalCost = item.estimated_total + gstAmt;
+                      return (
+                        <tr key={item.id || idx} className="border-b border-slate-100">
+                          <td className="px-3 py-2">{idx + 1}</td>
+                          <td className="px-3 py-2 font-medium">{item.item_description}</td>
+                          <td className="px-3 py-2 text-center">{qty}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(unitCost)}</td>
+                          <td className="px-3 py-2 text-center">{gstPct.toFixed(1)}%</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(gstAmt)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-[#1a3a6b]">{formatCurrency(totalCost)}</td>
+                        </tr>
+                      );
+                    })}
                     <tr className="bg-slate-50/50 font-bold border-t border-slate-200">
-                      <td colSpan={4} className="px-3 py-2 text-right">Grand Total:</td>
-                      <td className="px-3 py-2 text-[#1a3a6b]">{formatCurrency(pr.amount || 0)}</td>
+                      <td colSpan={6} className="px-3 py-2 text-right">Grand Total (incl. GST):</td>
+                      <td className="px-3 py-2 text-right text-[#1a3a6b]">{formatCurrency(itemsList.reduce((s, item) => {
+                        const gstPct = item.charges || 0;
+                        return s + item.estimated_total * (1 + gstPct / 100);
+                      }, 0))}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -109,25 +109,30 @@ export const RegisterPage: React.FC = () => {
 
   if (success) {
     return (
-      <div className="min-h-screen formal-bg flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md card p-8 text-center space-y-6">
-          <div className="flex justify-center">
-            <CheckCircle className="w-16 h-16 text-emerald-600 animate-bounce" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800">Registration Submitted</h2>
-          <p className="text-slate-600 text-sm">
-            Thank you for registering on NIT Inventory. Your account request (including your digital signature) has been sent to the Administrator for approval.
-          </p>
-          <p className="text-slate-500 text-xs font-semibold">
-            You will be able to log in once your profile is verified and approved.
-          </p>
-          <div className="pt-4">
-            <Link
-              to="/login"
-              className="btn-primary w-full inline-flex items-center justify-center gap-2 py-2.5"
-            >
-              Return to Login <ArrowRight size={16} />
-            </Link>
+      <div className="login-page-container">
+        <div className="login-bg-image" />
+        <div className="login-bg-overlay" />
+
+        <div className="w-full max-w-md relative z-10">
+          <div className="glass-login-card p-8 text-center space-y-6">
+            <div className="flex justify-center">
+              <CheckCircle className="w-16 h-16 text-emerald-600 animate-bounce" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800">Registration Submitted</h2>
+            <p className="text-slate-600 text-sm">
+              Thank you for registering on NIT Inventory. Your account request (including your digital signature) has been sent to the Administrator for approval.
+            </p>
+            <p className="text-slate-500 text-xs font-semibold">
+              You will be able to log in once your profile is verified and approved.
+            </p>
+            <div className="pt-4">
+              <Link
+                to="/login"
+                className="glass-login-btn w-full inline-flex items-center justify-center gap-2 py-2.5"
+              >
+                Return to Login <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -135,50 +140,54 @@ export const RegisterPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen formal-bg flex flex-col items-center justify-center p-4 py-12">
-      <div className="w-full max-w-lg">
+    <div className="login-page-container py-12">
+      <div className="login-bg-image" />
+      <div className="login-bg-overlay" />
+
+      <div className="w-full max-w-lg relative z-10">
         {/* Header */}
         <div className="text-center mb-6">
-          <img src="/NITLOGO.png" alt="NIT Logo" className="w-16 h-16 object-contain mx-auto mb-3" />
+          <img src="/NITLOGO.png" alt="NIT Logo" className="w-16 h-16 object-contain mx-auto mb-3 drop-shadow-sm" />
           <h1 className="text-3xl font-bold text-[#1a3a6b]">NIT Inventory</h1>
-          <p className="text-sm text-slate-600 font-medium">Faculty & HOD Onboarding</p>
+          <p className="text-sm text-slate-700 font-semibold">Faculty & HOD Onboarding</p>
           <p className="text-xs text-slate-500 mt-0.5">National Institute of Technology, Tiruchirappalli</p>
         </div>
 
         {/* Card */}
-        <div className="card p-8 shadow-xl">
-          <h2 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-200 pb-2">
+        <div className="glass-login-card p-8 shadow-xl">
+          <h2 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-200 pb-3">
             Create Onboarding Request
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="label">Full Name</label>
+                <label className="glass-login-label">Full Name</label>
                 <div className="flex gap-2">
                   <TitleSelect
                     value={title}
                     onChange={setTitle}
+                    className="glass-login-input w-24 shrink-0"
                   />
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="John Doe"
-                    className="input-field flex-1"
+                    className="glass-login-input flex-1"
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="label">Email Address</label>
+                <label className="glass-login-label">Email Address</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="john@nitt.edu"
-                  className="input-field"
+                  className="glass-login-input"
                   required
                 />
               </div>
@@ -186,14 +195,14 @@ export const RegisterPage: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="label">Password</label>
+                <label className="glass-login-label">Password</label>
                 <div className="relative">
                   <input
                     type={showPass ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="input-field pr-10"
+                    className="glass-login-input pr-10"
                     required
                   />
                   <button
@@ -207,23 +216,23 @@ export const RegisterPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="label">Designation</label>
+                <label className="glass-login-label">Designation</label>
                 <DesignationSelect
                   value={designation}
                   onChange={setDesignation}
                   designations={designations}
-                  className="input-field"
+                  className="glass-login-input"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="label">Gender</label>
+                <label className="glass-login-label">Gender</label>
                 <select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
-                  className="input-field"
+                  className="glass-login-input"
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -232,11 +241,11 @@ export const RegisterPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="label">Department</label>
+                <label className="glass-login-label">Department</label>
                 <select
                   value={deptId}
                   onChange={(e) => setDeptId(e.target.value)}
-                  className="input-field"
+                  className="glass-login-input"
                   required
                 >
                   <option value="">Select Dept</option>
@@ -251,12 +260,12 @@ export const RegisterPage: React.FC = () => {
 
             {/* Signature Upload */}
             <div>
-              <label className="label">Digital Signature Image (for signing documents)</label>
-              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-lg hover:border-slate-400 transition-colors bg-slate-50 relative group">
+              <label className="glass-login-label">Digital Signature Image</label>
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-lg hover:border-slate-400 transition-colors bg-white/40 backdrop-blur-md relative group">
                 <div className="space-y-1 text-center">
                   <UploadCloud className="mx-auto h-12 w-12 text-slate-400 group-hover:text-slate-600 transition-colors" />
                   <div className="flex text-sm text-slate-600">
-                    <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-semibold text-[#1a3a6b] hover:text-[#142d54] focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                    <label htmlFor="file-upload" className="relative cursor-pointer bg-transparent rounded-md font-semibold text-[#1a3a6b] hover:text-[#12284c] focus-within:outline-none">
                       <span>Upload a file</span>
                       <input
                         id="file-upload"
@@ -270,12 +279,12 @@ export const RegisterPage: React.FC = () => {
                     <p className="pl-1">or drag and drop</p>
                   </div>
                   <p className="text-xs text-slate-500">PNG, JPG up to 2MB</p>
-                  <p className="text-[10px] text-amber-600 font-semibold mt-1">💡 For the best digital signature quality, please crop tightly and remove the image background before uploading.</p>
+                  <p className="text-[10px] text-amber-700 font-semibold mt-1">💡 For the best digital signature quality, please crop tightly and remove the image background before uploading.</p>
                 </div>
               </div>
               
               {sigPreview && (
-                <div className="mt-3 p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                <div className="mt-3 p-3 bg-white/50 backdrop-blur-md border border-slate-200 rounded-lg flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img src={sigPreview} alt="Signature preview" className="h-10 w-24 object-contain border border-slate-200 p-1 bg-slate-50 rounded" />
                     <div>
@@ -300,7 +309,7 @@ export const RegisterPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 mt-4"
+              className="glass-login-btn mt-4"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -312,7 +321,7 @@ export const RegisterPage: React.FC = () => {
 
           <div className="mt-6 pt-4 border-t border-slate-200 text-center text-sm text-slate-600">
             Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-[#1a3a6b] hover:underline">
+            <Link to="/login" className="font-semibold text-[#1a3a6b] hover:text-[#12284c] transition-colors hover:underline">
               Sign In
             </Link>
           </div>
