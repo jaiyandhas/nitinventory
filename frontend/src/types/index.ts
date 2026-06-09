@@ -189,6 +189,7 @@ export interface PurchaseRequest {
     payment_terms?: string;
     passed_by_id: number;
     remarks?: string;
+    extra_info?: Record<string, any> | null;
   } | null;
   deliveries?: {
     id: number;

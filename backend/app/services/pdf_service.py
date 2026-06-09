@@ -85,6 +85,42 @@ def number_to_words_inr(num: float) -> str:
         return f"{rupee_str} Only"
 
 
+def format_inr(value) -> str:
+    if value is None:
+        return "₹0.00"
+    try:
+        val_float = float(value)
+    except (ValueError, TypeError):
+        return f"₹{value}"
+    
+    s = f"{val_float:.2f}"
+    parts = s.split('.')
+    dec_part = parts[1]
+    int_part = parts[0]
+    
+    is_negative = False
+    if int_part.startswith('-'):
+        is_negative = True
+        int_part = int_part[1:]
+        
+    if len(int_part) <= 3:
+        formatted_int = int_part
+    else:
+        last_three = int_part[-3:]
+        remaining = int_part[:-3]
+        groups = []
+        while remaining:
+            groups.append(remaining[-2:])
+            remaining = remaining[:-2]
+        groups.reverse()
+        formatted_int = ",".join(groups) + "," + last_three
+        
+    if is_negative:
+        formatted_int = '-' + formatted_int
+        
+    return f"₹{formatted_int}.{dec_part}"
+
+
 class PDFService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -466,6 +502,7 @@ class PDFService:
             })
 
         templates = Jinja2Templates(directory="app/templates")
+        templates.env.filters["format_inr"] = format_inr
         html_content = templates.get_template("administrative_approval.html").render({
             "pr": pr,
             "module": module,

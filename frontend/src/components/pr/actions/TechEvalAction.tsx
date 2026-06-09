@@ -6,6 +6,7 @@ import { prApi } from '../../../services/api';
 import { PurchaseRequest } from '../../../types';
 import toast from 'react-hot-toast';
 import { resolveTechCommitteeIds, resolveTechCommitteeMember } from '../../../utils/techCommittee';
+import { formatCurrency } from '../../../utils/format';
 
 interface TechEvalActionProps {
   pr: PurchaseRequest;
@@ -177,8 +178,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
         await prApi.awardBid(pr.id, parseInt(selectedAwardedVendorId), remarks);
       }
 
-      toast.success('Technical Evaluation submitted. Advancing workflow...');
-      await prApi.advance(pr.id, remarks);
+      toast.success('Technical Evaluation submitted successfully.');
       setRemarks('');
       setTechEvalPdf(null);
       refetch();
@@ -218,18 +218,26 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
             Committee Evaluation Progress (All Signed)
           </h5>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {committeeProgress.map(m => (
-              <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/10 transition-all">
-                <div className="flex flex-col">
-                  <span className="text-sm font-bold text-slate-800">{m.name}</span>
-                  <span className="text-xs text-slate-500">{m.roleLabel}</span>
+            {committeeProgress.map(m => {
+              const memberDoc = pr.documents?.find((d: any) => d.doc_key === `tech_eval_doc_${m.id}`);
+              return (
+                <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/10 transition-all">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-slate-800">{m.name}</span>
+                    <span className="text-xs text-slate-500">{m.roleLabel}</span>
+                    {memberDoc && (
+                      <a href={memberDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-bold text-xs mt-1 flex items-center gap-1">
+                        <FileText size={12} /> View Evaluation Report
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
-                  <CheckCircle2 size={16} className="text-emerald-600" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -299,29 +307,37 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
           Committee Evaluation Progress
         </h5>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {committeeProgress.map(m => (
-            <div key={m.id} className={`flex items-center justify-between p-2.5 rounded-lg border bg-white transition-all ${
-              m.hasSigned ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200 hover:border-slate-300'
-            }`}>
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-slate-800">{m.name}</span>
-                <span className="text-xs text-slate-500">{m.roleLabel}</span>
+          {committeeProgress.map(m => {
+            const memberDoc = pr.documents?.find((d: any) => d.doc_key === `tech_eval_doc_${m.id}`);
+            return (
+              <div key={m.id} className={`flex items-center justify-between p-2.5 rounded-lg border bg-white transition-all ${
+                m.hasSigned ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200 hover:border-slate-300'
+              }`}>
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-slate-800">{m.name}</span>
+                  <span className="text-xs text-slate-500">{m.roleLabel}</span>
+                  {memberDoc && (
+                    <a href={memberDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-bold text-xs mt-1 flex items-center gap-1">
+                      <FileText size={12} /> View Evaluation Report
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {m.hasSigned ? (
+                    <>
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 animate-pulse">Pending</span>
+                      <div className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin" />
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                {m.hasSigned ? (
-                  <>
-                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">Submitted</span>
-                    <CheckCircle2 size={16} className="text-emerald-600" />
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 animate-pulse">Pending</span>
-                    <div className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin" />
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>          
       
@@ -346,7 +362,9 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
               </div>
             )}
           </div>
-          {allCommitteeSigned && isCommitteeMember && (
+          {/* Forward button is only shown at step 1 (committee evaluation phase).
+              At step_order > 1, the approver view handles forwarding separately. */}
+          {allCommitteeSigned && isCommitteeMember && pr.flow?.step_order === 1 && (
             <div className="border-t border-emerald-200 pt-3 space-y-2">
               <textarea
                 value={remarks}
@@ -485,7 +503,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
                           />
                           <div>
                             <span className="text-sm font-bold text-slate-800">{fe.vendor_name}</span>
-                            <span className="ml-2 text-xs font-semibold text-[#1a3a6b]">₹{(fe.quoted_amount / 100000).toFixed(2)} Lakhs</span>
+                            <span className="ml-2 text-xs font-semibold text-[#1a3a6b]">{formatCurrency(fe.quoted_amount)}</span>
                           </div>
                         </div>
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${isL1 ? 'bg-green-100 text-green-800' : isL2 ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-100 text-slate-600'}`}>

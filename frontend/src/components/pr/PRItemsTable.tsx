@@ -168,9 +168,9 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                             {isL1 && <Award size={14} className="text-green-600" />}
                             {fe.is_awarded && <span className="bg-[#1a3a6b] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-sm">★ AWARDED</span>}
                           </td>
-                          <td className="px-3 py-2 font-medium">{fe.unit_price !== undefined && fe.unit_price !== null ? `₹${(fe.unit_price / 100000).toFixed(2)} Lakhs` : '-'}</td>
+                          <td className="px-3 py-2 font-medium">{fe.unit_price !== undefined && fe.unit_price !== null ? formatCurrency(fe.unit_price) : '-'}</td>
                           <td className="px-3 py-2 font-medium">{fe.taxes !== undefined ? `${fe.taxes}%` : '0%'}</td>
-                          <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">₹{(fe.quoted_amount / 100000).toFixed(2)} Lakhs</td>
+                          <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">{formatCurrency(fe.quoted_amount)}</td>
                           <td className="px-3 py-2 text-xs font-semibold">{fe.delivery_period !== undefined && fe.delivery_period !== null ? `${fe.delivery_period} weeks` : '-'}</td>
                           <td className="px-3 py-2 text-xs font-semibold">{fe.warranty !== undefined && fe.warranty !== null ? `${fe.warranty} months` : '-'}</td>
                           <td className="px-3 py-2">
@@ -214,7 +214,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                             </span>
                           </td>
                           <td className="px-3 py-2 font-semibold font-mono text-[#1a3a6b]">
-                            {te.is_qualified && fe ? `₹${(fe.quoted_amount / 100000).toFixed(2)} Lakhs` : 'N/A (Disqualified)'}
+                            {te.is_qualified && fe ? formatCurrency(fe.quoted_amount) : 'N/A (Disqualified)'}
                           </td>
                           <td className="px-3 py-2">
                             <span className="text-xs font-bold text-slate-600">
@@ -289,11 +289,11 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
               <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-700 pt-1">
                 <div>
                   <span className="text-slate-400 block font-bold">Passed Bill Amount</span>
-                  <span className="text-emerald-700 font-bold text-sm">₹{pr.bill_passing.bill_amount.toFixed(2)} Lakhs</span>
+                  <span className="text-emerald-700 font-bold text-sm">{formatCurrency(pr.bill_passing.bill_amount)}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-bold">Passed GST Amount</span>
-                  <span className="text-slate-800">₹{(pr.bill_passing.gst_amount || 0.0).toFixed(2)} Lakhs</span>
+                  <span className="text-slate-800">{formatCurrency(pr.bill_passing.gst_amount || 0.0)}</span>
                 </div>
               </div>
               {pr.bill_passing.payment_terms && (

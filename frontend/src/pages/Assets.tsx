@@ -37,11 +37,21 @@ export const AssetListPage: React.FC = () => {
   const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const [limit, setLimit] = useState(50);
 
   const { data: assetsData, isLoading } = useQuery({
-    queryKey: ['assets', page],
-    queryFn: () => assetsApi.list({ skip: (page - 1) * limit, limit }).then(r => r.data),
+    queryKey: ['assets', page, limit, searchTerm, filterYear, filterCategory, filterCondition, filterStatus, filterFundSource, filterDept],
+    queryFn: () => assetsApi.list({
+      skip: (page - 1) * limit,
+      limit,
+      search: searchTerm || undefined,
+      category: filterCategory || undefined,
+      condition: filterCondition || undefined,
+      disposal_status: filterStatus || undefined,
+      fund_source: filterFundSource || undefined,
+      department_id: filterDept ? parseInt(filterDept) : undefined,
+      year: filterYear ? parseInt(filterYear) : undefined,
+    }).then(r => r.data),
   });
 
   const assets = assetsData?.items || [];
@@ -127,65 +137,11 @@ export const AssetListPage: React.FC = () => {
 
   const canRegister = isHod() || isAdmin();
 
-  // Extract unique years from assets dynamically
-  const uniqueYears = Array.from(new Set(assets.map((asset: any) => {
-    const parts = asset.asset_tag.split('-');
-    if (parts.length >= 3) {
-      const yy = parts[2];
-      if (/^\d{2}$/.test(yy)) {
-        return `20${yy}`;
-      }
-    }
-    if (asset.purchase_date) {
-      return new Date(asset.purchase_date).getFullYear().toString();
-    }
-    return null;
-  }).filter(Boolean) as string[])).sort((a, b) => b.localeCompare(a));
+  // A clean range of years for institutional assets
+  const currentYear = new Date().getFullYear();
+  const uniqueYears = Array.from({ length: currentYear - 2020 + 1 }, (_, i) => (currentYear - i).toString());
 
-  const filteredAssets = assets.filter((asset: any) => {
-    // Search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchName = asset.name.toLowerCase().includes(term);
-      const matchTag = asset.asset_tag.toLowerCase().includes(term);
-      const matchLegacy = asset.legacy_asset_tag?.toLowerCase().includes(term) || false;
-      const matchSerial = asset.serial_number?.toLowerCase().includes(term) || false;
-      const matchCustodian = asset.custodian?.toLowerCase().includes(term) || false;
-      const matchBuilding = asset.building?.toLowerCase().includes(term) || false;
-      const matchRoom = asset.room?.toLowerCase().includes(term) || false;
-      
-      if (!matchName && !matchTag && !matchLegacy && !matchSerial && !matchCustodian && !matchBuilding && !matchRoom) {
-        return false;
-      }
-    }
-
-    // Year filter
-    if (filterYear) {
-      const parts = asset.asset_tag.split('-');
-      const yy = parts.length >= 3 ? parts[2] : '';
-      const assetYear = yy ? `20${yy}` : (asset.purchase_date ? new Date(asset.purchase_date).getFullYear().toString() : '');
-      if (assetYear !== filterYear) {
-        return false;
-      }
-    }
-
-    // Category filter
-    if (filterCategory && asset.category !== filterCategory) return false;
-    
-    // Condition filter
-    if (filterCondition && asset.condition !== filterCondition) return false;
-    
-    // Status filter
-    if (filterStatus && asset.disposal_status !== filterStatus) return false;
-
-    // Fund Source filter
-    if (filterFundSource && asset.fund_source !== filterFundSource) return false;
-    
-    // Department filter (Admin only)
-    if (isAdmin() && filterDept && asset.department_id !== parseInt(filterDept)) return false;
-
-    return true;
-  });
+  const filteredAssets = assets;
 
   return (
     <div className="space-y-5">
@@ -230,7 +186,7 @@ export const AssetListPage: React.FC = () => {
               type="text"
               placeholder="Search assets..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
               className="input-field w-full pl-9 text-sm"
             />
           </div>
@@ -239,7 +195,7 @@ export const AssetListPage: React.FC = () => {
           <div>
             <select
               value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value)}
+              onChange={(e) => { setFilterYear(e.target.value); setPage(1); }}
               className="input-field w-full text-sm"
             >
               <option value="">All Years</option>
@@ -253,7 +209,7 @@ export const AssetListPage: React.FC = () => {
           <div>
             <select
               value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
+              onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
               className="input-field w-full text-sm"
             >
               <option value="">All Categories</option>
@@ -268,7 +224,7 @@ export const AssetListPage: React.FC = () => {
           <div>
             <select
               value={filterCondition}
-              onChange={(e) => setFilterCondition(e.target.value)}
+              onChange={(e) => { setFilterCondition(e.target.value); setPage(1); }}
               className="input-field w-full text-sm"
             >
               <option value="">All Conditions</option>
@@ -283,7 +239,7 @@ export const AssetListPage: React.FC = () => {
           <div>
             <select
               value={filterFundSource}
-              onChange={(e) => setFilterFundSource(e.target.value)}
+              onChange={(e) => { setFilterFundSource(e.target.value); setPage(1); }}
               className="input-field w-full text-sm"
             >
               <option value="">All Funding</option>
@@ -300,7 +256,7 @@ export const AssetListPage: React.FC = () => {
           <div>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
               className="input-field w-full text-sm"
             >
               <option value="">All Disposal Statuses</option>
@@ -315,7 +271,7 @@ export const AssetListPage: React.FC = () => {
             <div>
               <select
                 value={filterDept}
-                onChange={(e) => setFilterDept(e.target.value)}
+                onChange={(e) => { setFilterDept(e.target.value); setPage(1); }}
                 className="input-field w-full text-sm"
               >
                 <option value="">All Departments</option>
@@ -334,63 +290,82 @@ export const AssetListPage: React.FC = () => {
         <>
           <AssetTable filteredAssets={filteredAssets} conditionColors={CONDITION_COLORS} />
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg shadow-sm">
-              <div className="flex flex-1 justify-between sm:hidden">
-                <button
-                  onClick={() => setPage(p => Math.max(p - 1, 1))}
-                  disabled={page === 1}
-                  className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPage(p => Math.min(p + 1, totalPages))}
-                  disabled={page === totalPages}
-                  className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Next
-                </button>
+          {total > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg shadow-sm">
+              <div className="flex flex-col sm:flex-row items-center gap-4 justify-between w-full sm:w-auto">
+                <p className="text-sm text-slate-700">
+                  Showing <span className="font-medium">{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
+                  <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
+                  <span className="font-medium">{total}</span> assets
+                </p>
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Show</span>
+                  <select
+                    value={limit}
+                    onChange={(e) => {
+                      setLimit(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="rounded-md border-slate-300 py-1 px-2 text-sm focus:border-[#1a3a6b] focus:ring-[#1a3a6b] bg-white border shadow-sm"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span>per page</span>
+                </div>
               </div>
-              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm text-slate-700">
-                    Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
-                    <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
-                    <span className="font-medium">{total}</span> assets
-                  </p>
+              <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+                <div className="flex flex-1 justify-between sm:hidden">
+                  <button
+                    onClick={() => setPage(p => Math.max(p - 1, 1))}
+                    disabled={page === 1}
+                    className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+                    disabled={page === totalPages}
+                    className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
                 </div>
-                <div>
-                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                    <button
-                      onClick={() => setPage(p => Math.max(p - 1, 1))}
-                      disabled={page === 1}
-                      className="relative inline-flex items-center rounded-l-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                    >
-                      Previous
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                {totalPages > 1 && (
+                  <div className="hidden sm:block">
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
                       <button
-                        key={p}
-                        onClick={() => setPage(p)}
-                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 ${
-                          p === page
-                            ? 'z-10 bg-[#1a3a6b] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
-                            : 'text-slate-900 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:outline-offset-0'
-                        }`}
+                        onClick={() => setPage(p => Math.max(p - 1, 1))}
+                        disabled={page === 1}
+                        className="relative inline-flex items-center rounded-l-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
                       >
-                        {p}
+                        Previous
                       </button>
-                    ))}
-                    <button
-                      onClick={() => setPage(p => Math.min(p + 1, totalPages))}
-                      disabled={page === totalPages}
-                      className="relative inline-flex items-center rounded-r-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </nav>
-                </div>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setPage(p)}
+                          className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 ${
+                            p === page
+                              ? 'z-10 bg-[#1a3a6b] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1a3a6b]'
+                              : 'text-slate-900 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:outline-offset-0'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+                        disabled={page === totalPages}
+                        className="relative inline-flex items-center rounded-r-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -64,33 +64,12 @@ async def test_cancel_tender_success(db_session):
     await db_session.refresh(budget_master)
     assert budget_master.locked_amount == initial_locked + 100000.0
 
-    # Cancel the tender
+    # Cancel the tender - should now fail with HTTPException
     body = {"reason": "Tender cancelled due to specs update", "reinitiation_method": "gem"}
-    res = await cancel_tender(pr.id, body, db_session, user=faculty)
-    assert "released successfully" in res["message"]
-
-    # Verify PR status updated to cancelled
-    await db_session.refresh(pr)
-    assert pr.current_status == RequestStatus.CANCELLED
-
-    # Verify active flow deleted
-    flow_check = await db_session.execute(
-        select(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
-    )
-    assert flow_check.scalar_one_or_none() is None
-
-    # Verify TenderCancellation log created
-    cancel_check = await db_session.execute(
-        select(TenderCancellation).where(TenderCancellation.purchase_request_id == pr.id)
-    )
-    cancellation = cancel_check.scalar_one()
-    assert cancellation.reason == "Tender cancelled due to specs update"
-    assert cancellation.reinitiation_method == "gem"
-    assert cancellation.cancelled_by_id == faculty.id
-
-    # Verify budget locked_amount is rolled back/released
-    await db_session.refresh(budget_master)
-    assert budget_master.locked_amount == initial_locked
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_tender(pr.id, body, db_session, user=faculty)
+    assert exc_info.value.status_code == 400
+    assert "Cancellation is only allowed once the Purchase Order has been issued" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

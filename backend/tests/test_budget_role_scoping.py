@@ -21,7 +21,7 @@ async def test_budget_role_scoping(db_session):
     new_budget1 = BudgetMaster(
         department_id=hod.department_id,
         financial_year_id=fy.id,
-        expenditure_category="CAPEX",
+        source_of_fund="CAPEX",
         item_name="Isolated Scoping Test Budget 1",
         category="equipment",
         course_code="N/A",
@@ -35,7 +35,7 @@ async def test_budget_role_scoping(db_session):
     new_budget2 = BudgetMaster(
         department_id=hod.department_id,
         financial_year_id=fy.id,
-        expenditure_category="CAPEX",
+        source_of_fund="CAPEX",
         item_name="Isolated Scoping Test Budget 2",
         category="equipment",
         course_code="N/A",

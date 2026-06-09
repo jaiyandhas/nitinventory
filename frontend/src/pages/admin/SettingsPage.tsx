@@ -57,7 +57,7 @@ export const SettingsPage: React.FC = () => {
   const { data: users = [] } = useQuery({ queryKey: ['admin_users_list'], queryFn: () => adminApi.users().then(res => res.data) });
   const { data: depts = [] } = useQuery({ queryKey: ['admin_depts'], queryFn: () => adminApi.departments().then(res => res.data) });
   const { data: fys = [] } = useQuery({ queryKey: ['admin_financial_years'], queryFn: () => adminApi.financialYears().then(res => res.data) });
-  const { data: budgetCats = { expenditure_categories: [], item_categories: [], added_by_dean: { expenditure: [], item: [] } } } = useQuery({
+  const { data: budgetCats = { source_of_fund_categories: [], expenditure_categories: [], item_categories: [], added_by_dean: { source_of_fund: [], expenditure: [], item: [] } } } = useQuery({
     queryKey: ['budget_categories'],
     queryFn: () => adminApi.getCategories().then(res => res.data),
   });
@@ -239,7 +239,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const addBudgetCategoryMutation = useMutation({
-    mutationFn: (data: { type: 'expenditure' | 'item'; value: string }) => adminApi.addCategory(data),
+    mutationFn: (data: { type: 'source_of_fund' | 'item'; value: string }) => adminApi.addCategory(data),
     onSuccess: () => {
       toast.success('Budget category added');
       queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
@@ -248,7 +248,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const deleteBudgetCategoryMutation = useMutation({
-    mutationFn: ({ type, value }: { type: 'expenditure' | 'item'; value: string }) => adminApi.deleteBudgetCategory(type, value),
+    mutationFn: ({ type, value }: { type: 'source_of_fund' | 'item'; value: string }) => adminApi.deleteBudgetCategory(type, value),
     onSuccess: () => {
       toast.success('Budget category deleted');
       queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
@@ -851,11 +851,11 @@ export const SettingsPage: React.FC = () => {
 
           {/* Budget Categories Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Expenditure Categories Card */}
+            {/* Sources of Fund Card */}
             <div className="card p-6 bg-white border border-slate-200">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800">Expenditure Categories</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Sources of Fund</h3>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">Budget allocation sources (e.g. CAPEX, OPEX)</p>
                 </div>
                 {!showAddBudgetExp ? (
@@ -880,7 +880,7 @@ export const SettingsPage: React.FC = () => {
                   <button
                     onClick={() => {
                       if (!newBudgetExpVal.trim()) return;
-                      addBudgetCategoryMutation.mutate({ type: 'expenditure', value: newBudgetExpVal.trim() });
+                      addBudgetCategoryMutation.mutate({ type: 'source_of_fund', value: newBudgetExpVal.trim() });
                       setNewBudgetExpVal('');
                       setShowAddBudgetExp(false);
                     }}
@@ -902,14 +902,14 @@ export const SettingsPage: React.FC = () => {
               )}
 
               <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto border border-slate-200 rounded-md">
-                {budgetCats.expenditure_categories?.map((cat: string) => {
+                {budgetCats.source_of_fund_categories?.map((cat: string) => {
                   return (
                     <div key={cat} className="flex justify-between items-center px-4 py-2.5 hover:bg-slate-50 transition-colors">
                       <span className="font-semibold text-sm text-slate-800">{cat}</span>
                       <button
                         onClick={() => {
-                          if (confirm(`Are you sure you want to delete expenditure category "${cat}"?`)) {
-                            deleteBudgetCategoryMutation.mutate({ type: 'expenditure', value: cat });
+                          if (confirm(`Are you sure you want to delete fund source category "${cat}"?`)) {
+                            deleteBudgetCategoryMutation.mutate({ type: 'source_of_fund', value: cat });
                           }
                         }}
                         className="text-slate-400 hover:text-rose-600 p-1"
@@ -1691,7 +1691,7 @@ export const SettingsPage: React.FC = () => {
                   type="text" 
                   required 
                   defaultValue={editingCat?.title}
-                  placeholder="e.g. 1 Lakh to 10 Lakhs" 
+                  placeholder="e.g. Upto 1,00,000 or 1,00,000 to 10,00,000" 
                   className="input-field w-full" 
                 />
               </div>

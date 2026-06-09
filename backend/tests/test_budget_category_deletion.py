@@ -31,7 +31,7 @@ async def test_budget_category_deletion_flow(db_session):
     # 2. Dean tries to add custom expenditure category -> Should fail (403 Forbidden)
     with pytest.raises(HTTPException) as exc_info:
         await add_budget_category(
-            {"type": "expenditure", "value": "DEAN_SPECIAL_EXP"},
+            {"type": "source_of_fund", "value": "DEAN_SPECIAL_EXP"},
             db_session,
             current_user=dean
         )
@@ -39,17 +39,17 @@ async def test_budget_category_deletion_flow(db_session):
 
     # 2b. Admin adds custom expenditure category
     cats_post = await add_budget_category(
-        {"type": "expenditure", "value": "DEAN_SPECIAL_EXP"},
+        {"type": "source_of_fund", "value": "DEAN_SPECIAL_EXP"},
         db_session,
         current_user=admin
     )
-    assert "DEAN_SPECIAL_EXP" in cats_post["expenditure_categories"]
-    assert "DEAN_SPECIAL_EXP" in cats_post["added_by_dean"]["expenditure"]
+    assert "DEAN_SPECIAL_EXP" in cats_post["source_of_fund_categories"]
+    assert "DEAN_SPECIAL_EXP" in cats_post["added_by_dean"]["source_of_fund"]
 
     # 3. Non-admin (Dean) tries to delete it -> Should fail (403 Forbidden)
     with pytest.raises(HTTPException) as exc_info:
         await delete_budget_category(
-            type="expenditure",
+            type="source_of_fund",
             value="DEAN_SPECIAL_EXP",
             db=db_session,
             current_user=dean
@@ -60,7 +60,7 @@ async def test_budget_category_deletion_flow(db_session):
     # 4. Admin tries to delete a category that does not exist -> Should fail (400 Bad Request)
     with pytest.raises(HTTPException) as exc_info:
         await delete_budget_category(
-            type="expenditure",
+            type="source_of_fund",
             value="NON_EXISTENT_EXP_XYZ",
             db=db_session,
             current_user=admin
@@ -72,18 +72,18 @@ async def test_budget_category_deletion_flow(db_session):
     await create_budget({
         "department_id": dept.id,
         "financial_year_id": fy.id,
-        "expenditure_category": "DEAN_SPECIAL_EXP",
+        "source_of_fund": "DEAN_SPECIAL_EXP",
         "item_name": "Dean Test Item",
         "category": "computer",
         "unit_cost": 10000.0,
         "quantity": 2,
-        "file_no": f"NITT/{dept.short_code.upper()}/DEANSPEC/{fy.label.upper()}/1"
+        "file_no": f"NITT/F.No.0001/DEANSPEC/{fy.label.upper()}/{dept.short_code.upper()}"
     }, db_session, _=dean)
 
     # 6. Admin tries to delete the category while in use -> Should fail (400 Bad Request)
     with pytest.raises(HTTPException) as exc_info:
         await delete_budget_category(
-            type="expenditure",
+            type="source_of_fund",
             value="DEAN_SPECIAL_EXP",
             db=db_session,
             current_user=admin
@@ -94,16 +94,16 @@ async def test_budget_category_deletion_flow(db_session):
     # 7. Delete the budget master entries to release the category usage
     # (Just delete from db_session directly for clean test isolation)
     await db_session.execute(
-        BudgetMaster.__table__.delete().where(BudgetMaster.expenditure_category == "DEAN_SPECIAL_EXP")
+        BudgetMaster.__table__.delete().where(BudgetMaster.source_of_fund == "DEAN_SPECIAL_EXP")
     )
     await db_session.flush()
 
     # 8. Admin deletes the category -> Should succeed
     final_cats = await delete_budget_category(
-        type="expenditure",
+        type="source_of_fund",
         value="DEAN_SPECIAL_EXP",
         db=db_session,
         current_user=admin
     )
-    assert "DEAN_SPECIAL_EXP" not in final_cats["expenditure_categories"]
-    assert "DEAN_SPECIAL_EXP" not in final_cats["added_by_dean"]["expenditure"]
+    assert "DEAN_SPECIAL_EXP" not in final_cats["source_of_fund_categories"]
+    assert "DEAN_SPECIAL_EXP" not in final_cats["added_by_dean"]["source_of_fund"]

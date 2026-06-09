@@ -15,7 +15,9 @@ interface ReferralPanelProps {
 
 function formatDateTime(dt: string | null) {
   if (!dt) return '—';
-  const d = new Date(dt);
+  // Ensure the string is parsed as UTC — append 'Z' if no timezone offset is present
+  const iso = dt.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dt) ? dt : dt + 'Z';
+  const d = new Date(iso);
   return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -165,6 +167,11 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
   const isReferralForMe = activeReferral && activeReferral.referred_to?.id === user?.id;
   const isReferralActive = !!activeReferral;
 
+  // Only HOD, Dean, Director, Admin, and Associate Dean can initiate ad-hoc consultations.
+  // PI (faculty), DA (verifier_da), and SP (verifier_sp/superintendent) are NOT allowed.
+  const REFERRAL_RESTRICTED_GROUPS = new Set(['faculty', 'verifier_da', 'verifier_sp', 'superintendent']);
+  const canInitiateReferral = !REFERRAL_RESTRICTED_GROUPS.has(user?.role?.group_key ?? '');
+
   const handleReferPr = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReferralUser) { toast.error('Please select a user to refer to'); return; }
@@ -291,7 +298,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
       )}
 
       {/* ── New referral form (when no active referral) ── */}
-      {!isReferralActive && (
+      {!isReferralActive && canInitiateReferral && (
         <div className="border-t border-blue-200/60 pt-4 mt-4 space-y-3">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
             <Users size={14} className="text-slate-500" /> Seek Ad-hoc Consultation (Optional)

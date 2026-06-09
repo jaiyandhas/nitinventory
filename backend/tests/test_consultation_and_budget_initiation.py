@@ -54,25 +54,25 @@ async def test_budget_categories_and_auto_roll(db_session):
     assert "item_categories" in cats
     
     # 2. Add custom category
-    updated_cats = await add_budget_category({"type": "expenditure", "value": "SPECIAL_FUNDS"}, db_session, current_user=admin)
-    assert "SPECIAL_FUNDS" in updated_cats["expenditure_categories"]
+    updated_cats = await add_budget_category({"type": "source_of_fund", "value": "SPECIAL_FUNDS"}, db_session, current_user=admin)
+    assert "SPECIAL_FUNDS" in updated_cats["source_of_fund_categories"]
 
     # 3. Retrieve next file number (should count 0 existing and roll to 1)
     file_res = await get_next_file_number(
         department_id=dept.id,
-        expenditure_category="SPECIAL_FUNDS",
+        source_of_fund="SPECIAL_FUNDS",
         financial_year_id=fy.id,
         db=db_session,
         _=admin
     )
-    expected_no = f"NITT/{dept.short_code.upper()}/SPECIAL_FUNDS/{fy.label.upper()}/1"
+    expected_no = f"NITT/F.No.0001/SPECIAL_FUNDS/{fy.label.upper()}/{dept.short_code.upper()}"
     assert file_res["file_no"] == expected_no
 
     # 4. Create budget with this file number
     create_res = await create_budget({
         "department_id": dept.id,
         "financial_year_id": fy.id,
-        "expenditure_category": "SPECIAL_FUNDS",
+        "source_of_fund": "SPECIAL_FUNDS",
         "item_name": "Test Lab Desks",
         "category": "furniture",
         "unit_cost": 25000.0,
@@ -84,12 +84,12 @@ async def test_budget_categories_and_auto_roll(db_session):
     # 5. Get next file number again (should increment to 2)
     next_file_res = await get_next_file_number(
         department_id=dept.id,
-        expenditure_category="SPECIAL_FUNDS",
+        source_of_fund="SPECIAL_FUNDS",
         financial_year_id=fy.id,
         db=db_session,
         _=admin
     )
-    expected_next_no = f"NITT/{dept.short_code.upper()}/SPECIAL_FUNDS/{fy.label.upper()}/2"
+    expected_next_no = f"NITT/F.No.0002/SPECIAL_FUNDS/{fy.label.upper()}/{dept.short_code.upper()}"
     assert next_file_res["file_no"] == expected_next_no
 
 

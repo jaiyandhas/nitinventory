@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle
+  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText
 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { prApi, budgetApi, adminApi, assetsApi } from '../services/api';
@@ -195,8 +195,8 @@ export const PRDetailPage: React.FC = () => {
   const isActionable = (canActOn || !!activeReferralForUser || !!anyPendingReferral) && !['po_issued', 'rejected', 'cancelled', 'completed'].includes(pr.current_status);
 
   const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00L';
-    return `₹${(n / 100000).toFixed(2)}L`;
+    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
+    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   // Filter assets belonging to this PR's deliveries
@@ -521,23 +521,35 @@ export const PRDetailPage: React.FC = () => {
                           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Expert Committee Progress</h4>
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             {[
-                              { name: pr.initiator?.name, sig: initiatorSig, role: 'Purchase Initiator' },
-                              { name: pr.faculty1?.name, sig: faculty1Sig, role: 'HOD Nominated Expert 1' },
-                              { name: pr.faculty2?.name, sig: faculty2Sig, role: 'HOD Nominated Expert 2' },
-                              { name: pr.faculty3?.name, sig: faculty3Sig, role: 'Director Nominee' },
-                            ].map((member, i) => (
-                              <div key={i} className="p-2.5 bg-slate-50 border border-slate-200 rounded-md flex items-center justify-between">
-                                <div>
-                                  <p className="font-bold text-slate-800">{member.name || 'Nominee'}</p>
-                                  <p className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">{member.role}</p>
+                              { name: pr.initiator?.name, sig: initiatorSig, role: 'Purchase Initiator', id: pr.initiator_id },
+                              { name: pr.faculty1?.name, sig: faculty1Sig, role: 'HOD Nominated Expert 1', id: pr.faculty1_id },
+                              { name: pr.faculty2?.name, sig: faculty2Sig, role: 'HOD Nominated Expert 2', id: pr.faculty2_id },
+                              { name: pr.faculty3?.name, sig: faculty3Sig, role: 'Director Nominee', id: pr.faculty3_id },
+                            ].map((member, i) => {
+                              const memberDoc = pr.documents?.find((d: any) => d.doc_key === `tech_eval_doc_${member.id}`);
+                              return (
+                                <div key={i} className="p-2.5 bg-slate-50 border border-slate-200 rounded-md flex flex-col justify-between">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <p className="font-bold text-slate-800">{member.name || 'Nominee'}</p>
+                                      <p className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">{member.role}</p>
+                                    </div>
+                                    {member.sig ? (
+                                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Signed" />
+                                    ) : (
+                                      <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="Awaiting" />
+                                    )}
+                                  </div>
+                                  {memberDoc && (
+                                    <div className="mt-2 pt-2 border-t border-slate-200/50">
+                                      <a href={memberDoc.path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-bold text-[11px] flex items-center gap-1">
+                                        <FileText size={12} /> View Evaluation Report
+                                      </a>
+                                    </div>
+                                  )}
                                 </div>
-                                {member.sig ? (
-                                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Signed" />
-                                ) : (
-                                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="Awaiting" />
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>

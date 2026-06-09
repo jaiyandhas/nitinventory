@@ -30,7 +30,7 @@ export const BudgetFormPage: React.FC = () => {
   const [newItemVal, setNewItemVal] = useState<string>('');
   const [showAddExp, setShowAddExp] = useState<boolean>(false);
   const [showAddItem, setShowAddItem] = useState<boolean>(false);
-  const [pendingCatType, setPendingCatType] = useState<'expenditure' | 'item' | null>(null);
+  const [pendingCatType, setPendingCatType] = useState<'source_of_fund' | 'item' | null>(null);
   const [pendingCatValue, setPendingCatValue] = useState<string>('');
 
   // Queries
@@ -44,7 +44,7 @@ export const BudgetFormPage: React.FC = () => {
     queryFn: () => adminApi.financialYears().then(res => res.data),
   });
 
-  const { data: cats = { expenditure_categories: ['CAPEX', 'OPEX'], item_categories: ['computer', 'lab_equipment', 'software', 'furniture'] }, isLoading: loadingCats } = useQuery({
+  const { data: cats = { source_of_fund_categories: ['CAPEX', 'OPEX'], expenditure_categories: ['CAPEX', 'OPEX'], item_categories: ['computer', 'lab_equipment', 'software', 'furniture'] }, isLoading: loadingCats } = useQuery({
     queryKey: ['budget_categories'],
     queryFn: () => adminApi.getCategories().then(res => res.data),
   });
@@ -89,10 +89,10 @@ export const BudgetFormPage: React.FC = () => {
 
   // Auto-roll file number
   useEffect(() => {
-    if (isAutoRolling && departmentId && expenditureCategory && financialYearId) {
+    if (!isEdit && departmentId && expenditureCategory && financialYearId) {
       adminApi.getNextFileNumber({
         department_id: departmentId,
-        expenditure_category: expenditureCategory,
+        source_of_fund: expenditureCategory,
         financial_year_id: financialYearId,
       })
       .then(res => {
@@ -104,11 +104,11 @@ export const BudgetFormPage: React.FC = () => {
         console.error('Error fetching auto-rolled file number:', err);
       });
     }
-  }, [isAutoRolling, departmentId, expenditureCategory, financialYearId]);
+  }, [isEdit, departmentId, expenditureCategory, financialYearId]);
 
   // Mutations
   const addCategoryMutation = useMutation({
-    mutationFn: (payload: { type: 'expenditure' | 'item'; value: string }) => adminApi.addCategory(payload),
+    mutationFn: (payload: { type: 'source_of_fund' | 'item'; value: string }) => adminApi.addCategory(payload),
     onSuccess: (res) => {
       // res is the full Axios response; extract .data to match how the query caches it
       const updated = res.data;
@@ -117,7 +117,7 @@ export const BudgetFormPage: React.FC = () => {
       setShowAddExp(false);
       setShowAddItem(false);
       // Select the newly added value using the confirmed stored value
-      if (pendingCatType === 'expenditure' && pendingCatValue) {
+      if (pendingCatType === 'source_of_fund' && pendingCatValue) {
         setExpenditureCategory(pendingCatValue);
       } else if (pendingCatType === 'item' && pendingCatValue) {
         setCategory(pendingCatValue);
@@ -135,7 +135,7 @@ export const BudgetFormPage: React.FC = () => {
   });
 
   const deleteCategoryMutation = useMutation({
-    mutationFn: (payload: { type: 'expenditure' | 'item'; value: string }) =>
+    mutationFn: (payload: { type: 'source_of_fund' | 'item'; value: string }) =>
       adminApi.deleteBudgetCategory(payload.type, payload.value),
     onSuccess: (res) => {
       const updated = res.data;
@@ -143,9 +143,9 @@ export const BudgetFormPage: React.FC = () => {
       queryClient.setQueryData(['budget_categories'], updated);
       
       // Reset selected category to a default if the deleted one was selected
-      if (pendingCatType === 'expenditure' && pendingCatValue) {
+      if (pendingCatType === 'source_of_fund' && pendingCatValue) {
         if (expenditureCategory === pendingCatValue) {
-          setExpenditureCategory(updated.expenditure_categories?.[0] || 'CAPEX');
+          setExpenditureCategory(updated.source_of_fund_categories?.[0] || 'CAPEX');
         }
       } else if (pendingCatType === 'item' && pendingCatValue) {
         if (category === pendingCatValue) {
@@ -162,7 +162,7 @@ export const BudgetFormPage: React.FC = () => {
     },
   });
 
-  const handleDeleteCategory = (type: 'expenditure' | 'item', value: string) => {
+  const handleDeleteCategory = (type: 'source_of_fund' | 'item', value: string) => {
     if (!window.confirm(`Are you sure you want to delete the category "${value}"?`)) return;
     setPendingCatType(type);
     setPendingCatValue(value);
@@ -190,9 +190,9 @@ export const BudgetFormPage: React.FC = () => {
     e.preventDefault();
     const trimmed = newExpVal.trim();
     if (!trimmed) return;
-    setPendingCatType('expenditure');
+    setPendingCatType('source_of_fund');
     setPendingCatValue(trimmed);
-    addCategoryMutation.mutate({ type: 'expenditure', value: trimmed });
+    addCategoryMutation.mutate({ type: 'source_of_fund', value: trimmed });
   };
 
   const handleAddCustomItem = (e: React.FormEvent) => {
@@ -213,7 +213,7 @@ export const BudgetFormPage: React.FC = () => {
     const payload = {
       department_id: departmentId,
       financial_year_id: financialYearId,
-      expenditure_category: expenditureCategory,
+      source_of_fund: expenditureCategory,
       category: category,
       item_name: itemName,
       unit_cost: unitCost,
@@ -307,17 +307,17 @@ export const BudgetFormPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Expenditure Category */}
+              {/* Source of Fund */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-semibold text-slate-700">
-                    Expenditure Category <span className="text-rose-500">*</span>
+                    Source of Fund <span className="text-rose-500">*</span>
                   </label>
                   <div className="flex gap-2">
                     {isAdmin() && !isEdit && (
                       <button
                         type="button"
-                        onClick={() => handleDeleteCategory('expenditure', expenditureCategory)}
+                        onClick={() => handleDeleteCategory('source_of_fund', expenditureCategory)}
                         className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-0.5"
                         disabled={deleteCategoryMutation.isPending}
                       >
@@ -339,7 +339,7 @@ export const BudgetFormPage: React.FC = () => {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="New category..."
+                      placeholder="New source of fund..."
                       value={newExpVal}
                       onChange={(e) => setNewExpVal(e.target.value)}
                       className="input-field flex-1 text-sm py-1"
@@ -368,7 +368,7 @@ export const BudgetFormPage: React.FC = () => {
                     required
                     className="input-field w-full disabled:bg-slate-50"
                   >
-                    {cats.expenditure_categories?.map((cat: string) => (
+                    {cats.source_of_fund_categories?.map((cat: string) => (
                       <option key={cat} value={cat}>
                         {cat}
                       </option>
@@ -499,32 +499,21 @@ export const BudgetFormPage: React.FC = () => {
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-sm font-semibold text-slate-800">File Number / Budget Reference</span>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isAutoRolling}
-                    onChange={(e) => setIsAutoRolling(e.target.checked)}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <span className="text-xs font-medium text-slate-600">Auto-roll Reference</span>
-                </label>
               </div>
 
               <input
                 type="text"
-                placeholder="NITT/DEPT/SRC/FY/NUM"
+                placeholder="NITT/F.No.0000/CAPEX/2026-27/CSE"
                 value={fileNo}
                 onChange={(e) => setFileNo(e.target.value)}
-                disabled={isAutoRolling}
+                disabled={true}
                 required
-                className="input-field w-full font-mono tracking-wider text-sm disabled:bg-slate-100 disabled:text-slate-600 border-dashed"
+                className="input-field w-full font-mono tracking-wider text-sm bg-slate-100 text-slate-600 border-dashed"
               />
 
-              {isAutoRolling && (
-                <p className="text-xs text-slate-500 flex items-center gap-1">
-                  <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/DEPT/SOURCE/FY/NUM</code>
-                </p>
-              )}
+              <p className="text-xs text-slate-500 flex items-center gap-1">
+                <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/F.No.0000/CAPEX/2026-27/CSE</code>
+              </p>
             </div>
 
             {/* Remarks / Details */}

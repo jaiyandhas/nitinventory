@@ -15,7 +15,7 @@ from app.core.deps import get_current_user, require_roles
 from app.models.user import User, RoleManager, Department
 from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestItem, PurchaseRequestHistory,
-    PurchaseRequestAssignment, TechnicalEvaluation, FinancialEvaluation,
+    PurchaseRequestFlow, PurchaseRequestAssignment, TechnicalEvaluation, FinancialEvaluation,
     CommercialEvaluation, Document, WorkFlowHierarchy, RequestStatus, AssignmentStatus,
     VendorMaster, PRReferral
 )
@@ -528,6 +528,33 @@ async def list_prs(
         base_query = base_query.join(User, PurchaseRequest.initiator_id == User.id).where(
             User.department_id == user.department_id
         )
+    elif group in ("verifier_sp", "superintendent"):
+        # SP Exclusivity: hide PRs at Tendering Step 1 that are already claimed by a different SP.
+        # A PR is "claimed" when another SP created a PurchaseRequestAssignment (assigned_by_id != user.id).
+        # Unclaimed PRs, self-claimed PRs, and PRs in all other phases/steps remain visible.
+        other_sp_claimed_subq = (
+            select(PurchaseRequestAssignment.purchase_request_id)
+            .where(PurchaseRequestAssignment.assigned_by_id != user.id)
+        ).scalar_subquery()
+        tendering_step1_subq = (
+            select(PurchaseRequestFlow.purchase_request_id)
+            .where(
+                and_(
+                    PurchaseRequestFlow.step_order == 1,
+                    PurchaseRequestFlow.phase_id.in_(
+                        select(PhaseManager.id).where(PhaseManager.phase_name == "Tendering")
+                    )
+                )
+            )
+        ).scalar_subquery()
+        base_query = base_query.where(
+            or_(
+                # Not at Tendering step 1 — always visible to all SPs
+                ~PurchaseRequest.id.in_(tendering_step1_subq),
+                # At Tendering step 1 but NOT claimed by any other SP
+                ~PurchaseRequest.id.in_(other_sp_claimed_subq),
+            )
+        )
 
     # Get total count
     from sqlalchemy import func
@@ -547,6 +574,29 @@ async def list_prs(
     elif group == "hod":
         count_query = count_query.join(User, PurchaseRequest.initiator_id == User.id).where(
             User.department_id == user.department_id
+        )
+    elif group in ("verifier_sp", "superintendent"):
+        # Mirror the SP exclusivity filter for the count query
+        other_sp_claimed_subq_c = (
+            select(PurchaseRequestAssignment.purchase_request_id)
+            .where(PurchaseRequestAssignment.assigned_by_id != user.id)
+        ).scalar_subquery()
+        tendering_step1_subq_c = (
+            select(PurchaseRequestFlow.purchase_request_id)
+            .where(
+                and_(
+                    PurchaseRequestFlow.step_order == 1,
+                    PurchaseRequestFlow.phase_id.in_(
+                        select(PhaseManager.id).where(PhaseManager.phase_name == "Tendering")
+                    )
+                )
+            )
+        ).scalar_subquery()
+        count_query = count_query.where(
+            or_(
+                ~PurchaseRequest.id.in_(tendering_step1_subq_c),
+                ~PurchaseRequest.id.in_(other_sp_claimed_subq_c),
+            )
         )
     
     total = await db.scalar(count_query) or 0
@@ -796,6 +846,9 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     for a in pr.assignments:
         if a.assigned_da_id:
             user_ids.add(a.assigned_da_id)
+    for d in pr.documents:
+        if d.uploaded_by_id:
+            user_ids.add(d.uploaded_by_id)
     if dept:
         if dept.expert1_id:
             user_ids.add(dept.expert1_id)
@@ -1100,6 +1153,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 "original_name": doc.doc_value.get("original_name"),
                 "path": f"/static/uploads/{doc.doc_value.get('path')}" if doc.doc_value.get("path") else None,
                 "uploaded_by_id": doc.uploaded_by_id,
+                "uploaded_by_name": users_by_id.get(doc.uploaded_by_id).name if doc.uploaded_by_id and users_by_id.get(doc.uploaded_by_id) else None,
                 "updated_at": doc.updated_at.isoformat() + "Z" if doc.updated_at else None,
             }
             for doc in pr.documents
@@ -2120,7 +2174,15 @@ async def add_bill_passing(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    result = await db.execute(
+        select(PurchaseRequest)
+        .options(
+            selectinload(PurchaseRequest.bill_passing),
+            selectinload(PurchaseRequest.initiator),
+            selectinload(PurchaseRequest.history),
+        )
+        .where(PurchaseRequest.id == pr_id)
+    )
     pr = result.scalar_one_or_none()
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
@@ -2128,13 +2190,7 @@ async def add_bill_passing(
     await check_pr_access(pr, user, db)
     await check_pr_fy_closed(pr, db)
 
-    # Check user role group is verifier_da or admin
-    await db.refresh(user, ["role"])
-    group = user.role.group_key if user.role else None
-    if group not in ("verifier_da", "admin"):
-        raise HTTPException(status_code=403, detail="Only Dealing Assistants and Admins can pass bills")
-
-    if pr.current_status != RequestStatus.PO_ISSUED:
+    if pr.current_status != RequestStatus.PO_ISSUED and pr.current_status != RequestStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Bills can only be passed for PO Issued requests")
 
     # Verify that there is at least one verified delivery for this PO
@@ -2151,46 +2207,142 @@ async def add_bill_passing(
     if not verified_delivery:
         raise HTTPException(status_code=400, detail="Cannot pass bill. Delivery must be verified first.")
 
-    # Save BillPassing record
+    await db.refresh(user, ["role"])
+    group = user.role.group_key if user.role else None
+
     from app.models import BillPassing
+    from app.services.flow_engine import FlowEngineService
     from datetime import date
-    invoice_date_str = body.get("invoice_date")
-    challan_date_str = body.get("challan_date")
+    flow_svc = FlowEngineService(db)
 
-    invoice_date_val = datetime.strptime(invoice_date_str, "%Y-%m-%d").date() if invoice_date_str else date.today()
-    challan_date_val = datetime.strptime(challan_date_str, "%Y-%m-%d").date() if challan_date_str else None
+    # Let's check the stage based on existing bill_passing record
+    bp = pr.bill_passing
+    if not bp:
+        # STAGE 1: Purchase Initiator Drafting
+        if pr.initiator_id != user.id and group != "admin":
+            raise HTTPException(status_code=403, detail="Only the Purchase Initiator or Admin can draft the bill passing details.")
 
-    # Clear previous bill passing if exists
-    await db.execute(delete(BillPassing).where(BillPassing.purchase_request_id == pr.id))
+        invoice_date_str = body.get("invoice_date")
+        challan_date_str = body.get("challan_date")
+        invoice_date_val = datetime.strptime(invoice_date_str, "%Y-%m-%d").date() if invoice_date_str else date.today()
+        challan_date_val = datetime.strptime(challan_date_str, "%Y-%m-%d").date() if challan_date_str else None
 
-    bp = BillPassing(
-        purchase_request_id=pr.id,
-        invoice_number=body["invoice_number"],
-        invoice_date=invoice_date_val,
-        challan_number=body.get("challan_number"),
-        challan_date=challan_date_val,
-        bill_amount=float(body["bill_amount"]),
-        gst_amount=float(body.get("gst_amount") or 0.0),
-        payment_terms=body.get("payment_terms"),
-        passed_by_id=user.id,
-        remarks=body.get("remarks"),
-    )
-    db.add(bp)
+        # Build extra_info
+        extra_info = {
+            "status": "pending_hod",
+            "packing_and_forwarding_charges": float(body.get("packing_and_forwarding_charges") or 0.0),
+            "other_charges": float(body.get("other_charges") or 0.0),
+            "other_charges_specification": body.get("other_charges_specification") or "",
+            "due_date_of_supply": body.get("due_date_of_supply"),
+            "actual_date_of_delivery": body.get("actual_date_of_delivery"),
+            "delay_days": int(body.get("delay_days") or 0),
+            "delay_reason": body.get("delay_reason") or "",
+            "liquidity_damages_deducted": body.get("liquidity_damages_deducted") or "No",
+            "justification_for_ld": body.get("justification_for_ld") or "",
+            "ps_terms": body.get("ps_terms") or "",
+            "warranty_terms": body.get("warranty_terms") or "",
+            "mode_of_ps": body.get("mode_of_ps") or "",
+            "value_of_ps": float(body.get("value_of_ps") or 0.0),
+            "validity_of_ps": body.get("validity_of_ps") or "",
+            "warranty_period_required": body.get("warranty_period_required") or "No",
+            "warranty_period_months": int(body.get("warranty_period_months") or 0),
+            "installation_required": body.get("installation_required") or "No",
+            "installation_certificate_enclosed": body.get("installation_certificate_enclosed") or "No",
+            "supplier_name": body.get("supplier_name") or "",
+            "supplier_gst": body.get("supplier_gst") or "",
+            "invoice_amount": float(body.get("invoice_amount") or 0.0),
+            "justification": body.get("justification") or "",
+            "firm_name": body.get("firm_name") or "",
+            "account_number": body.get("account_number") or "",
+            "account_holder_name": body.get("account_holder_name") or "",
+            "bank_name": body.get("bank_name") or "",
+            "branch_name": body.get("branch_name") or "",
+            "ifsc_code": body.get("ifsc_code") or "",
+            "lab_office_name": body.get("lab_office_name") or "",
+            "total_accepted_value": float(body.get("total_accepted_value") or 0.0),
+            "ps_withheld": float(body.get("ps_withheld") or 0.0),
+            "ld_imposed": float(body.get("ld_imposed") or 0.0),
+            "advance_paid": float(body.get("advance_paid") or 0.0),
+            "lc_released": float(body.get("lc_released") or 0.0),
+            "part_payment": float(body.get("part_payment") or 0.0),
+            "net_amount": float(body.get("net_amount") or 0.0),
+        }
 
-    # Set PR status to completed
-    pr.current_status = RequestStatus.COMPLETED
+        bp = BillPassing(
+            purchase_request_id=pr.id,
+            invoice_number=body["invoice_number"],
+            invoice_date=invoice_date_val,
+            challan_number=body.get("challan_number"),
+            challan_date=challan_date_val,
+            bill_amount=float(body["bill_amount"]),
+            gst_amount=float(body.get("gst_amount") or 0.0),
+            payment_terms=body.get("payment_terms"),
+            passed_by_id=user.id,
+            remarks=body.get("remarks"),
+            extra_info=extra_info,
+        )
+        db.add(bp)
+        await flow_svc._add_history(pr, user, "Bill Passing Initiated", body.get("remarks") or "Bill passing drafted and submitted to HOD.")
 
-    history = PurchaseRequestHistory(
-        purchase_request_id=pr.id,
-        current_approver_id=user.id,
-        status="Bill Passed (PR Completed)",
-        remarks=body.get("remarks") or f"Bill passed for Invoice No: {body['invoice_number']}",
-        acted_at=datetime.utcnow(),
-    )
-    db.add(history)
+    else:
+        # Load extra_info
+        extra_info = dict(bp.extra_info or {})
+        bp_status = extra_info.get("status", "pending_hod")
+
+        if bp_status == "pending_hod":
+            # STAGE 2: HOD Review & Signing
+            await db.refresh(pr, ["initiator"])
+            if not pr.initiator:
+                raise HTTPException(status_code=400, detail="PR has no initiator department context.")
+            is_hod = group == "hod" and user.department_id == pr.initiator.department_id
+            if not is_hod and group != "admin":
+                raise HTTPException(status_code=403, detail="Only the department HOD or Admin can sign/approve this stage.")
+
+            extra_info["non_consumable_vol"] = body.get("non_consumable_vol") or ""
+            extra_info["non_consumable_page"] = body.get("non_consumable_page") or ""
+            extra_info["consumable_vol"] = body.get("consumable_vol") or ""
+            extra_info["consumable_page"] = body.get("consumable_page") or ""
+            extra_info["status"] = "pending_superintendent"
+
+            # Allow updates to bp primary fields if HOD changes them (optional safety)
+            if "invoice_number" in body: bp.invoice_number = body["invoice_number"]
+            if "bill_amount" in body: bp.bill_amount = float(body["bill_amount"])
+            if "gst_amount" in body: bp.gst_amount = float(body["gst_amount"])
+            if "remarks" in body: bp.remarks = body["remarks"]
+
+            bp.extra_info = extra_info
+            # Flag modified to persist
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(bp, "extra_info")
+            await flow_svc._add_history(pr, user, "Bill Passing Approved by HOD", body.get("remarks") or "HOD verified stock entries and approved.")
+
+        elif bp_status == "pending_superintendent":
+            # STAGE 3: Superintendent S&P Review & Signing
+            if group != "verifier_sp" and group != "admin":
+                raise HTTPException(status_code=403, detail="Only Superintendent S&P or Admin can sign/approve this stage.")
+
+            extra_info["asset_register_volume"] = body.get("asset_register_volume") or ""
+            extra_info["asset_register_page"] = body.get("asset_register_page") or ""
+            extra_info["received_stores_date"] = body.get("received_stores_date")
+            extra_info["status"] = "completed"
+
+            bp.extra_info = extra_info
+            bp.passed_by_id = user.id
+            if "remarks" in body: bp.remarks = body["remarks"]
+
+            # Mark Purchase Request as COMPLETED
+            pr.current_status = RequestStatus.COMPLETED
+
+            # Flag modified to persist
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(bp, "extra_info")
+            await flow_svc._add_history(pr, user, "Bill Passed (PR Completed)", body.get("remarks") or f"Bill passed for Invoice No: {bp.invoice_number}")
+
+        else:
+            raise HTTPException(status_code=400, detail="Bill passing is already completed.")
 
     await db.commit()
-    return {"message": "Bill passed successfully. Purchase Request is now completed."}
+    return {"message": "Bill passing status updated successfully."}
 
 
 @router.post("/{pr_id}/cancel-tender")
@@ -2200,79 +2352,11 @@ async def cancel_tender(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Cancel tender process for a purchase request and unlock budget."""
-    result = await db.execute(
-        select(PurchaseRequest).where(PurchaseRequest.id == pr_id)
+    """Cancel tender process is disabled. Purchase requests can only be cancelled after PO is issued."""
+    raise HTTPException(
+        status_code=400,
+        detail="Cancellation is only allowed once the Purchase Order has been issued"
     )
-    pr = result.scalar_one_or_none()
-    if not pr:
-        raise HTTPException(status_code=404, detail="Purchase request not found")
-
-    await check_pr_access(pr, user, db)
-    await check_pr_fy_closed(pr, db)
-
-    if pr.current_status in (RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED, RequestStatus.COMPLETED):
-        raise HTTPException(
-            status_code=400,
-            detail="Only active in-progress purchase requests can have their tender process cancelled"
-        )
-
-    # Verify permission: initiator, department HOD, or admin
-    is_initiator = pr.initiator_id == user.id
-    await db.refresh(user, ["role"])
-    is_admin = user.role.group_key == "admin"
-    
-    await db.refresh(pr, ["initiator"])
-    is_hod = user.role.group_key == "hod" and user.department_id == pr.initiator.department_id
-
-    if not (is_initiator or is_hod or is_admin):
-        raise HTTPException(
-            status_code=403,
-            detail="You do not have permission to cancel this tender"
-        )
-
-    reason = body.get("reason")
-    reinitiation_method = body.get("reinitiation_method", "none")
-
-    if not reason or not reason.strip():
-        raise HTTPException(status_code=400, detail="Reason for cancellation is required")
-
-    from app.models.purchase_request import TenderCancellation
-    tender_cancel = TenderCancellation(
-        purchase_request_id=pr.id,
-        reason=reason,
-        reinitiation_method=reinitiation_method,
-        cancelled_by_id=user.id,
-        cancelled_at=datetime.utcnow()
-    )
-    db.add(tender_cancel)
-
-    # Rollback budget: release the locked_amount
-    from app.services.budget_service import BudgetService
-    budget_svc = BudgetService(db)
-    await budget_svc.unlock_amount(pr)
-
-    # Log action to PR history
-    from app.models.purchase_request import PurchaseRequestHistory
-    history = PurchaseRequestHistory(
-        purchase_request_id=pr.id,
-        current_approver_id=user.id,
-        status="Tender Cancelled",
-        remarks=f"Method: {reinitiation_method}. Reason: {reason}",
-        acted_at=datetime.utcnow(),
-    )
-    db.add(history)
-
-    # Delete active workflow flow
-    from app.models.purchase_request import PurchaseRequestFlow
-    await db.execute(
-        delete(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
-    )
-
-    pr.current_status = RequestStatus.CANCELLED
-    await db.commit()
-
-    return {"message": "Tender process cancelled and budget released successfully"}
 
 
 @router.post("/{pr_id}/reinitiate")
@@ -2425,6 +2509,19 @@ async def refer_pr(
 
     await check_pr_access(pr, user, db)
     await check_pr_fy_closed(pr, db)
+
+    # Roles that are NOT allowed to initiate ad-hoc consultations:
+    # - PI (faculty): Purchase Initiators are operators, not consultation senders
+    # - DA (verifier_da): Dealing Assistants process; they don't initiate referrals
+    # - SP (verifier_sp / superintendent): SPs assign DAs; they don't initiate referrals
+    await db.refresh(user, ["role"])
+    restricted_groups = {"faculty", "verifier_da", "verifier_sp", "superintendent"}
+    user_group = user.role.group_key if user.role else None
+    if user_group in restricted_groups:
+        raise HTTPException(
+            status_code=403,
+            detail="Purchase Initiators, Dealing Assistants, and Superintendents are not authorized to initiate ad-hoc consultations."
+        )
 
     # Validate that the user is the currently expected approver of the active step
     # Or, during Tendering phase, the purchase initiator is also allowed to seek consultation

@@ -355,6 +355,7 @@ class BillPassing(Base):
     passed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     passed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extra_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="bill_passing")
     passed_by: Mapped["User"] = relationship("User")  # type: ignore

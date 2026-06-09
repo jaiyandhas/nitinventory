@@ -385,7 +385,7 @@ export const StepCommonDetails: React.FC<Props> = ({
     {totalCost > 500000 && (
       <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
         <h3 className="text-sm font-semibold text-[#1a3a6b] uppercase tracking-wider">
-          Make in India (MII) Clause (Total Cost &gt; ₹5 Lakhs)
+          Make in India (MII) Clause (Total Cost &gt; ₹5,00,000)
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

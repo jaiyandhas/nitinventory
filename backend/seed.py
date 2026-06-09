@@ -35,7 +35,8 @@ RESET_DEMO_DATA = os.getenv("RESET_DEMO_DATA", "false").strip().lower() in ("1",
 async def create_tables():
     async with engine.begin() as conn:
         # We do not drop tables in production/development to persist user changes
-        # await conn.run_sync(Base.metadata.drop_all)
+        if RESET_DEMO_DATA:
+            await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS remarks TEXT;"))
         await conn.execute(text("ALTER TABLE financial_years ADD COLUMN IF NOT EXISTS is_closed BOOLEAN DEFAULT FALSE;"))
@@ -65,6 +66,7 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE financial_evaluations ADD COLUMN IF NOT EXISTS taxes DOUBLE PRECISION DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE financial_evaluations ADD COLUMN IF NOT EXISTS delivery_period INTEGER;"))
         await conn.execute(text("ALTER TABLE financial_evaluations ADD COLUMN IF NOT EXISTS warranty INTEGER;"))
+        await conn.execute(text("ALTER TABLE bill_passings ADD COLUMN IF NOT EXISTS extra_info JSONB;"))
         
         # BudgetMaster committee fields
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS expert1_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
@@ -303,8 +305,7 @@ async def seed():
                         "type": "object",
                         "title": "GeM Procurement Details",
                         "properties": {
-                            "gem_link": { "type": "string", "title": "GeM Bid / RA Link" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "gem_link": { "type": "string", "title": "GeM Bid / RA Link" }
                         },
                         "required": ["gem_link"]
                     }
@@ -317,7 +318,8 @@ async def seed():
                         "title": "CPPP Procurement Details",
                         "properties": {
                             "tender_id": { "type": "string", "title": "CPPP Tender ID" },
-                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" }
+                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
                         },
                         "required": ["tender_id"]
                     }
@@ -328,7 +330,9 @@ async def seed():
                     form_schema={
                         "type": "object",
                         "title": "Limited Tender Details",
-                        "properties": {},
+                        "properties": {
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                        },
                         "required": []
                     }
                 ),
@@ -346,7 +350,8 @@ async def seed():
                                 "enum": ["sole_manufacturer", "no_alternative", "similar_unavailable"],
                                 "title": "PAC Justification Basis"
                             },
-                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" }
+                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
                         },
                         "required": ["manufacturer_name", "justification_type"]
                     }
@@ -359,7 +364,8 @@ async def seed():
                         "type": "object",
                         "title": "Direct Purchase Details",
                         "properties": {
-                            "justification": { "type": "string", "title": "Justification for Direct Purchase" }
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
                         },
                         "required": ["justification"]
                     }
@@ -392,12 +398,61 @@ async def seed():
             procs = list(procs_res.scalars())
             # Synchronize schema for existing methods
             for p_item in procs:
-                if p_item.name == "Limited Tender":
+                if p_item.name == "GeM":
+                    p_item.form_schema = {
+                        "type": "object",
+                        "title": "GeM Procurement Details",
+                        "properties": {
+                            "gem_link": { "type": "string", "title": "GeM Bid / RA Link" }
+                        },
+                        "required": ["gem_link"]
+                    }
+                elif p_item.name == "CPPP":
+                    p_item.form_schema = {
+                        "type": "object",
+                        "title": "CPPP Procurement Details",
+                        "properties": {
+                            "tender_id": { "type": "string", "title": "CPPP Tender ID" },
+                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                        },
+                        "required": ["tender_id"]
+                    }
+                elif p_item.name == "Limited Tender":
                     p_item.form_schema = {
                         "type": "object",
                         "title": "Limited Tender Details",
-                        "properties": {},
+                        "properties": {
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                        },
                         "required": []
+                    }
+                elif p_item.name == "Proprietary Purchase":
+                    p_item.form_schema = {
+                        "type": "object",
+                        "title": "Proprietary Article Certificate (PAC)",
+                        "properties": {
+                            "manufacturer_name": { "type": "string", "title": "OEM Manufacturer Name" },
+                            "manufacturer_address": { "type": "string", "title": "OEM Address" },
+                            "justification_type": {
+                                "type": "string",
+                                "enum": ["sole_manufacturer", "no_alternative", "similar_unavailable"],
+                                "title": "PAC Justification Basis"
+                            },
+                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                        },
+                        "required": ["manufacturer_name", "justification_type"]
+                    }
+                elif p_item.name == "Direct Purchase":
+                    p_item.form_schema = {
+                        "type": "object",
+                        "title": "Direct Purchase Details",
+                        "properties": {
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" },
+                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                        },
+                        "required": ["justification"]
                     }
             await db.flush()
 
@@ -623,12 +678,28 @@ async def seed():
             TechnicalEvaluation,
             FinancialEvaluation,
             PurchaseRequestAssignment,
-            BillPassing
+            BillPassing,
+            Document
         )
         from app.models.inventory import Delivery, DeliveryItem
         from app.models.asset import Asset
 
         faculty = users["faculty.cse@nitt.edu"]
+        
+        def seed_pac_file(pr_id: int, doc_key: str, original_name: str, filename: str):
+            rel_path = f"attachments/{pr_id}/{filename}"
+            abs_path = os.path.join(settings.STORAGE_PATH, rel_path)
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, "wb") as f:
+                f.write(b"%PDF-1.4\n%mock PDF file for seeding\n%%EOF\n")
+            return Document(
+                purchase_request_id=pr_id,
+                doc_key=doc_key,
+                doc_value={"path": rel_path, "original_name": original_name},
+                uploaded_by_id=faculty.id,
+                updated_at=datetime.utcnow(),
+            )
+
         faculty1 = users["faculty1.cse@nitt.edu"]
         faculty2 = users["faculty2.cse@nitt.edu"]
         hod = users["hod.cse@nitt.edu"]
@@ -658,7 +729,7 @@ async def seed():
             bm = BudgetMaster(
                 department_id=cse.id,
                 financial_year_id=fy.id,
-                expenditure_category="CAPEX" if amount > 100000 else "OPEX",
+                source_of_fund="CAPEX" if amount > 100000 else "OPEX",
                 item_name=budget_item_name,
                 category="computer" if "server" in budget_item_name.lower() or "workstation" in budget_item_name.lower() else "equipment",
                 course_code="CSE-SEED-" + icr_number.split("/")[-1],
@@ -767,9 +838,9 @@ async def seed():
             amount=80000.0,
             current_status="pr_submitted",
             initiator=faculty,
-            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1001", "gem_nac_attached": True},
+            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1001"},
             budget_item_name="GeM Consumables (Cat1)",
-            budget_file_no="NITT/CSE/2026-27/001",
+            budget_file_no="NITT/F.No.0001/OPEX/2026-27/CSE",
             flow_phase=None,
             flow_step_order=None
         )
@@ -781,9 +852,9 @@ async def seed():
             amount=750000.0,
             current_status="in_progress",
             initiator=faculty,
-            form_data={"tender_id": "CPPP/CSE/2026/02", "publication_date": "2026-05-01"},
+            form_data={"tender_id": "CPPP/CSE/2026/02", "publication_date": "2026-05-01", "gem_nac_attached": True},
             budget_item_name="High-End Workstations (CPPP)",
-            budget_file_no="NITT/CSE/2026-27/002",
+            budget_file_no="NITT/F.No.0002/CAPEX/2026-27/CSE",
             flow_phase=aa_phase,
             flow_step_order=2
         )
@@ -795,9 +866,9 @@ async def seed():
             amount=450000.0,
             current_status="in_progress",
             initiator=faculty,
-            form_data={"invited_vendors": "Vendor Alpha, Vendor Beta, Vendor Gamma"},
+            form_data={"invited_vendors": "Vendor Alpha, Vendor Beta, Vendor Gamma", "gem_nac_attached": True},
             budget_item_name="Lab Equipment Kits (LT)",
-            budget_file_no="NITT/CSE/2026-27/003",
+            budget_file_no="NITT/F.No.0003/CAPEX/2026-27/CSE",
             flow_phase=td_phase,
             flow_step_order=2
         )
@@ -836,10 +907,11 @@ async def seed():
                 "manufacturer_name": "Keysight Technologies",
                 "manufacturer_address": "Bengaluru",
                 "justification_type": "sole_manufacturer",
-                "finance_concurrence_ref": "FC/2026/001"
+                "finance_concurrence_ref": "FC/2026/001",
+                "gem_nac_attached": True
             },
             budget_item_name="Keysight Spectrum Analyzer (PAC)",
-            budget_file_no="NITT/CSE/2026-27/004",
+            budget_file_no="NITT/F.No.0004/CAPEX/2026-27/CSE",
             flow_phase=te_phase,
             flow_step_order=1
         )
@@ -849,6 +921,9 @@ async def seed():
         pr4.date_of_financial_bid_opening = date(2026, 5, 22)
         pr4.te_initiated_at = datetime.utcnow()
         db.add(pr4)
+        db.add(seed_pac_file(pr4.id, "dept_pac_file", "dept_pac_form.pdf", "dummy_dept_pac.pdf"))
+        db.add(seed_pac_file(pr4.id, "oem_pac_file", "oem_pac_certificate.pdf", "dummy_oem_pac.pdf"))
+        db.add(seed_pac_file(pr4.id, "oem_auth_file", "oem_authorization.pdf", "dummy_oem_auth.pdf"))
         # Commercial evaluation for PR 4
         db.add(CommercialEvaluation(
             purchase_request_id=pr4.id,
@@ -881,9 +956,9 @@ async def seed():
             amount=1500000.0,
             current_status="in_progress",
             initiator=faculty,
-            form_data={"invited_vendors": "Alpha Tech, Beta Eng, Gamma Systems"},
+            form_data={"invited_vendors": "Alpha Tech, Beta Eng, Gamma Systems", "gem_nac_attached": True},
             budget_item_name="GPU Server Nodes (LT)",
-            budget_file_no="NITT/CSE/2026-27/005",
+            budget_file_no="NITT/F.No.0005/CAPEX/2026-27/CSE",
             flow_phase=fs_phase,
             flow_step_order=1
         )
@@ -928,7 +1003,7 @@ async def seed():
             initiator=faculty,
             form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1006"},
             budget_item_name="Office Workstations (GeM)",
-            budget_file_no="NITT/CSE/2026-27/006",
+            budget_file_no="NITT/F.No.0006/CAPEX/2026-27/CSE",
             flow_phase=po_phase,
             flow_step_order=1
         )
@@ -972,9 +1047,9 @@ async def seed():
             amount=50000.0,
             current_status="po_issued",
             initiator=faculty,
-            form_data={"invited_vendors": "Local Furniture Vendor"},
+            form_data={"invited_vendors": "Local Furniture Vendor", "gem_nac_attached": True},
             budget_item_name="LPC Lab Furniture",
-            budget_file_no="NITT/CSE/2026-27/007",
+            budget_file_no="NITT/F.No.0007/OPEX/2026-27/CSE",
             flow_phase=None,
             flow_step_order=None
         )
@@ -1023,16 +1098,20 @@ async def seed():
             form_data={
                 "manufacturer_name": "Thermo Fisher Scientific",
                 "manufacturer_address": "Mumbai",
-                "justification_type": "sole_manufacturer"
+                "justification_type": "sole_manufacturer",
+                "gem_nac_attached": True
             },
             budget_item_name="Mass Spectrometer System (PAC)",
-            budget_file_no="NITT/CSE/2026-27/008",
+            budget_file_no="NITT/F.No.0008/CAPEX/2026-27/CSE",
             flow_phase=None,
             flow_step_order=None,
             budget_deduct=True
         )
         pr8.po_approved_at = datetime.utcnow()
         db.add(pr8)
+        db.add(seed_pac_file(pr8.id, "dept_pac_file", "dept_pac_form.pdf", "dummy_dept_pac.pdf"))
+        db.add(seed_pac_file(pr8.id, "oem_pac_file", "oem_pac_certificate.pdf", "dummy_oem_pac.pdf"))
+        db.add(seed_pac_file(pr8.id, "oem_auth_file", "oem_authorization.pdf", "dummy_oem_auth.pdf"))
         # History for PR 8
         for actor_user, status_str, remarks_str in [
             (hod, "Approved", "Approved by HOD."),
@@ -1080,8 +1159,8 @@ async def seed():
             purchase_request_id=pr8.id,
             invoice_number="INV-2026-88",
             invoice_date=datetime.utcnow(),
-            bill_amount=24.0,
-            gst_amount=4.32,
+            bill_amount=2400000.0,
+            gst_amount=432000.0,
             payment_terms="Immediate",
             remarks="Equipment received and verified. Bill passed to finance.",
             passed_by_id=da.id
@@ -1113,14 +1192,14 @@ async def seed():
             db.add(BudgetMaster(
                 department_id=cse.id,
                 financial_year_id=fy.id,
-                expenditure_category="CAPEX" if amount > 100000 else "OPEX",
+                source_of_fund="CAPEX" if amount > 100000 else "OPEX",
                 item_name=item_name,
                 category="equipment",
                 course_code=f"CSE-E2E-{i}",
                 unit_cost=float(amount),
                 quantity=1,
                 total_allocation=float(amount),
-                file_no=f"NITT/CSE/2026-27/E2E/FREE-{i}",
+                file_no=f"NITT/F.No.{9000+i:04d}/CAPEX/2026-27/CSE",
                 is_revision=False,
                 committed_amount=0.0,
                 utilized_amount=0.0,

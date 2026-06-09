@@ -107,7 +107,7 @@ async def seed_budget_files() -> dict[str, int]:
             bm = BudgetMaster(
                 department_id=cse.id,
                 financial_year_id=fy.id,
-                expenditure_category=exp_cat,
+                source_of_fund=exp_cat,
                 item_name=item_name,
                 category=cat,
                 course_code=course,

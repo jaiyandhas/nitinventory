@@ -47,7 +47,7 @@ export const PRCommitteePanel: React.FC<PRCommitteePanelProps> = ({
           <p className="text-xs font-bold text-slate-800">{sig?.frozen_actor_name || defaultName || 'Authorized Signatory'}</p>
           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{sig?.frozen_designation || title}</p>
           {sig?.acted_at && (
-            <p className="text-[9px] text-slate-500 mt-0.5">{new Date(sig.acted_at).toLocaleDateString()}</p>
+            <p className="text-[9px] text-slate-500 mt-0.5">{(() => { const iso = sig.acted_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(sig.acted_at) ? sig.acted_at : sig.acted_at + 'Z'; return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); })()}</p>
           )}
         </div>
       </div>

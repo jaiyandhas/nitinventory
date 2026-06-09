@@ -223,10 +223,10 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
               )}
             </div>
 
-            {isAuthorizedToCancel && ['pr_submitted', 'in_progress', 'sent_back', 'rolled_over', 'po_issued'].includes(pr.current_status) && (
+            {isAuthorizedToCancel && pr.current_status === 'po_issued' && (
               <button
                 onClick={() => {
-                  setCancelType(pr.current_status === 'po_issued' ? 'po' : 'tender');
+                  setCancelType('po');
                   setShowCancelModal(true);
                 }}
                 disabled={actionLoading}

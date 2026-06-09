@@ -112,8 +112,8 @@ export const FormsDashboardPage: React.FC = () => {
   });
 
   const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00L';
-    return `₹${(n / 100000).toFixed(2)}L`;
+    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
+    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const handlePrint = () => {

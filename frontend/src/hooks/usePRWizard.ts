@@ -23,8 +23,11 @@ interface SerializedItem extends Omit<PRItemFormState, 'gem_nac_file' | 'tech_sp
   tech_specs_file_name?: string | null;
 }
 
-interface SerializedCommon extends Omit<PRCommonFormState, 'quotation_file'> {
+interface SerializedCommon extends Omit<PRCommonFormState, 'quotation_file' | 'dept_pac_file' | 'oem_pac_file' | 'oem_auth_file'> {
   quotation_file_name?: string | null;
+  dept_pac_file_name?: string | null;
+  oem_pac_file_name?: string | null;
+  oem_auth_file_name?: string | null;
 }
 
 interface DraftState {
@@ -49,13 +52,25 @@ function serializeItems(items: Record<number, PRItemFormState>): Record<number, 
 }
 
 function serializeCommon(common: PRCommonFormState): SerializedCommon {
-  const { quotation_file, ...rest } = common;
-  return { ...rest, quotation_file_name: quotation_file?.name ?? null };
+  const { quotation_file, dept_pac_file, oem_pac_file, oem_auth_file, ...rest } = common;
+  return {
+    ...rest,
+    quotation_file_name: quotation_file?.name ?? null,
+    dept_pac_file_name: dept_pac_file?.name ?? null,
+    oem_pac_file_name: oem_pac_file?.name ?? null,
+    oem_auth_file_name: oem_auth_file?.name ?? null,
+  };
 }
 
 function deserializeCommon(s: SerializedCommon): PRCommonFormState {
-  const { quotation_file_name, ...rest } = s;
-  return { ...rest, quotation_file: null };
+  const { quotation_file_name, dept_pac_file_name, oem_pac_file_name, oem_auth_file_name, ...rest } = s;
+  return {
+    ...rest,
+    quotation_file: null,
+    dept_pac_file: null,
+    oem_pac_file: null,
+    oem_auth_file: null,
+  };
 }
 
 function deserializeItems(s: Record<number, SerializedItem>): Record<number, PRItemFormState> {
@@ -97,6 +112,9 @@ function hasMissingFiles(
   commonSerialized: SerializedCommon
 ): boolean {
   if (commonSerialized.quotation_file_name && !common.quotation_file) return true;
+  if (commonSerialized.dept_pac_file_name && !common.dept_pac_file) return true;
+  if (commonSerialized.oem_pac_file_name && !common.oem_pac_file) return true;
+  if (commonSerialized.oem_auth_file_name && !common.oem_auth_file) return true;
   for (const [k, s] of Object.entries(itemsSerialized)) {
     const live = items[Number(k)];
     if (!live) continue;
@@ -273,7 +291,13 @@ export function usePRWizard() {
     [items, selection.selectedFileIds]
   );
 
-  const validateCommon = useCallback((totalCost: number = 0, formSchema?: any): string | null => {
+  const validateCommon = useCallback((totalCost: number = 0, formSchema?: any, procurementName?: string): string | null => {
+    const isPac = procurementName && (procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac'));
+    if (isPac) {
+      if (!common.dept_pac_file) return 'Department PAC (PDF) is required for Proprietary Purchase';
+      if (!common.oem_pac_file) return 'OEM PAC Certificate (PDF) is required for Proprietary Purchase';
+      if (!common.oem_auth_file) return 'OEM Authorization Certificate (PDF) is required for Proprietary Purchase';
+    }
     if (formSchema && formSchema.required && formSchema.properties) {
       const formData = common.form_data || {};
       const sectionTitle = formSchema.title ? `"${formSchema.title}"` : 'Procurement-Specific Details';

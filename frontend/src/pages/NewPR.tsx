@@ -64,7 +64,7 @@ export const NewPRPage: React.FC = () => {
       }
     }
     if (wizard.stepId === 'common') {
-      const err = wizard.validateCommon(totalCost, procurementMethod?.form_schema);
+      const err = wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name);
       if (err) {
         toast.error(err);
         // If the error is about a procurement-specific field, scroll the user to that section
@@ -80,7 +80,7 @@ export const NewPRPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
+    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
     if (err) {
       toast.error(err);
       return;

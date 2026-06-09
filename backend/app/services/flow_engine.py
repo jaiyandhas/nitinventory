@@ -3,7 +3,7 @@ Flow Engine Service — Python port of PrFlowEngineService.php
 Includes budget bug fix: lock on submit, deduct on PO_ISSUED.
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func

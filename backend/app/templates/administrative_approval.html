@@ -981,7 +981,7 @@
             <th>Designation / Lab</th>
             <td>{{ pr.initiator.designation or 'Faculty' }} / Department Lab</td>
             <th>Source of fund</th>
-            <td>{{ pr.items[0].budget_file.expenditure_category if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
         </tr>
         <tr>
             <th>Estimated Amount</th>
@@ -1155,7 +1155,7 @@
             <th>Designation / Contact</th>
             <td>{{ pr.initiator.designation or 'Faculty' }} / {{ pr.initiator.email }}</td>
             <th>Source of Fund</th>
-            <td>{{ pr.items[0].budget_file.expenditure_category if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
         </tr>
         <tr>
             <th>Estimated Amount</th>
@@ -1252,7 +1252,7 @@
             <th>Contact / Email</th>
             <td>{{ pr.initiator.email }}</td>
             <th>Source of Fund</th>
-            <td>{{ pr.items[0].budget_file.expenditure_category if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
         </tr>
         <tr>
             <th>Estimated Amount</th>
@@ -1323,71 +1323,298 @@
     <!-- FORM 7 & 8: GOODS RECEIPT & BILL PASSING       -->
     <!-- ============================================== -->
     {% elif module == 'bill_passing' %}
-    <table class="details-table">
-        <tr>
-            <th>Invoice Number / Date</th>
-            <td class="bold">{{ pr.bill_passing.invoice_number if pr.bill_passing else 'N/A' }} / {{ pr.bill_passing.invoice_date if pr.bill_passing else 'N/A' }}</td>
-            <th>Challan Number / Date</th>
-            <td>{{ pr.bill_passing.challan_number if (pr.bill_passing and pr.bill_passing.challan_number) else 'N/A' }} / {{ pr.bill_passing.challan_date if (pr.bill_passing and pr.bill_passing.challan_date) else 'N/A' }}</td>
-        </tr>
-        <tr>
-            <th>Passed Bill Amount</th>
-            <td class="bold">₹{{ "%.2f"|format(pr.bill_passing.bill_amount) if pr.bill_passing else '0.00' }} Lakhs</td>
-            <th>GST Amount</th>
-            <td>₹{{ "%.2f"|format(pr.bill_passing.gst_amount) if pr.bill_passing else '0.00' }} Lakhs</td>
-        </tr>
-        <tr>
-            <th>Supplier Name</th>
-            <td class="bold">{{ pr.financial_evaluations[0].vendor_name if pr.financial_evaluations else 'Contracted Supplier' }}</td>
-            <th>Stock Register Vol / Page</th>
-            <td>Volume: III · Page: 45</td>
+    {% set bp = pr.bill_passing %}
+    {% set info = bp.extra_info if (bp and bp.extra_info) else {} %}
+    
+    <!-- Bilingual Institutional Header for Bill Passing -->
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; border: none;">
+        <tr style="border: none;">
+            <td style="width: 65px; padding: 0; border: none; vertical-align: middle;">
+                <img src="file://{{ storage_dir }}/NITLOGO.png" style="height: 60px; width: 60px; object-fit: contain;" />
+            </td>
+            <td style="text-align: center; padding: 0 0 0 10px; border: none; vertical-align: middle;">
+                <div style="font-size: 14pt; font-weight: bold; font-family: 'Times New Roman', Times, serif; margin: 0; line-height: 1.2;">राष्ट्रीय प्रौद्योगिकी संस्थान तिरुच्चिरापल्ली - 620015</div>
+                <div style="font-size: 11pt; font-weight: bold; font-family: 'Times New Roman', Times, serif; margin: 2px 0 0 0; line-height: 1.2;">NATIONAL INSTITUTE OF TECHNOLOGY, TIRUCHIRAPPALLI 620015</div>
+                <div style="font-size: 10pt; font-weight: bold; margin-top: 4px; line-height: 1.2; letter-spacing: 0.5px;">DEPARTMENT OF {{ pr.initiator.department.name|upper if (pr.initiator and pr.initiator.department) else '____________________' }}</div>
+            </td>
         </tr>
     </table>
-
-    <div class="section-title">Delivery and Receipt Scrutiny</div>
-    <div class="checkbox-container">
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> Goods received are of the requisite quality and specification.</div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> Actual delivery date is within the due date of supply, or LD is calculated.</div>
-        <div class="checkbox-row"><div class="checkbox-box">✓</div> Stock entries have been recorded in the Non-Consumable/Consumable asset registers.</div>
+    
+    <div style="border-top: 2px double #000; border-bottom: 2px double #000; padding: 4px 0; margin-top: 5px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.5px;">
+        PURCHASE BILL PASSING CERTIFICATE
     </div>
 
-    <div class="section-title">Net passed breakdown</div>
-    <table class="details-table" style="width: 50%; margin-left: 0;">
+    <table class="details-table" style="width: 100%; margin-bottom: 15px;">
         <tr>
-            <th>Gross Bill Value</th>
-            <td>₹{{ "%.2f"|format(pr.bill_passing.bill_amount) if pr.bill_passing else '0.00' }} L</td>
+            <th style="width: 20%">File No:</th>
+            <td style="width: 30%">{{ pr.items[0].budget_file.file_no if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <th style="width: 20%">Date:</th>
+            <td style="width: 30%">{{ bp.passed_at.strftime('%d/%m/%Y') if bp else '-' }}</td>
         </tr>
         <tr>
-            <th>Performance Security Withheld</th>
-            <td>Nil / BG Provided</td>
+            <th>Department / Office:</th>
+            <td>{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
+            <th>Laboratory / Section:</th>
+            <td>{{ info.get('lab_office_name', '-') }}</td>
         </tr>
         <tr>
-            <th>LD Imposed (Delayed Delivery)</th>
-            <td>Nil</td>
-        </tr>
-        <tr>
-            <th class="bold">Net Payable Amount</th>
-            <td class="bold">₹{{ "%.2f"|format(pr.bill_passing.bill_amount) if pr.bill_passing else '0.00' }} Lakhs</td>
+            <th>Date of Purchase order:</th>
+            <td>{{ pr.po_approved_at.strftime('%d/%m/%Y') if pr.po_approved_at else '-' }}</td>
+            <th>Date of delivery (Received date):</th>
+            <td>{{ info.get('actual_date_of_delivery', '-') }}</td>
         </tr>
     </table>
 
-    <div class="section-title">Approvals for Payment Sanction</div>
-    <table style="width: 100%; margin-top: 30px; border: none; border-collapse: collapse;">
-        <tr style="border: none;">
-            <td style="width: 33%; text-align: center; border: none;">
-                {% if initiator_sig %}<img src="{{ initiator_sig }}" style="max-height: 35px;" />{% endif %}
-                <div style="border-top: 1px solid #333; font-weight: bold; margin-top: 10px;">Purchase Initiator</div>
-            </td>
-            <td style="width: 33%; text-align: center; border: none;">
-                {% if hod_sig %}<img src="{{ hod_sig }}" style="max-height: 35px;" />{% endif %}
-                <div style="border-top: 1px solid #333; font-weight: bold; margin-top: 10px;">HoD / Recommended</div>
-            </td>
-            <td style="width: 33%; text-align: center; border: none;">
-                {% if dr_ar_sp_sig %}<img src="{{ dr_ar_sp_sig }}" style="max-height: 35px;" />{% endif %}
-                <div style="border-top: 1px solid #333; font-weight: bold; margin-top: 10px;">Superintendent (S&P)</div>
-            </td>
-        </tr>
+    <div style="font-size: 9.5pt; line-height: 1.5; margin-top: 10px; margin-bottom: 15px; text-align: justify; font-style: italic; background-color: #f8fafc; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+        "I, <strong>{{ pr.initiator.name }}</strong>, personally satisfied that the equipment / goods purchased through the Purchase Order <strong>{{ pr.form_data.get('po_number', 'NITT/PO/' ~ pr.id) }}</strong> dated <strong>{{ pr.po_approved_at.strftime('%d/%m/%Y') if pr.po_approved_at else '-' }}</strong> are of the requisite quality and specification and have been purchased from a reliable supplier at a reasonable price as per GFR-154."
+    </div>
+
+    <div class="section-title">Details of Accepted Items</div>
+    <table class="data-table" style="width: 100%; margin-bottom: 15px; font-size: 8.5pt;">
+        <thead>
+            <tr>
+                <th style="width: 6%">S. No.</th>
+                <th style="width: 34%">Name of the Equipment / Item</th>
+                <th style="width: 8%">Qty PO</th>
+                <th style="width: 10%">Qty Received</th>
+                <th style="width: 10%">Qty Accepted</th>
+                <th style="width: 10%">Unit Cost (Rs.)</th>
+                <th style="width: 10%">GST (Rs.)</th>
+                <th style="width: 12%">Total Cost (incl. GST)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in pr.items %}
+            {% set qty = item.quantity or 1 %}
+            {% set unit_cost = item.estimated_total / qty %}
+            {% set gst_pct = item.charges or 0.0 %}
+            {% set gst_amount = item.estimated_total * gst_pct / 100.0 %}
+            {% set total_cost = item.estimated_total + gst_amount %}
+            <tr>
+                <td style="text-align: center;">{{ loop.index }}</td>
+                <td class="bold">{{ item.item_description }}</td>
+                <td style="text-align: center;">{{ qty }}</td>
+                <td style="text-align: center;">{{ qty }}</td>
+                <td style="text-align: center;">{{ qty }}</td>
+                <td style="text-align: right;">₹{{ "%.2f"|format(unit_cost) }}</td>
+                <td style="text-align: right;">₹{{ "%.2f"|format(gst_amount / qty) }}</td>
+                <td style="text-align: right; font-weight: bold;">₹{{ "%.2f"|format(total_cost) }}</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="7" style="text-align: right; font-weight: bold;">Packing and Forwarding charges (extra, if any):</td>
+                <td style="text-align: right; font-weight: bold;">₹{{ "%.2f"|format(info.get('packing_and_forwarding_charges', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <td colspan="7" style="text-align: right; font-weight: bold;">Other Charges ({{ info.get('other_charges_specification') or 'extra if any' }}):</td>
+                <td style="text-align: right; font-weight: bold;">₹{{ "%.2f"|format(info.get('other_charges', 0.0)) }}</td>
+            </tr>
+            <tr style="background-color: #f1f5f9;">
+                <td colspan="7" style="text-align: right; font-weight: bold; color: #1a3a6b;">Total Cost (Rs.):</td>
+                <td style="text-align: right; font-weight: bold; color: #1a3a6b;">₹{{ "%.2f"|format(info.get('total_accepted_value', pr.amount)) }}</td>
+            </tr>
+        </tbody>
     </table>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Delivery Details</div>
+        <table class="details-table" style="width: 100%; margin-bottom: 15px;">
+            <tr>
+                <th style="width: 45%">Due date of Supply (As per P.O.):</th>
+                <td style="width: 55%">{{ info.get('due_date_of_supply', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Actual date of delivery:</th>
+                <td>{{ info.get('actual_date_of_delivery', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Whether item delivered within due date:</th>
+                <td>
+                    {% if info.get('delay_days', 0) > 0 %}
+                    <span style="color: red; font-weight: bold;">Delayed by {{ info.get('delay_days') }} days</span>. Reason: {{ info.get('delay_reason') }}
+                    {% else %}
+                    Yes (Delivered within due date)
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Liquidity damages (delayed delivery) to be deducted:</th>
+                <td>{{ info.get('liquidity_damages_deducted', 'No') }}</td>
+            </tr>
+            {% if info.get('liquidity_damages_deducted') == 'Yes' or info.get('justification_for_ld') %}
+            <tr>
+                <th>Justification for L.D (Delayed Delivery):</th>
+                <td style="font-style: italic;">{{ info.get('justification_for_ld', '-') }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Performance Security & Warranties</div>
+        <table class="details-table" style="width: 100%; margin-bottom: 15px;">
+            <tr>
+                <th style="width: 25%">PS terms:</th>
+                <td style="width: 25%">{{ info.get('ps_terms', '-') }}</td>
+                <th style="width: 25%">Bank Guarantee:</th>
+                <td style="width: 25%">{% if info.get('mode_of_ps') == 'Bank Guarantee' %}Value: ₹{{ "%.2f"|format(info.get('value_of_ps', 0.0)) }} · Expiry: {{ info.get('validity_of_ps', '-') }}{% else %}-{% endif %}</td>
+            </tr>
+            <tr>
+                <th>Payment terms:</th>
+                <td>{{ info.get('payment_terms', bp.payment_terms if bp else '-') }}</td>
+                <th>Bank Deposit Receipt:</th>
+                <td>{% if info.get('mode_of_ps') == 'Bank Deposit Receipt' %}Value: ₹{{ "%.2f"|format(info.get('value_of_ps', 0.0)) }}{% else %}-{% endif %}</td>
+            </tr>
+            <tr>
+                <th>Warranty terms:</th>
+                <td>{{ info.get('warranty_terms', '-') }}</td>
+                <th>Demand Draft:</th>
+                <td>{% if info.get('mode_of_ps') == 'Demand Draft' %}Value: ₹{{ "%.2f"|format(info.get('value_of_ps', 0.0)) }}{% else %}-{% endif %}</td>
+            </tr>
+            <tr>
+                <th>Warranty Period:</th>
+                <td>{{ info.get('warranty_period_required', 'No') }} {% if info.get('warranty_period_required') == 'Yes' %}({{ info.get('warranty_period_months') }} months){% endif %}</td>
+                <th>To be deducted Bill Payment:</th>
+                <td>{% if info.get('mode_of_ps') == 'To be deducted Bill Payment' %}Value: ₹{{ "%.2f"|format(info.get('value_of_ps', 0.0)) }}{% else %}-{% endif %}</td>
+            </tr>
+            <tr>
+                <th>Installation Required:</th>
+                <td>{{ info.get('installation_required', 'No') }}</td>
+                <th>Installation Cert Enclosed:</th>
+                <td>{{ info.get('installation_certificate_enclosed', 'No') }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Supplier & Payment Details</div>
+        <table class="details-table" style="width: 100%; margin-bottom: 15px;">
+            <tr>
+                <th style="width: 25%">Supplier Name:</th>
+                <td style="width: 25%">{{ info.get('supplier_name', pr.financial_evaluations[0].vendor_name if pr.financial_evaluations else '-') }}</td>
+                <th style="width: 25%">Firm Name:</th>
+                <td style="width: 25%">{{ info.get('firm_name', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Supplier GST No:</th>
+                <td>{{ info.get('supplier_gst', '-') }}</td>
+                <th>Account Number:</th>
+                <td class="bold">{{ info.get('account_number', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Invoice No / Date:</th>
+                <td>{{ bp.invoice_number if bp else '-' }} / {{ bp.invoice_date.strftime('%d/%m/%Y') if (bp and bp.invoice_date) else '-' }}</td>
+                <th>Account Holder:</th>
+                <td>{{ info.get('account_holder_name', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Invoice Amount:</th>
+                <td class="bold">₹{{ "%.2f"|format(info.get('invoice_amount', 0.0)) }}</td>
+                <th>Bank / Branch:</th>
+                <td>{{ info.get('bank_name', '-') }} · {{ info.get('branch_name', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Bill No / Justification:</th>
+                <td>{{ bp.challan_number or '-' }} / {{ info.get('justification', '-') }}</td>
+                <th>IFSC Code:</th>
+                <td class="bold">{{ info.get('ifsc_code', '-') }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Stock Register Details (Department)</div>
+        <table class="details-table" style="width: 100%; margin-bottom: 15px;">
+            <tr>
+                <th style="width: 35%">Name of the Laboratory / Office:</th>
+                <td style="width: 65%" class="bold">{{ info.get('lab_office_name', '-') }}</td>
+            </tr>
+            <tr>
+                <th>Non-Consumable Register Volume & Page:</th>
+                <td>Volume: <strong>{{ info.get('non_consumable_vol', '-') }}</strong> · Page Number: <strong>{{ info.get('non_consumable_page', '-') }}</strong></td>
+            </tr>
+            <tr>
+                <th>Consumable Register Volume & Page:</th>
+                <td>Volume: <strong>{{ info.get('consumable_vol', '-') }}</strong> · Page Number: <strong>{{ info.get('consumable_page', '-') }}</strong></td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Stores & Purchase Section (S&P Verification)</div>
+        <table class="details-table" style="width: 100%; margin-bottom: 15px;">
+            <tr>
+                <th style="width: 35%">Asset Register Volume & Page:</th>
+                <td style="width: 65%">Volume: <strong>{{ info.get('asset_register_volume', '-') }}</strong> · Page Number: <strong>{{ info.get('asset_register_page', '-') }}</strong></td>
+            </tr>
+            <tr>
+                <th>Received by Stores Section on:</th>
+                <td>{{ info.get('received_stores_date', '-') }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid;">
+        <div class="section-title">Bill Breakdown & Recommendation (Net Passed)</div>
+        <table class="details-table" style="width: 50%; margin-left: 0; margin-bottom: 25px;">
+            <tr>
+                <th>Total Accepted Items Value:</th>
+                <td style="text-align: right;">₹{{ "%.2f"|format(info.get('total_accepted_value', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <th>PS Withheld (if any):</th>
+                <td style="text-align: right; color: red;">- ₹{{ "%.2f"|format(info.get('ps_withheld', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <th>LD Imposed (if any):</th>
+                <td style="text-align: right; color: red;">- ₹{{ "%.2f"|format(info.get('ld_imposed', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <th>Advance Paid (if any):</th>
+                <td style="text-align: right; color: red;">- ₹{{ "%.2f"|format(info.get('advance_paid', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <th>LC Amount Released (if any):</th>
+                <td style="text-align: right;">₹{{ "%.2f"|format(info.get('lc_released', 0.0)) }}</td>
+            </tr>
+            <tr>
+                <th>Part Payment:</th>
+                <td style="text-align: right;">₹{{ "%.2f"|format(info.get('part_payment', 0.0)) }}</td>
+            </tr>
+            <tr style="background-color: #f1f5f9; border-top: 1.5px solid #334155;">
+                <th class="bold" style="color: #1a3a6b;">Net Payable Amount:</th>
+                <td class="bold" style="text-align: right; color: #1a3a6b;">₹{{ "%.2f"|format(info.get('net_amount', bp.bill_amount if bp else 0.0)) }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="page-break-inside: avoid; margin-top: 35px;">
+        <div class="section-title">Approvals and Signatures</div>
+        <table style="width: 100%; border: none; border-collapse: collapse;">
+            <tr style="border: none;">
+                <td style="width: 33%; text-align: center; border: none; padding-bottom: 5px; vertical-align: bottom; height: 50px;">
+                    {% if initiator_sig %}<img src="{{ initiator_sig }}" style="max-height: 45px; max-width: 120px; object-fit: contain;" />{% endif %}
+                </td>
+                <td style="width: 33%; text-align: center; border: none; padding-bottom: 5px; vertical-align: bottom; height: 50px;">
+                    {% if hod_sig %}<img src="{{ hod_sig }}" style="max-height: 45px; max-width: 120px; object-fit: contain;" />{% endif %}
+                </td>
+                <td style="width: 33%; text-align: center; border: none; padding-bottom: 5px; vertical-align: bottom; height: 50px;">
+                    {% if dr_ar_sp_sig %}<img src="{{ dr_ar_sp_sig }}" style="max-height: 45px; max-width: 120px; object-fit: contain;" />{% endif %}
+                </td>
+            </tr>
+            <tr style="border: none;">
+                <td style="width: 33%; text-align: center; border: none; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; font-size: 8.5pt;">
+                    Purchase Initiator
+                </td>
+                <td style="width: 33%; text-align: center; border: none; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; font-size: 8.5pt;">
+                    Head of the Department (HOD)
+                </td>
+                <td style="width: 33%; text-align: center; border: none; border-top: 1px solid #333; padding-top: 5px; font-weight: bold; font-size: 8.5pt;">
+                    Superintendent (S&P)
+                </td>
+            </tr>
+        </table>
+    </div>
 
     <!-- ============================================== -->
     <!-- FORM 9: MINUTES FOR PO CANCELLATION            -->
@@ -1824,7 +2051,7 @@
             <tr style="{{ 'background-color: #e6f4ea;' if fe.ranking == 'L1' else '' }}">
                 <td>{{ loop.index }}</td>
                 <td class="bold">{{ fe.vendor_name }}</td>
-                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} Lakhs</td>
+                <td class="bold">{{ fe.quoted_amount | format_inr }}</td>
                 <td class="bold">{{ fe.ranking }}</td>
                 <td>{{ fe.remarks or 'L1 bidder matches terms' if fe.ranking == 'L1' else '-' }}</td>
             </tr>
@@ -1879,7 +2106,7 @@
                 </td>
                 <td class="bold">
                     {% if te.is_qualified and fe %}
-                        ₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} L · {{ fe.ranking }}
+                        {{ fe.quoted_amount | format_inr }} · {{ fe.ranking }}
                     {% else %}
                         N/A (Disqualified)
                     {% endif %}
@@ -1925,7 +2152,7 @@
         </tr>
         <tr>
             <th>Total Sanction Value</th>
-            <td class="bold">₹{{ "%.2f"|format(pr.amount) }} Lakhs</td>
+            <td class="bold">{{ pr.amount | format_inr }}</td>
         </tr>
         <tr>
             <th>Single Source Justification</th>
@@ -2006,7 +2233,7 @@
             {% for fe in pr.financial_evaluations %}
             <tr style="{{ 'background-color: #e6f4ea;' if fe.ranking == 'L1' else '' }}">
                 <td class="bold">{{ fe.vendor_name }}</td>
-                <td class="bold">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) }} Lakhs</td>
+                <td class="bold">{{ fe.quoted_amount | format_inr }}</td>
                 <td class="bold">{{ fe.ranking }}</td>
             </tr>
             {% endfor %}
@@ -2114,7 +2341,7 @@
         </tr>
         <tr>
             <th>Estimated Amount</th>
-            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount / 100000.0) if pr.amount is not none else "0.00" }} Lakhs</td>
+            <td class="bold" style="color: #1a3a6b;">{{ pr.amount | format_inr }}</td>
             <th>Procurement Method</th>
             <td>{{ pr.procurement.name if pr.procurement else 'N/A' }}</td>
         </tr>
@@ -2145,7 +2372,7 @@
                 <th style="width: 8%">S.No</th>
                 <th style="width: 55%">Item Description</th>
                 <th style="width: 12%" class="text-right">Quantity</th>
-                <th style="width: 25%" class="text-right">Estimated Cost (Lakhs)</th>
+                <th style="width: 25%" class="text-right">Estimated Cost</th>
             </tr>
         </thead>
         <tbody>
@@ -2154,12 +2381,12 @@
                 <td>{{ loop.index }}</td>
                 <td>{{ item.item_description }}</td>
                 <td class="text-right">{{ item.quantity or 1 }}</td>
-                <td class="text-right">₹{{ "%.2f"|format(item.estimated_total / 100000.0) if item.estimated_total is not none else "0.00" }}</td>
+                <td class="text-right">{{ item.estimated_total | format_inr }}</td>
             </tr>
             {% endfor %}
             <tr class="bold" style="background-color: #f5f8fa !important;">
                 <td colspan="3" class="text-right">Grand Total:</td>
-                <td class="text-right" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.amount / 100000.0) if pr.amount is not none else "0.00" }} Lakhs</td>
+                <td class="text-right" style="color: #1a3a6b;">{{ pr.amount | format_inr }}</td>
             </tr>
         </tbody>
     </table>
@@ -2402,9 +2629,9 @@
                     {% if is_l1 %} <span style="color: green; font-size: 7.5pt;">(L1)</span>{% endif %}
                     {% if fe.is_awarded %} <span style="color: #1a3a6b; font-weight: bold; font-size: 7.5pt;">[★ AWARDED]</span>{% endif %}
                 </td>
-                <td>₹{{ "%.2f"|format(fe.unit_price / 100000.0) if fe.unit_price is not none else "-" }} L</td>
+                <td>{{ fe.unit_price | format_inr if fe.unit_price is not none else "-" }}</td>
                 <td>{{ "%.1f"|format(fe.taxes) if fe.taxes is not none else "0" }}%</td>
-                <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(fe.quoted_amount / 100000.0) if fe.quoted_amount is not none else "0.00" }} Lakhs</td>
+                <td class="bold" style="color: #1a3a6b;">{{ fe.quoted_amount | format_inr }}</td>
                 <td>{{ fe.delivery_period if fe.delivery_period is not none else "-" }} weeks</td>
                 <td>{{ fe.warranty if fe.warranty is not none else "-" }} months</td>
                 <td class="bold" style="color: {{ 'green' if is_l1 else 'orange' if is_l2 else 'black' }}">{{ fe.ranking }}</td>
@@ -2426,9 +2653,9 @@
         </tr>
         <tr>
             <th>Passed Bill Amount</th>
-            <td class="bold" style="color: #1a3a6b;">₹{{ "%.2f"|format(pr.bill_passing.bill_amount) }} Lakhs</td>
+            <td class="bold" style="color: #1a3a6b;">{{ pr.bill_passing.bill_amount | format_inr }}</td>
             <th>Passed GST Amount</th>
-            <td>₹{{ "%.2f"|format(pr.bill_passing.gst_amount) }} Lakhs</td>
+            <td>{{ pr.bill_passing.gst_amount | format_inr }}</td>
         </tr>
         <tr>
             <th>Payment Terms</th>

@@ -197,7 +197,7 @@ class ImportService:
         qty_idx = find_idx(["quantity", "qty"])
         total_cost_idx = find_idx(["total cost", "budget amount", "total amount", "amount", "total"])
         
-        exp_cat_idx = find_idx(["expenditure category", "expenditure type", "expenditure_category"])
+        exp_cat_idx = find_idx(["source of fund", "source_of_fund", "expenditure category", "expenditure type", "expenditure_category"])
         cat_idx = find_idx(["purchase category", "category", "type"])
         course_idx = find_idx(["course code", "course"])
         fy_idx = find_idx(["financial year", "fy", "financial_year"])
@@ -381,7 +381,7 @@ class ImportService:
                     bm.quantity = quantity
                     bm.financial_year_id = row_fy.id
                     if exp_cat_idx is not None:
-                        bm.expenditure_category = exp_cat
+                        bm.source_of_fund = exp_cat
                     if cat_idx is not None:
                         bm.category = cat
                     if course_idx is not None:
@@ -390,7 +390,7 @@ class ImportService:
                     bm = BudgetMaster(
                         department_id=dept_id,
                         financial_year_id=row_fy.id,
-                        expenditure_category=exp_cat,
+                        source_of_fund=exp_cat,
                         item_name=item_name,
                         category=cat,
                         course_code=course_code,

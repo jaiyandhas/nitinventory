@@ -49,6 +49,26 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
     { key: 'fin_approval_single', label: 'Financial Approval (Single Bid)', active: pr.single_bid_justification !== null }
   ];
 
+  // Fix 4: UTC-aware date formatter. Appends 'Z' if the ISO string lacks timezone info
+  // (prevents browser timezone offset from shifting the date by hours).
+  const formatSigDate = (dt: string): string => {
+    const iso = dt.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dt) ? dt : dt + 'Z';
+    return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  // Fix 6: Phase-scoped signature resolver — prevents signatures from bleeding between form templates.
+  // Each form template specifies allowedStatuses so only contextually correct history entries match.
+  const findSignatureScoped = (roleVal?: string, allowedStatuses?: string[], userId?: number): PRHistory | null => {
+    if (!pr.history) return null;
+    const sorted = [...pr.history].sort((a, b) => new Date(b.acted_at || 0).getTime() - new Date(a.acted_at || 0).getTime());
+    for (const h of sorted) {
+      const statusMatch = !allowedStatuses || allowedStatuses.some(s => h.status.toLowerCase().includes(s.toLowerCase()));
+      if (userId && h.approver_id === userId && statusMatch) return h;
+      if (roleVal && h.frozen_designation?.toLowerCase().includes(roleVal.toLowerCase()) && statusMatch) return h;
+    }
+    return null;
+  };
+
   // Helper to find signatures in history logs
   const findSignature = (roleVal?: string, statusKeyword?: string, userId?: number): PRHistory | null => {
     if (!pr.history) return null;
@@ -68,20 +88,23 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
     return null;
   };
 
-  // Signatures resolved from history snapshot logs
+  // Signatures resolved from history snapshot logs — scoped to relevant phase actions.
+  // Fix 6: Phase-specific scoping prevents signatures from bleeding across form templates.
+
+  // Administrative Approval phase signatures (used in indent, PAC, LPC, single-source forms)
+  const AA_STATUSES = ['approved', 'forwarded', 'administrative approval', 'initiated', 'submitted', 'sent back'];
   const initiatorSig = findSignature(undefined, undefined, pr.initiator_id);
-  const faculty1Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty1_id) || findSignature(undefined, 'Completed', pr.faculty1_id);
-  const faculty2Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty2_id) || findSignature(undefined, 'Completed', pr.faculty2_id);
-  const faculty3Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty3_id) || findSignature(undefined, 'Completed', pr.faculty3_id);
-  
-  // HOD verifier signature
-  const hodSig = findSignature('hod') || findSignature('head of department') || (pr.hod_id ? findSignature(undefined, undefined, pr.hod_id) : null);
-  
-  // Dean verifier signature
-  const deanSig = findSignature('dean_pd') || findSignature('dean');
-  
-  // Director approval signature
-  const directorSig = findSignature('director');
+  const hodSig = findSignatureScoped('hod', AA_STATUSES) || findSignatureScoped('head of department', AA_STATUSES)
+    || (pr.hod_id ? findSignatureScoped(undefined, AA_STATUSES, pr.hod_id) : null);
+  const deanSig = findSignatureScoped('dean_pd', AA_STATUSES) || findSignatureScoped('dean', AA_STATUSES);
+  const directorSig = findSignatureScoped('director', AA_STATUSES);
+
+  // Technical Evaluation phase signatures (used in tech_minutes form only)
+  const TE_STATUSES = ['technical evaluation'];
+  const faculty1Sig = findSignatureScoped(undefined, TE_STATUSES, pr.faculty1_id ?? undefined) || findSignature(undefined, 'Completed', pr.faculty1_id);
+  const faculty2Sig = findSignatureScoped(undefined, TE_STATUSES, pr.faculty2_id ?? undefined) || findSignature(undefined, 'Completed', pr.faculty2_id);
+  const faculty3Sig = findSignatureScoped(undefined, TE_STATUSES, pr.faculty3_id ?? undefined) || findSignature(undefined, 'Completed', pr.faculty3_id);
+
 
   const renderSignatureBlock = (title: string, sig: PRHistory | null, defaultName?: string) => {
     return (
@@ -107,7 +130,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
           <p className="text-xs font-bold text-slate-800">{sig?.frozen_actor_name || defaultName || 'Authorized Signatory'}</p>
           <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">{sig?.frozen_designation || title}</p>
           {sig?.acted_at && (
-            <p className="text-[9px] text-slate-500 font-medium mt-0.5">{new Date(sig.acted_at).toLocaleDateString()}</p>
+            <p className="text-[9px] text-slate-500 font-medium mt-0.5">{formatSigDate(sig.acted_at)}</p>
           )}
         </div>
       </div>
@@ -138,9 +161,10 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
             onChange={(e) => setSelectedModule(e.target.value)}
             className="bg-blue-900 border border-blue-700 text-white rounded px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
           >
-            {modules.map(m => (
-              <option key={m.key} value={m.key} className="bg-slate-900 text-white" disabled={!m.active}>
-                {m.label} {!m.active ? '(Not applicable)' : ''}
+            {/* Fix 5: Only render applicable modules in dropdown — inactive ones are filtered out entirely */}
+            {modules.filter(m => m.active).map(m => (
+              <option key={m.key} value={m.key} className="bg-slate-900 text-white">
+                {m.label}
               </option>
             ))}
           </select>

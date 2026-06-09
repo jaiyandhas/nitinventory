@@ -69,6 +69,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
 
   const isHOD = user && user.role?.group_key === 'hod' && pr.budget_file && Number(pr.budget_file.department_id) === Number(user.department_id || user.department?.id);
   const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
+  const isDean = user && (user.role?.group_key === 'dean' || user.role?.group_key === 'dean_pd' || user.role?.group_key === 'dean_approver' || user.role?.group_key === 'verifier_general');
 
   // HOD department faculties
   const { data: deptFaculties = [] } = useQuery<any[]>({
@@ -348,6 +349,11 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                 >
                   <Settings size={12} className="text-indigo-600" /> Configure Nominees
                 </button>
+              )}
+              {isDean && (
+                <span className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-semibold">
+                  🔒 Read-only — Committee nominees are set by HOD &amp; Director only
+                </span>
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-3 border border-slate-200 rounded">

@@ -135,12 +135,18 @@ async def test_bill_passing_lifecycle(db_session):
     """Test passing of bills, verification of delivery checks, and completion of the PR lifecycle."""
     db_session.commit = db_session.flush
 
-    # Fetch DA User and Faculty
+    # Fetch Users
     da_res = await db_session.execute(select(User).where(User.email == "da.stores@nitt.edu"))
     da_user = da_res.scalar_one()
 
     faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
     faculty = faculty_res.scalar_one()
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod_user = hod_res.scalar_one()
+
+    sp_res = await db_session.execute(select(User).where(User.email == "sp.stores@nitt.edu"))
+    sp_user = sp_res.scalar_one()
 
     # Create active PR with status PO_ISSUED
     pr = PurchaseRequest(
@@ -174,11 +180,12 @@ async def test_bill_passing_lifecycle(db_session):
         "bill_amount": 100000.0,
         "gst_amount": 18000.0,
         "payment_terms": "Immediate",
-        "remarks": "Bill verified and passed"
+        "remarks": "Bill verified and passed",
+        "net_amount": 100000.0
     }
 
     with pytest.raises(HTTPException) as exc_info:
-        await add_bill_passing(pr.id, body, db_session, user=da_user)
+        await add_bill_passing(pr.id, body, db_session, user=faculty)
     assert exc_info.value.status_code == 400
     assert "Delivery must be verified first" in exc_info.value.detail
 
@@ -192,23 +199,69 @@ async def test_bill_passing_lifecycle(db_session):
     db_session.add(delivery)
     await db_session.flush()
 
-    # 3. Call as a faculty (should fail with 403)
+    # 3. Call as a non-initiator/non-admin in Stage 1 (should fail with 403)
     with pytest.raises(HTTPException) as exc_info:
-        await add_bill_passing(pr.id, body, db_session, user=faculty)
+        await add_bill_passing(pr.id, body, db_session, user=da_user)
     assert exc_info.value.status_code == 403
-    assert "Only Dealing Assistants and Admins" in exc_info.value.detail
+    assert "Only the Purchase Initiator or Admin can draft" in exc_info.value.detail
 
-    # 4. Successful bill passing by DA user
-    res = await add_bill_passing(pr.id, body, db_session, user=da_user)
-    assert "Bill passed successfully" in res["message"]
+    # 4. Successful Stage 1 drafting by Purchase Initiator (faculty)
+    res = await add_bill_passing(pr.id, body, db_session, user=faculty)
+    assert "status updated successfully" in res["message"]
+
+    # Verify Stage 1 created BillPassing with pending_hod status
+    await db_session.refresh(pr)
+    bp_res = await db_session.execute(select(BillPassing).where(BillPassing.purchase_request_id == pr.id))
+    bp = bp_res.scalar_one()
+    assert bp.invoice_number == "INV-1001"
+    assert bp.bill_amount == 100000.0
+    assert bp.extra_info.get("status") == "pending_hod"
+
+    # 5. Call Stage 2 as non-HOD (should fail with 403)
+    hod_body = {
+        "non_consumable_vol": "NC Vol 1",
+        "non_consumable_page": "Page 12",
+        "consumable_vol": "C Vol 1",
+        "consumable_page": "Page 34",
+        "remarks": "HOD recommendation comments"
+    }
+    with pytest.raises(HTTPException) as exc_info:
+        await add_bill_passing(pr.id, hod_body, db_session, user=faculty)
+    assert exc_info.value.status_code == 403
+    assert "Only the department HOD or Admin can sign/approve" in exc_info.value.detail
+
+    # 6. Call Stage 2 as correct HOD
+    res = await add_bill_passing(pr.id, hod_body, db_session, user=hod_user)
+    assert "status updated successfully" in res["message"]
+
+    # Verify Stage 2 updated BillPassing to pending_superintendent
+    await db_session.refresh(bp)
+    assert bp.extra_info.get("status") == "pending_superintendent"
+    assert bp.extra_info.get("non_consumable_vol") == "NC Vol 1"
+
+    # 7. Call Stage 3 as non-Superintendent (should fail with 403)
+    sp_body = {
+        "asset_register_volume": "Asset Vol I",
+        "asset_register_page": "Page 45",
+        "received_stores_date": "2026-06-03",
+        "remarks": "Superintendent final comment"
+    }
+    with pytest.raises(HTTPException) as exc_info:
+        await add_bill_passing(pr.id, sp_body, db_session, user=hod_user)
+    assert exc_info.value.status_code == 403
+    assert "Only Superintendent S&P or Admin can sign/approve" in exc_info.value.detail
+
+    # 8. Call Stage 3 as Superintendent (should succeed and complete lifecycle)
+    res = await add_bill_passing(pr.id, sp_body, db_session, user=sp_user)
+    assert "status updated successfully" in res["message"]
 
     # Verify PR status updated to COMPLETED
     await db_session.refresh(pr)
     assert pr.current_status == RequestStatus.COMPLETED
 
-    # Verify BillPassing record created
-    bp_res = await db_session.execute(select(BillPassing).where(BillPassing.purchase_request_id == pr.id))
-    bp = bp_res.scalar_one()
-    assert bp.invoice_number == "INV-1001"
-    assert bp.bill_amount == 100000.0
-    assert bp.passed_by_id == da_user.id
+    # Verify BillPassing is completed
+    await db_session.refresh(bp)
+    assert bp.extra_info.get("status") == "completed"
+    assert bp.extra_info.get("asset_register_volume") == "Asset Vol I"
+    assert bp.passed_by_id == sp_user.id
+

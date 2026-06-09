@@ -120,7 +120,17 @@ export const inventoryApi = {
 
 // Assets
 export const assetsApi = {
-  list: (params?: { skip?: number; limit?: number }) => api.get('/assets/', { params }),
+  list: (params?: {
+    skip?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    condition?: string;
+    disposal_status?: string;
+    fund_source?: string;
+    department_id?: number;
+    year?: number;
+  }) => api.get('/assets/', { params }),
   get: (id: number) => api.get(`/assets/${id}`),
   create: (data: object) => api.post('/assets/', data),
   importCsv: (formData: FormData) =>
@@ -175,10 +185,10 @@ export const adminApi = {
   clearBudgets: () => api.delete('/admin/budget/clear'),
   getBudgetDetail: (id: number) => api.get(`/admin/budget/${id}`),
   getCategories: () => api.get('/admin/budget/categories'),
-  addCategory: (data: { type: 'expenditure' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
-  deleteBudgetCategory: (type: 'expenditure' | 'item', value: string) =>
+  addCategory: (data: { type: 'source_of_fund' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
+  deleteBudgetCategory: (type: 'source_of_fund' | 'item', value: string) =>
     api.delete('/admin/budget/categories', { params: { type, value } }),
-  getNextFileNumber: (params: { department_id: number; expenditure_category: string; financial_year_id: number }) =>
+  getNextFileNumber: (params: { department_id: number; source_of_fund: string; financial_year_id: number }) =>
     api.get('/admin/budget/next-file-number', { params }),
   forceAdvancePr: (prId: number, remarks: string) =>
     api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),

@@ -3,6 +3,7 @@ import {
   CheckCircle2, XCircle, RotateCcw, UserPlus, Plus, Trash2, ShieldAlert, AlertCircle
 } from 'lucide-react';
 import { prApi } from '../../../services/api';
+import { formatCurrency } from '../../../utils/format';
 import { PurchaseRequest } from '../../../types';
 import toast from 'react-hot-toast';
 
@@ -153,7 +154,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         const initialTenders = pr.commercial_evaluations.map(ce => ({
           name: ce.vendor_name,
           email: ce.vendor_email || '',
-          quoted_amount: ce.quoted_amount ? String(ce.quoted_amount / 100000) : '',
+          quoted_amount: ce.quoted_amount ? String(ce.quoted_amount) : '',
           is_qualified: ce.is_qualified !== false,
           remarks: ce.remarks || ''
         }));
@@ -220,7 +221,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         vendors: tenderVendors.map(v => ({
           name: v.name.trim(),
           email: v.email ? v.email.trim() : null,
-          quoted_amount: v.quoted_amount ? parseFloat(v.quoted_amount) * 100000 : null,
+          quoted_amount: v.quoted_amount ? parseFloat(v.quoted_amount) : null,
           is_qualified: v.is_qualified !== false,
           remarks: v.remarks
         })),
@@ -737,7 +738,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       <td className="px-3 py-2 font-medium">{ce.vendor_name}</td>
                       <td className="px-3 py-2 text-slate-500">{ce.vendor_email || '-'}</td>
                       <td className="px-3 py-2 font-semibold text-slate-800">
-                        {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? `₹${(ce.quoted_amount / 100000).toFixed(2)} Lakhs` : '-'}
+                        {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? formatCurrency(ce.quoted_amount) : '-'}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${ce.is_qualified ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>

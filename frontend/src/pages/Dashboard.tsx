@@ -100,8 +100,8 @@ export const DashboardPage: React.FC = () => {
   });
 
   const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00L';
-    return `₹${(n / 100000).toFixed(2)}L`;
+    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
+    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const formatRupee = (n: number) => {
@@ -280,10 +280,10 @@ export const DashboardPage: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[#1a3a6b]">
                   <Layers size={18} />
-                  <h3 className="text-sm font-bold uppercase tracking-wide">Expenditure Categories</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wide">Sources of Fund</h3>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed">
-                  Maintain the administrative expenditure category structure (CAPEX, OPEX, custom sources) and item categories.
+                  Maintain the administrative fund source structure (CAPEX, OPEX, custom sources) and item categories.
                 </p>
               </div>
               <Link to="/budget" className="btn-secondary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">

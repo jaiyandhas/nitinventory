@@ -64,7 +64,7 @@ class BudgetMaster(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), nullable=True)
     financial_year_id: Mapped[int] = mapped_column(ForeignKey("financial_years.id"), nullable=False)
-    expenditure_category: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_of_fund: Mapped[str] = mapped_column(String(255), nullable=False)
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(255), nullable=False)
     course_code: Mapped[str] = mapped_column(String(255), nullable=False)

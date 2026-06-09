@@ -28,7 +28,7 @@ export const PRTimeline: React.FC<PRTimelineProps> = ({ history = [] }) => {
               <div className="text-[10px] text-slate-400 mt-1 font-semibold">
                 {h.frozen_actor_name && `${h.frozen_actor_name} (${h.frozen_designation || 'Approver'})`}
               </div>
-              {h.acted_at && <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{new Date(h.acted_at).toLocaleString()}</div>}
+              {h.acted_at && <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{(() => { const iso = h.acted_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(h.acted_at) ? h.acted_at : h.acted_at + 'Z'; return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); })()}</div>}
             </div>
           </div>
         );

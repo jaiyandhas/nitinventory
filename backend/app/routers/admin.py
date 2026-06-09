@@ -367,7 +367,7 @@ async def financial_year_rollover(
                     new_bm = BudgetMaster(
                         department_id=old_bm.department_id,
                         financial_year_id=next_fy.id,
-                        expenditure_category=old_bm.expenditure_category,
+                        source_of_fund=old_bm.source_of_fund,
                         item_name=old_bm.item_name,
                         category=old_bm.category,
                         course_code=old_bm.course_code,
@@ -735,7 +735,7 @@ async def list_budget(
             "available_amount": b.available_balance,
             "available_balance": b.available_balance,
             "department_id": b.department_id,
-            "financial_year_id": b.financial_year_id, "expenditure_category": b.expenditure_category,
+            "financial_year_id": b.financial_year_id, "source_of_fund": b.source_of_fund, "expenditure_category": b.source_of_fund,
             "category": b.category, "unit_cost": b.unit_cost, "quantity": b.quantity,
             "file_no": b.file_no,
             "remarks": b.remarks,
@@ -765,13 +765,13 @@ async def budget_summary(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
 
 
 async def get_stored_categories(db: AsyncSession):
-    result_exp = await db.execute(select(Settings).where(Settings.key_name == "budget_expenditure_categories"))
+    result_exp = await db.execute(select(Settings).where(Settings.key_name == "budget_source_of_fund_categories"))
     exp_setting = result_exp.scalar_one_or_none()
     if exp_setting:
         exp_list = [c.strip() for c in exp_setting.value.split(",") if c.strip()]
     else:
         exp_list = ["CAPEX", "OPEX"]
-        db.add(Settings(key_name="budget_expenditure_categories", value="CAPEX,OPEX"))
+        db.add(Settings(key_name="budget_source_of_fund_categories", value="CAPEX,OPEX"))
         await db.flush()
 
     result_item = await db.execute(select(Settings).where(Settings.key_name == "budget_item_categories"))
@@ -791,11 +791,12 @@ async def get_stored_categories(db: AsyncSession):
         try:
             dean_cats = json.loads(dean_setting.value)
         except Exception:
-            dean_cats = {"expenditure": [], "item": []}
+            dean_cats = {"source_of_fund": [], "item": []}
     else:
-        dean_cats = {"expenditure": [], "item": []}
+        dean_cats = {"source_of_fund": [], "item": []}
 
     return {
+        "source_of_fund_categories": exp_list,
         "expenditure_categories": exp_list,
         "item_categories": item_list,
         "added_by_dean": dean_cats
@@ -823,12 +824,12 @@ async def add_budget_category(
         raise HTTPException(status_code=400, detail="Category value is required")
     val = val.strip()
 
-    if cat_type == "expenditure":
-        key = "budget_expenditure_categories"
+    if cat_type in ("source_of_fund", "expenditure"):
+        key = "budget_source_of_fund_categories"
     elif cat_type == "item":
         key = "budget_item_categories"
     else:
-        raise HTTPException(status_code=400, detail="Invalid type: must be 'expenditure' or 'item'")
+        raise HTTPException(status_code=400, detail="Invalid type: must be 'source_of_fund' or 'item'")
 
     result = await db.execute(select(Settings).where(Settings.key_name == key))
     setting = result.scalar_one_or_none()
@@ -861,11 +862,11 @@ async def add_budget_category(
             except Exception:
                 dean_cats = {"expenditure": [], "item": []}
             
-            if cat_type == "expenditure":
-                if "expenditure" not in dean_cats:
-                    dean_cats["expenditure"] = []
-                if val not in dean_cats["expenditure"]:
-                    dean_cats["expenditure"].append(val)
+            if cat_type in ("source_of_fund", "expenditure"):
+                if "source_of_fund" not in dean_cats:
+                    dean_cats["source_of_fund"] = []
+                if val not in dean_cats["source_of_fund"]:
+                    dean_cats["source_of_fund"].append(val)
             else:
                 if "item" not in dean_cats:
                     dean_cats["item"] = []
@@ -873,10 +874,10 @@ async def add_budget_category(
                     dean_cats["item"].append(val)
             dean_setting.value = json.dumps(dean_cats)
         else:
-            if cat_type == "expenditure":
-                dean_cats = {"expenditure": [val], "item": []}
+            if cat_type in ("source_of_fund", "expenditure"):
+                dean_cats = {"source_of_fund": [val], "item": []}
             else:
-                dean_cats = {"expenditure": [], "item": [val]}
+                dean_cats = {"source_of_fund": [], "item": [val]}
             db.add(Settings(key_name="budget_categories_added_by_dean", value=json.dumps(dean_cats)))
 
     await db.commit()
@@ -898,23 +899,23 @@ async def delete_budget_category(
     if not value:
         raise HTTPException(status_code=400, detail="Category value is required")
 
-    if type == "expenditure":
-        key = "budget_expenditure_categories"
+    if type in ("source_of_fund", "expenditure"):
+        key = "budget_source_of_fund_categories"
     elif type == "item":
         key = "budget_item_categories"
     else:
-        raise HTTPException(status_code=400, detail="Invalid type: must be 'expenditure' or 'item'")
+        raise HTTPException(status_code=400, detail="Invalid type: must be 'source_of_fund' or 'item'")
 
     # Load dean_setting to remove from there if needed
     result_dean = await db.execute(select(Settings).where(Settings.key_name == "budget_categories_added_by_dean"))
     dean_setting = result_dean.scalar_one_or_none()
-    dean_cats = {"expenditure": [], "item": []}
+    dean_cats = {"source_of_fund": [], "item": []}
     if dean_setting:
         import json
         try:
             dean_cats = json.loads(dean_setting.value)
         except Exception:
-            dean_cats = {"expenditure": [], "item": []}
+            dean_cats = {"source_of_fund": [], "item": []}
 
     # Verify if category exists in Settings
     result_setting = await db.execute(select(Settings).where(Settings.key_name == key))
@@ -924,7 +925,7 @@ async def delete_budget_category(
         existing = [c.strip() for c in setting.value.split(",") if c.strip()]
     else:
         # Fallback default values
-        if type == "expenditure":
+        if type in ("source_of_fund", "expenditure"):
             existing = ["CAPEX", "OPEX"]
         else:
             existing = ["computer", "lab_equipment", "software", "furniture"]
@@ -933,8 +934,8 @@ async def delete_budget_category(
         raise HTTPException(status_code=400, detail=f"Category '{value}' does not exist")
 
     # Check if category is currently used by any BudgetMaster entry
-    if type == "expenditure":
-        count_stmt = select(func.count(BudgetMaster.id)).where(BudgetMaster.expenditure_category == value)
+    if type in ("source_of_fund", "expenditure"):
+        count_stmt = select(func.count(BudgetMaster.id)).where(BudgetMaster.source_of_fund == value)
     else:
         count_stmt = select(func.count(BudgetMaster.id)).where(BudgetMaster.category == value)
 
@@ -956,9 +957,9 @@ async def delete_budget_category(
         db.add(setting)
 
     # Remove from dean_cats metadata list if it exists there
-    if type == "expenditure":
-        if value in dean_cats.get("expenditure", []):
-            dean_cats["expenditure"].remove(value)
+    if type in ("source_of_fund", "expenditure"):
+        if value in dean_cats.get("source_of_fund", []):
+            dean_cats["source_of_fund"].remove(value)
     else:
         if value in dean_cats.get("item", []):
             dean_cats["item"].remove(value)
@@ -973,14 +974,19 @@ async def delete_budget_category(
 @router.get("/budget/next-file-number")
 async def get_next_file_number(
     department_id: int,
-    expenditure_category: str,
-    financial_year_id: int,
+    source_of_fund: str = Query(None),
+    expenditure_category: str = Query(None),
+    financial_year_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     _=BudgetViewDep
 ):
     from app.models.user import Department
     from app.models.budget import FinancialYear, BudgetMaster
     from sqlalchemy import func
+
+    fund = source_of_fund or expenditure_category
+    if not fund:
+        raise HTTPException(status_code=400, detail="source_of_fund or expenditure_category is required")
 
     dept_res = await db.execute(select(Department).where(Department.id == department_id))
     dept = dept_res.scalar_one_or_none()
@@ -995,7 +1001,7 @@ async def get_next_file_number(
     stmt = select(func.count(BudgetMaster.id)).where(
         and_(
             BudgetMaster.department_id == department_id,
-            BudgetMaster.expenditure_category == expenditure_category,
+            BudgetMaster.source_of_fund == fund,
             BudgetMaster.financial_year_id == financial_year_id
         )
     )
@@ -1004,10 +1010,10 @@ async def get_next_file_number(
     next_num = count + 1
 
     dept_code = dept.short_code.upper()
-    source_code = expenditure_category.upper()
+    source_code = fund.upper()
     fy_label = fy.label.upper()
 
-    file_no = f"NITT/{dept_code}/{source_code}/{fy_label}/{next_num}"
+    file_no = f"NITT/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
     return {"file_no": file_no}
 
 
@@ -1023,7 +1029,8 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "id": b.id,
         "department_id": b.department_id,
         "financial_year_id": b.financial_year_id,
-        "expenditure_category": b.expenditure_category,
+        "source_of_fund": b.source_of_fund,
+        "expenditure_category": b.source_of_fund,
         "item_name": b.item_name,
         "category": b.category,
         "unit_cost": b.unit_cost,
@@ -1052,7 +1059,7 @@ async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBu
     b = BudgetMaster(
         department_id=int(body["department_id"]),
         financial_year_id=fy_id,
-        expenditure_category=body["expenditure_category"],
+        source_of_fund=body.get("source_of_fund") or body.get("expenditure_category"),
         item_name=body["item_name"],
         category=body["category"],
         course_code=body.get("course_code", "N/A"),
@@ -1095,8 +1102,10 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
         if new_fy.is_closed:
             raise HTTPException(status_code=400, detail="The target financial year is closed. Budgets in closed financial years cannot be modified.")
         b.financial_year_id = new_fy_id
-    if "expenditure_category" in body:
-        b.expenditure_category = body["expenditure_category"]
+    if "source_of_fund" in body:
+        b.source_of_fund = body["source_of_fund"]
+    elif "expenditure_category" in body:
+        b.source_of_fund = body["expenditure_category"]
     if "category" in body:
         b.category = body["category"]
     if "file_no" in body:

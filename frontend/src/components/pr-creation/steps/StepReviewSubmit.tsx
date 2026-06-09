@@ -29,6 +29,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
 }) => {
   const [confirmText, setConfirmText] = useState('');
   const canSubmit = confirmText.trim().toUpperCase() === 'CONFIRM' && common.termsAccepted.every(Boolean);
+  const isPac = procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac');
 
   const toggleTerm = (index: number) => {
     const next = [...common.termsAccepted];
@@ -88,6 +89,45 @@ export const StepReviewSubmit: React.FC<Props> = ({
               <span className="font-medium text-slate-700">📄 Basis of Estimation: {common.quotation_file.name}</span>
               <a
                 href={URL.createObjectURL(common.quotation_file)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          )}
+          {isPac && common.dept_pac_file && (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 Department PAC: {common.dept_pac_file.name}</span>
+              <a
+                href={URL.createObjectURL(common.dept_pac_file)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          )}
+          {isPac && common.oem_pac_file && (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 OEM PAC Certificate: {common.oem_pac_file.name}</span>
+              <a
+                href={URL.createObjectURL(common.oem_pac_file)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          )}
+          {isPac && common.oem_auth_file && (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 OEM Authorization Certificate: {common.oem_auth_file.name}</span>
+              <a
+                href={URL.createObjectURL(common.oem_auth_file)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"

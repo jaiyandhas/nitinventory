@@ -91,7 +91,16 @@ async def test_multiple_superintendents_tendering_flow(db_session):
     except ValueError as e:
         pytest.fail(f"Superintendent B should be authorized at Tendering step 1: {e}")
 
-    # 5. Superintendent A assigns DA
+    # Verify SP exclusivity list filtering
+    from app.routers.purchase_requests import list_prs
+    
+    # 1. Before assignment, both should see it
+    res_a_before = await list_prs(db=db_session, user=sp_a, skip=0, limit=50)
+    res_b_before = await list_prs(db=db_session, user=sp_b, skip=0, limit=50)
+    assert pr.id in {item["id"] for item in res_a_before["items"]}
+    assert pr.id in {item["id"] for item in res_b_before["items"]}
+
+    # 5. Superintendent A assigns DA (claims the PR)
     assignment = PurchaseRequestAssignment(
         purchase_request_id=pr.id,
         assigned_by_id=sp_a.id,
@@ -100,6 +109,12 @@ async def test_multiple_superintendents_tendering_flow(db_session):
     )
     db_session.add(assignment)
     await db_session.flush()
+
+    # 2. After assignment (claimed by A), SP A should see it, but SP B should NOT see it
+    res_a_after = await list_prs(db=db_session, user=sp_a, skip=0, limit=50)
+    res_b_after = await list_prs(db=db_session, user=sp_b, skip=0, limit=50)
+    assert pr.id in {item["id"] for item in res_a_after["items"]}
+    assert pr.id not in {item["id"] for item in res_b_after["items"]}
 
     pr = await flow_service.advance(pr, sp_a, remarks=f"Assigned to {da.name}")
     await db_session.refresh(pr, ["flow"])
