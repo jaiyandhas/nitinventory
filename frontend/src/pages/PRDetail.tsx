@@ -212,6 +212,7 @@ export const PRDetailPage: React.FC = () => {
   const activeReferral = pr.referrals?.find((ref: any) => ref.status === 'pending');
 
   const completedApprovers = pr.history?.filter((h: any) => 
+    !h.status?.includes('Voided') &&
     !['Forwarded', 'Forwarded to next phase', 'Initiated', 'pr_submitted', 'Tender Details Registered', 'Technical Evaluation Completed', 'Technical Evaluation Approved', 'Financial Bids Submitted', 'Bid Selected', 'PO Cancelled', 'Tender Cancelled', 'Bill Passed (PR Completed)'].includes(h.status)
   ) || [];
 
@@ -222,6 +223,7 @@ export const PRDetailPage: React.FC = () => {
     if (!pr.history) return null;
     const sorted = [...pr.history].sort((a, b) => new Date(b.acted_at || 0).getTime() - new Date(a.acted_at || 0).getTime());
     for (const h of sorted) {
+      if (h.status?.includes('Voided')) continue;
       if (userId && h.approver_id === userId) {
         if (!statusKeyword || h.status.toLowerCase().includes(statusKeyword.toLowerCase())) {
           return h;

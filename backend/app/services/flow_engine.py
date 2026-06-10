@@ -774,6 +774,70 @@ class FlowEngineService:
         if phase.phase_name == "Technical Evaluation" and to_step == 1:
             pr.te_initiated_at = datetime.utcnow()
 
+        # Void history entries for steps reset by the send-back
+        phase_name = phase.phase_name
+        if phase_name == "Technical Evaluation":
+            t_phase_start = pr.te_initiated_at
+        elif phase_name == "Financial Sanction":
+            t_phase_start = pr.fs_initiated_at
+        elif phase_name == "Purchase Order":
+            t_phase_start = pr.po_initiated_at
+        else:
+            t_phase_start = pr.created_at
+
+        if not t_phase_start:
+            t_phase_start = pr.created_at or datetime.min
+
+        t_cutoff = t_phase_start
+        if to_step > 1:
+            prev_step_def = await self._get_step_def(pr, flow.phase_id, to_step - 1)
+            if prev_step_def:
+                from sqlalchemy.orm import selectinload
+                await self.db.refresh(pr, ["history"])
+                sorted_hist = sorted(pr.history, key=lambda x: x.acted_at or datetime.min, reverse=True)
+                
+                prev_hist_entry = None
+                for h in sorted_hist:
+                    if h.acted_at and h.acted_at < t_phase_start:
+                        continue
+                    if "Voided" in (h.status or ""):
+                        continue
+                    
+                    if h.current_approver_id:
+                        user_res = await self.db.execute(
+                            select(User)
+                            .options(selectinload(User.role))
+                            .where(User.id == h.current_approver_id)
+                        )
+                        u = user_res.scalar_one_or_none()
+                        if u:
+                            matches = False
+                            if prev_step_def.user_type == "user" and prev_step_def.user_id:
+                                matches = (u.id == prev_step_def.user_id)
+                            elif prev_step_def.user_type == "purchase_initiator":
+                                matches = (u.id == pr.initiator_id)
+                            elif prev_step_def.user_type == "tech_evaluation":
+                                matches = (h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved"))
+                            elif prev_step_def.role_id:
+                                matches = (u.role_id == prev_step_def.role_id)
+                            elif prev_step_def.user_group:
+                                matches = (u.role and u.role.group_key == prev_step_def.user_group)
+                                
+                            if matches:
+                                prev_hist_entry = h
+                                break
+                if prev_hist_entry and prev_hist_entry.acted_at:
+                    t_cutoff = prev_hist_entry.acted_at
+
+        # Void all history entries created after or at t_cutoff in this round
+        await self.db.refresh(pr, ["history"])
+        for h in pr.history:
+            if h.acted_at:
+                is_after_cutoff = (h.acted_at >= t_cutoff) if to_step == 1 else (h.acted_at > t_cutoff)
+                if is_after_cutoff:
+                    if "Voided" not in (h.status or ""):
+                        h.status = f"{h.status} (Voided)"
+
         await self._add_history(pr, acted_by, "PR Sent Back", reason)
         await self.db.flush()        # Notify initiator
         await self.db.refresh(pr, ["initiator"])

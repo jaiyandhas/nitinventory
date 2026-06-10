@@ -485,3 +485,58 @@ async def test_purchase_order_signature_validation(db_session):
         assert "You must upload a digital signature" not in str(e)
 
 
+@pytest.mark.asyncio
+async def test_admin_approval_send_back_signature_voiding(db_session):
+    """Test that sending back from Director (step 3) to HOD (step 1) voids approvals/signatures of HOD and Dean."""
+    flow_service = FlowEngineService(db_session)
+
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+
+    director_res = await db_session.execute(select(User).where(User.email == "director@nitt.edu"))
+    director = director_res.scalar_one()
+
+    # Create Purchase Request
+    pr = PurchaseRequest(
+        amount=250000.0,
+        purchase_type="department",
+        initiator_id=faculty.id,
+        category_id=2,
+        financial_year_id=1,
+        procurement_id=1,
+        current_status="draft",
+    )
+    db_session.add(pr)
+    await db_session.flush()
+
+    await flow_service.initialize(pr, faculty)
+    await db_session.refresh(pr)
+
+    # 1. HOD Approves (Step 2 -> Step 3)
+    pr = await flow_service.advance(pr, hod, remarks="HOD approved")
+    
+    await db_session.refresh(pr, ["history", "flow"])
+    assert pr.flow.step_order == 3  # At Dean step
+
+    # 2. Dean sends back to HOD (Step 2)
+    await flow_service.send_back(pr, dean, to_step=2, reason="Need more specs")
+    await db_session.refresh(pr, ["history", "flow"])
+
+    assert pr.flow.step_order == 2
+    assert pr.current_status == RequestStatus.SENT_BACK
+
+    # Verify that HOD's previous approval is marked as Voided
+    hod_voided = False
+    for h in pr.history:
+        if h.current_approver_id == hod.id and "Voided" in h.status:
+            hod_voided = True
+
+    assert hod_voided is True, "HOD approval should be voided"
+
+

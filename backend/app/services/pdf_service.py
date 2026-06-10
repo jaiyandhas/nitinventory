@@ -244,6 +244,8 @@ class PDFService:
                 return None, None
             sorted_hist = sorted(pr.history, key=lambda x: x.acted_at or datetime.min, reverse=True)
             for h in sorted_hist:
+                if "Voided" in (h.status or ""):
+                    continue
                 if h.current_approver_id == user_id:
                     if status_filter is None or h.status in status_filter:
                         sig_url = get_valid_signature_url(h.frozen_signature_path)
@@ -297,6 +299,8 @@ class PDFService:
         ia_date = None
 
         for h in pr.history:
+            if "Voided" in (h.status or ""):
+                continue
             if h.current_approver_id:
                 actor_res = await self.db.execute(
                     select(User)
