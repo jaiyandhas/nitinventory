@@ -758,6 +758,22 @@ export const PRDetailPage: React.FC = () => {
               )}
 
             </div>
+
+            {/* Workflow History Log */}
+            <div className="card text-left">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Workflow History Log</h3>
+                <button onClick={() => setShowHistory(!showHistory)} className="text-slate-500 hover:text-[#1a3a6b]">
+                  {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+              </div>
+              {showHistory && (
+                <div className="p-6">
+                  <PRTimeline history={pr.history} currentStatus={pr.current_status} />
+                </div>
+              )}
+            </div>
+
           </div>
 
           {/* Right column: Status details / history */}
@@ -819,20 +835,7 @@ export const PRDetailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Workflow Timeline history */}
-            <div className="card h-fit">
-              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Workflow History Log</h3>
-                <button onClick={() => setShowHistory(!showHistory)} className="text-slate-500 hover:text-[#1a3a6b]">
-                  {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
-              </div>
-              {showHistory && (
-                <div className="p-5 max-h-[350px] overflow-y-auto pr-2">
-                  <PRTimeline history={pr.history} currentStatus={pr.current_status} />
-                </div>
-              )}
-            </div>
+            {/* Workflow Timeline history moved to main column */}
 
             {/* Quick Admin user role editor */}
             {isAdmin && (
