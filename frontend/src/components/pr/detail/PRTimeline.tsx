@@ -24,7 +24,11 @@ export const PRTimeline: React.FC<PRTimelineProps> = ({ history = [] }) => {
             </div>
             <div className="flex-1 pb-2">
               <div className="text-sm font-bold text-slate-800">{h.status}</div>
-              {h.remarks && <div className="text-xs text-slate-600 mt-1 italic">"{h.remarks}"</div>}
+              {h.remarks && (
+                <div className="text-sm text-slate-700 mt-1.5 p-3 rounded-lg border border-slate-100 bg-slate-50/50 whitespace-pre-wrap leading-relaxed shadow-xs">
+                  {h.remarks}
+                </div>
+              )}
               <div className="text-[10px] text-slate-400 mt-1 font-semibold">
                 {h.frozen_actor_name && `${h.frozen_actor_name} (${h.frozen_designation || 'Approver'})`}
               </div>
