@@ -215,7 +215,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
               )}
             </div>
           </div>
-          <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PR #${pr.id}`}</h1>
+          <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PI #${pr.id}`}</h1>
           <p className="text-sm font-medium text-slate-600 mt-1">
             {pr.category?.title} · {pr.procurement?.name}
             {pr.category?.requirement_type && ` · Nature of Requirement: ${pr.category.requirement_type}`}

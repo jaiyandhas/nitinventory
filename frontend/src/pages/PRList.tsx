@@ -27,12 +27,12 @@ export const PRListPage: React.FC = () => {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-header">Purchase Requests</h1>
-          <p className="page-subtitle">Showing {prs.length} request(s) of {total} total</p>
+          <h1 className="page-header">Purchase Indents</h1>
+          <p className="page-subtitle">Showing {prs.length} indent(s) of {total} total</p>
         </div>
         {isRole('faculty') && (
           <Link to="/pr/create" className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> New PR
+            <Plus size={16} /> Initiate Purchase Indent
           </Link>
         )}
       </div>
@@ -73,7 +73,7 @@ export const PRListPage: React.FC = () => {
                   </tr>
                 ))}
                 {prs.length === 0 && (
-                  <tr><td colSpan={6} className="text-center py-10 text-slate-500 text-sm font-medium">No purchase requests found.</td></tr>
+                  <tr><td colSpan={6} className="text-center py-10 text-slate-500 text-sm font-medium">No purchase indents found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -86,7 +86,7 @@ export const PRListPage: React.FC = () => {
                 <p className="text-sm text-slate-700">
                   Showing <span className="font-medium">{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
                   <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
-                  <span className="font-medium">{total}</span> requests
+                  <span className="font-medium">{total}</span> indents
                 </p>
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <span>Show</span>

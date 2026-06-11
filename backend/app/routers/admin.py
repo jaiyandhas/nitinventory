@@ -1359,6 +1359,10 @@ async def create_budget(
         if not is_dict_call:
             raise HTTPException(status_code=400, detail="Supporting document attachment is compulsory.")
 
+    if not is_dict_call:
+        if not remarks or not remarks.strip():
+            raise HTTPException(status_code=400, detail="Remarks / Justification is required")
+
     parsed_due_date = None
     if source_of_fund == "R&C":
         if not project_code or not project_code.strip():
@@ -1476,6 +1480,12 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     if "file_no" in body:
         new_file_no = body["file_no"].upper()
         if old_file_no.upper().startswith("TEMP") and not new_file_no.upper().startswith("TEMP"):
+            remarks = body.get("remarks")
+            if not remarks or not remarks.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Remarks / justification is required for budget file number allocation",
+                )
             new_file_no = await generate_permanent_file_number(
                 db, b.department_id, b.source_of_fund, b.financial_year_id
             )

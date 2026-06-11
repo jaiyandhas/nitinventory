@@ -102,7 +102,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
     setActionLoading(true);
     try {
       await prApi.advance(pr.id, remarks);
-      toast.success('PR advanced to next step');
+      toast.success('Purchase Indent advanced to next step');
       setRemarks('');
       refetch();
     } catch (e: any) {
@@ -196,7 +196,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
       setActionLoading(true);
       try {
         await prApi.advance(pr.id, remarks);
-        toast.success('PR advanced successfully');
+        toast.success('Purchase Indent advanced successfully');
         setRemarks('');
         refetch();
       } catch (e: any) {
@@ -349,7 +349,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
             </div>
             <p className="text-xs text-emerald-700">
               {allCommitteeSigned
-                ? 'All committee members have signed. Forward the PR to the next approval step.'
+                ? 'All committee members have signed. Forward the Purchase Indent to the next approval step.'
                 : 'You have successfully submitted your Technical Evaluation Report. Waiting for other committee members to sign.'}
             </p>
             {userTechEvalDoc && (

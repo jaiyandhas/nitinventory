@@ -418,6 +418,10 @@ export const BudgetPage: React.FC = () => {
                       <td>
                         <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
                           <div className="flex justify-between gap-2">
+                            <span className="text-slate-400">Initiator:</span>
+                            <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
+                          </div>
+                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
                             <span className="text-slate-400">Exp 1:</span>
                             <span className="font-medium text-slate-700 truncate">{b.expert1?.name || 'Not nominated'}</span>
                           </div>
@@ -428,10 +432,6 @@ export const BudgetPage: React.FC = () => {
                           <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
                             <span className="text-slate-400">Nominee:</span>
                             <span className="font-medium text-slate-850 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
-                          </div>
-                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
-                            <span className="text-slate-400">Initiator:</span>
-                            <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
                           </div>
                         </div>
                       </td>
@@ -698,6 +698,23 @@ export const BudgetPage: React.FC = () => {
             <form onSubmit={submitCommittee} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={allocatedInitiatorId || ''}
+                  onChange={e => setAllocatedInitiatorId(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Purchase Initiator...</option>
+                  {deptFaculties.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
                   Department Expert 1 <span className="text-rose-500">*</span>
                 </label>
                 <select
@@ -724,23 +741,6 @@ export const BudgetPage: React.FC = () => {
                   className="input-field w-full"
                 >
                   <option value="">Select Faculty Expert...</option>
-                  {deptFaculties.map((f: any) => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={allocatedInitiatorId || ''}
-                  onChange={e => setAllocatedInitiatorId(Number(e.target.value) || null)}
-                  required
-                  className="input-field w-full"
-                >
-                  <option value="">Select Purchase Initiator...</option>
                   {deptFaculties.map((f: any) => (
                     <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                   ))}
@@ -904,7 +904,7 @@ export const BudgetPage: React.FC = () => {
 
               <div className="space-y-1.5 pt-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block" htmlFor="alloc-remarks">
-                  Allocation Remarks / Comments <span className="text-slate-400 font-normal">(Optional)</span>
+                  Allocation Remarks / Comments <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   id="alloc-remarks"
@@ -912,6 +912,7 @@ export const BudgetPage: React.FC = () => {
                   placeholder="Enter remarks or approval notes for the audit trail..."
                   value={allocationRemarks}
                   onChange={(e) => setAllocationRemarks(e.target.value)}
+                  required
                   className="input-field w-full text-xs resize-none bg-white font-normal text-slate-700"
                 />
               </div>
@@ -927,6 +928,10 @@ export const BudgetPage: React.FC = () => {
               </button>
               <button
                 onClick={() => {
+                  if (!allocationRemarks.trim()) {
+                    toast.error('Allocation remarks are required');
+                    return;
+                  }
                   setSelectedBudgetId(selectedBudgetForAllocation.id);
                   assignPermanentFileNoMutation.mutate({
                     budgetId: selectedBudgetForAllocation.id,

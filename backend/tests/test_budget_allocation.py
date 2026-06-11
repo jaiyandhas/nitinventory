@@ -2,7 +2,7 @@ import pytest
 import traceback
 from fastapi import HTTPException, BackgroundTasks
 from sqlalchemy import select
-from app.models.budget import BudgetMaster
+from app.models.budget import BudgetMaster, FinancialYear
 from app.models.user import User
 from app.routers.budget import get_budget_files, assign_budget_committee
 from app.routers.purchase_requests import _persist_pr
@@ -26,9 +26,20 @@ async def test_budget_file_allocated_initiator(db_session):
         faculty1_res = await db_session.execute(select(User).where(User.email == "faculty1.cse@nitt.edu"))
         faculty_cse_other = faculty1_res.scalar_one()
 
-        # Find a budget file belonging to CSE
+        # Find active financial year
+        fy_res = await db_session.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+        active_fy = fy_res.scalar_one()
+
+        # Find a non-TEMP budget file belonging to CSE in the active financial year
+        from sqlalchemy import not_, and_
         bm_res = await db_session.execute(
-            select(BudgetMaster).where(BudgetMaster.department_id == hod.department_id).limit(1)
+            select(BudgetMaster).where(
+                and_(
+                    BudgetMaster.department_id == hod.department_id,
+                    BudgetMaster.financial_year_id == active_fy.id,
+                    not_(BudgetMaster.file_no.ilike("TEMP%"))
+                )
+            ).limit(1)
         )
         budget_file = bm_res.scalar_one()
 

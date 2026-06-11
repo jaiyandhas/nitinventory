@@ -120,19 +120,28 @@ export const DashboardPage: React.FC = () => {
 
       {/* Quick Actions (for Faculty) */}
       {isRole('faculty') && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
-          <div className="space-y-1 text-center sm:text-left">
-            <h4 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide">Initiate Procurement Request</h4>
-            <p className="text-xs text-slate-600 font-medium">
-              Create and submit a new purchase request using allocated budget files.
-            </p>
+        <div className="relative overflow-hidden bg-gradient-to-r from-[#1a3a6b] via-[#244b8f] to-[#2c5282] text-white rounded-xl p-8 shadow-md border border-blue-900">
+          <div className="absolute right-0 top-0 opacity-10 pointer-events-none transform translate-x-12 -translate-y-8 text-white">
+            <FileText size={220} />
           </div>
-          <Link
-            to="/pr/create"
-            className="btn-primary py-2 px-5 text-xs font-semibold rounded shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 shrink-0 animate-pulse"
-          >
-            <Plus size={15} /> Start New Request
-          </Link>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <h2 className="text-xl md:text-2xl font-extrabold tracking-tight text-white">
+                Initiate Purchase Indent
+              </h2>
+              <p className="text-sm text-blue-100 leading-relaxed font-medium">
+                Allocate funds from your department's active budget files to start a new procurement process.
+                All steps are designed to align seamlessly with institute guidelines and GFR rules.
+              </p>
+            </div>
+            <Link
+              to="/pr/create"
+              className="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 shrink-0 transform hover:-translate-y-0.5"
+            >
+              <Plus size={18} />
+              Initiate Purchase Indent
+            </Link>
+          </div>
         </div>
       )}
 
@@ -142,7 +151,7 @@ export const DashboardPage: React.FC = () => {
         <>
           {!isStoresUser && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
+              <StatCard icon={<FileText size={20} />} label="Active Indents" value={activePrs.length} color="#3b82f6" />
               <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
               <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
               <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
@@ -226,7 +235,7 @@ export const DashboardPage: React.FC = () => {
           {!isStoresUser && (
             <div className="card">
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Requests</h3>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Indents</h3>
                 <Link to="/pr" className="text-xs font-semibold text-[#1a3a6b] hover:underline">View All</Link>
               </div>
               <div className="overflow-x-auto">
@@ -261,7 +270,7 @@ export const DashboardPage: React.FC = () => {
                       </tr>
                     ))}
                     {prs.length === 0 && (
-                      <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase requests yet.</td></tr>
+                      <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase indents yet.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -276,7 +285,7 @@ export const DashboardPage: React.FC = () => {
 
 
           {/* Quick Operations and Workspaces Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 max-w-md gap-6">
             <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[#1a3a6b]">
@@ -289,36 +298,6 @@ export const DashboardPage: React.FC = () => {
               </div>
               <Link to="/budget" className="btn-primary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
                 Go to Budget Dashboard
-              </Link>
-            </div>
-
-            <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-[#1a3a6b]">
-                  <Layers size={18} />
-                  <h3 className="text-sm font-bold uppercase tracking-wide">Sources of Fund</h3>
-                </div>
-                <p className="text-slate-600 text-xs leading-relaxed">
-                  Maintain the administrative fund source structure (CAPEX, OPEX, custom sources) and item categories.
-                </p>
-              </div>
-              <Link to="/budget" className="btn-secondary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
-                View Categories
-              </Link>
-            </div>
-
-            <div className="card p-6 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col justify-between space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-[#1a3a6b]">
-                  <Package size={18} />
-                  <h3 className="text-sm font-bold uppercase tracking-wide">Active Financial Year</h3>
-                </div>
-                <p className="text-slate-600 text-xs leading-relaxed">
-                  Check active year start/end dates, roll over assets and balances, and view locked budget configurations.
-                </p>
-              </div>
-              <Link to="/budget" className="btn-secondary text-center py-2 px-4 rounded font-semibold text-xs transition-all mt-2">
-                Verify Fiscal Years
               </Link>
             </div>
           </div>

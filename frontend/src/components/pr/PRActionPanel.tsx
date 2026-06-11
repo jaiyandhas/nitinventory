@@ -98,7 +98,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   }, [pr]);
 
   const handleAdvance = async () => {
-    if (!remarks.trim()) { toast.error('Remarks are required to advance the PR'); return; }
+    if (!remarks.trim()) { toast.error('Remarks are required to advance the Purchase Indent'); return; }
 
     if (pr.flow?.phase_name === 'Administrative Approval') {
       if (isHOD) {
@@ -118,7 +118,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
       }
     }
 
-    if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
+    if (!window.confirm('Are you sure you want to approve and advance this purchase indent?')) return;
     setActionLoading(true);
     try {
       await prApi.advance(
@@ -129,7 +129,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         isHOD ? Number(expert2Id) : undefined,
         isDirector ? Number(directorFacultyId) : undefined
       );
-      toast.success('PR advanced successfully');
+      toast.success('Purchase Indent advanced successfully');
       setRemarks('');
       refetch();
     } catch (e: any) {
@@ -145,7 +145,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     setActionLoading(true);
     try {
       await prApi.reject(pr.id, finalRemarks);
-      toast.success('PR rejected');
+      toast.success('Purchase Indent rejected');
       setRemarks('');
       refetch();
     } catch (e: any) {
@@ -163,7 +163,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     setActionLoading(true);
     try {
       await prApi.sendBack(pr.id, Number(targetStep), finalRemarks);
-      toast.success('PR sent back successfully');
+      toast.success('Purchase Indent sent back successfully');
       setShowSendBackModal(false);
       setRemarks('');
       refetch();
@@ -175,13 +175,13 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   };
 
   const handleReinitiate = async () => {
-    if (!window.confirm('Are you sure you want to re-initiate this purchase request? This will clone all items and start a new approval process.')) {
+    if (!window.confirm('Are you sure you want to re-initiate this purchase indent? This will clone all items and start a new approval process.')) {
       return;
     }
     setActionLoading(true);
     try {
       const res = await prApi.reinitiatePr(pr.id);
-      toast.success('Purchase request re-initiated successfully!');
+      toast.success('Purchase indent re-initiated successfully!');
       window.location.href = `/pr/${res.data.id}`;
     } catch (e: any) {
       toast.error(e.response?.data?.detail || 'Failed to re-initiate request');
@@ -194,10 +194,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     return (
       <div className="card p-6 bg-red-50 border-red-200 space-y-4 text-left">
         <h3 className="text-sm font-bold text-red-800 uppercase tracking-wide border-b border-red-100 pb-2 flex items-center gap-2">
-          <XCircle size={18} /> Purchase Request Cancelled
+          <XCircle size={18} /> Purchase Indent Cancelled
         </h3>
         <p className="text-xs text-red-700 font-semibold">
-          This purchase request has been cancelled and its budget allocation has been refunded.
+          This purchase indent has been cancelled and its budget allocation has been refunded.
         </p>
         {isAuthorizedToCancel && (
           <div className="pt-2">
@@ -206,7 +206,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
               disabled={actionLoading}
               className="btn-primary py-2 px-6 font-semibold shadow-md flex items-center gap-2 bg-orange-600 hover:bg-orange-700 border-none text-white"
             >
-              <RotateCcw size={16} /> Re-initiate Purchase Request
+              <RotateCcw size={16} /> Re-initiate Purchase Indent
             </button>
           </div>
         )}
@@ -445,7 +445,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left">
           <div className="bg-white rounded-lg shadow-lg border border-slate-200 max-w-md w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-              Reflect Back Purchase Request
+              Reflect Back Purchase Indent
             </h3>
             
             <div>

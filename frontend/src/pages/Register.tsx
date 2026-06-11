@@ -23,7 +23,6 @@ export const RegisterPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [designation, setDesignation] = useState('');
-  const [gender, setGender] = useState('Male');
   const [deptId, setDeptId] = useState('');
   const [title, setTitle] = useState('Mr.');
   const [signature, setSignature] = useState<File | null>(null);
@@ -91,7 +90,6 @@ export const RegisterPage: React.FC = () => {
       formData.append('email', email);
       formData.append('password', password);
       formData.append('designation', designation);
-      formData.append('gender', gender);
       formData.append('department_id', deptId);
       formData.append('title', title);
       formData.append('signature', signature);
@@ -226,36 +224,21 @@ export const RegisterPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="glass-login-label">Gender</label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value)}
-                  className="glass-login-input"
-                >
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="glass-login-label">Department</label>
-                <select
-                  value={deptId}
-                  onChange={(e) => setDeptId(e.target.value)}
-                  className="glass-login-input"
-                  required
-                >
-                  <option value="">Select Dept</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.short_code} - {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="glass-login-label">Department</label>
+              <select
+                value={deptId}
+                onChange={(e) => setDeptId(e.target.value)}
+                className="glass-login-input"
+                required
+              >
+                <option value="">Select Dept</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.short_code} - {d.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Signature Upload */}

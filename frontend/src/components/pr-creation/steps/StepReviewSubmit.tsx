@@ -197,7 +197,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
           Back
         </button>
         <button type="button" disabled={!canSubmit || loading} className="btn-primary ml-auto" onClick={onSubmit}>
-          {loading ? 'Submitting…' : 'Submit purchase request'}
+          {loading ? 'Submitting…' : 'Submit purchase indent'}
         </button>
         <button type="button" className="btn-secondary" onClick={onCancel}>
           Cancel

@@ -11,7 +11,6 @@ export const ProfilePage: React.FC = () => {
   // Profile fields state
   const [name, setName] = useState('');
   const [designation, setDesignation] = useState('');
-  const [gender, setGender] = useState('male');
   const [title, setTitle] = useState('Mr.');
   const [designations, setDesignations] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -38,7 +37,6 @@ export const ProfilePage: React.FC = () => {
     if (user) {
       setName(user.name || '');
       setDesignation(user.designation || '');
-      setGender(user.gender || 'male');
       setTitle(user.title || 'Mr.');
       if (user.signature_path) {
         const sigUrl = user.signature_path.startsWith('http') || user.signature_path.startsWith('/')
@@ -173,7 +171,6 @@ export const ProfilePage: React.FC = () => {
       const formData = new FormData();
       formData.append('name', name);
       formData.append('designation', designation);
-      formData.append('gender', gender);
       formData.append('title', title);
 
       if (imageObj) {
@@ -251,29 +248,14 @@ export const ProfilePage: React.FC = () => {
               <p className="text-[10px] text-slate-400 mt-1">Contact administrator to change email.</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Designation</label>
-                <DesignationSelect
-                  value={designation}
-                  onChange={setDesignation}
-                  designations={designations}
-                  className="input-field w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Gender</label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value)}
-                  className="input-field w-full"
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Designation</label>
+              <DesignationSelect
+                value={designation}
+                onChange={setDesignation}
+                designations={designations}
+                className="input-field w-full"
+              />
             </div>
 
             <div>
@@ -313,7 +295,7 @@ export const ProfilePage: React.FC = () => {
           </div>
           
           <p className="text-xs text-slate-500 leading-relaxed">
-            This signature will be appended to purchase requests and action logs you approve across the system.
+            This signature will be appended to purchase indents and action logs you approve across the system.
           </p>
         </div>
       </div>

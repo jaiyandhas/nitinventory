@@ -105,13 +105,13 @@ export const NewPRPage: React.FC = () => {
         wizard.common
       );
       const res = await prApi.createWithFiles(formData);
-      toast.success(`PR created: ${res.data.icr_number ?? res.data.id}`);
+      toast.success(`Purchase Indent initiated: ${res.data.icr_number ?? res.data.id}`);
       wizard.clearDraft();  // ← clear saved draft on success
       queryClient.invalidateQueries({ queryKey: ['prs'] });
       navigate('/pr');
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || 'Failed to create PR');
+      toast.error(detail || 'Failed to initiate purchase indent');
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export const NewPRPage: React.FC = () => {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="page-header">New Purchase Request</h1>
+          <h1 className="page-header">Initiate Purchase Indent</h1>
           <p className="page-subtitle">
             Multi-step initiation aligned with institute procurement guidelines.
           </p>
@@ -130,7 +130,7 @@ export const NewPRPage: React.FC = () => {
         {wizard.stepIndex > 0 && (
           <button
             onClick={() => {
-              if (window.confirm('Discard this draft and start a new PR?')) {
+              if (window.confirm('Discard this draft and start a new purchase indent?')) {
                 wizard.clearDraft();
               }
             }}

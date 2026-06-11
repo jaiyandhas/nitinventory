@@ -45,7 +45,7 @@ export const DeliveriesPage: React.FC = () => {
               {deliveries.map((d: Delivery) => (
                 <tr key={d.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-bold text-[#1a3a6b]">#{d.id}</td>
-                  <td className="px-5 py-3 text-slate-700">PR #{d.po_id}</td>
+                  <td className="px-5 py-3 text-slate-700">PI #{d.po_id}</td>
                   <td className="px-5 py-3 text-slate-600">{d.challan_number || '—'}</td>
                   <td className="px-5 py-3">
                     <span className={`status-badge ${STATUS_COLORS[d.status] || ''}`}>
@@ -61,7 +61,7 @@ export const DeliveriesPage: React.FC = () => {
                 </tr>
               ))}
               {deliveries.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-10 text-slate-500 text-sm font-medium">No deliveries yet. PRs will appear here once PO is issued.</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-slate-500 text-sm font-medium">No deliveries yet. Purchase Indents will appear here once PO is issued.</td></tr>
               )}
             </tbody>
           </table>

@@ -60,7 +60,7 @@ export const FormsDashboardPage: React.FC = () => {
   const [selectedPrId, setSelectedPrId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // List all available Purchase Requests
+  // List all available Purchase Indents
   const { data: prsData, isLoading: isLoadingList } = useQuery({
     queryKey: ['prs', 'forms_dashboard'],
     queryFn: () => prApi.list({ limit: 200 }).then(r => r.data),
@@ -209,7 +209,7 @@ export const FormsDashboardPage: React.FC = () => {
     if (key === 'bill_passing') return "Active in the final phase after PO completion, delivery, and bill submission.";
     if (key === 'po_cancel') return "Active only if a Purchase Order is cancelled.";
     if (key === 'tender_cancel') return "Active only if the tender process is cancelled.";
-    return "This GFR module is not active for the current Purchase Request state.";
+    return "This GFR module is not active for the current Purchase Indent state.";
   };
 
   const isModuleActive = isFormActive(activeModule, activePr);
@@ -228,13 +228,13 @@ export const FormsDashboardPage: React.FC = () => {
     return (
       <div className="card p-12 text-center text-slate-500 font-medium bg-white rounded-lg border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-4">
         <EyeOff className="text-slate-400 mx-auto" size={40} />
-        <h2 className="text-base font-extrabold text-slate-800 uppercase">No Purchase Requests Found</h2>
+        <h2 className="text-base font-extrabold text-slate-800 uppercase">No Purchase Indents Found</h2>
         <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-          No active or historical Purchase Requests were found in the system. Create a Purchase Request first to inspect its generated real-time forms.
+          No active or historical Purchase Indents were found in the system. Initiate a Purchase Indent first to inspect its generated real-time forms.
         </p>
         <div className="pt-2">
           <Link to="/pr" className="btn-primary text-xs py-2 px-4">
-            Go to Purchase Requests
+            Go to Purchase Indents
           </Link>
         </div>
       </div>
@@ -257,7 +257,7 @@ export const FormsDashboardPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-4">
           {/* PR Selection */}
           <div className="flex flex-col space-y-1">
-            <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Purchase Request Binder</label>
+            <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Purchase Indent Binder</label>
             <div className="flex items-center gap-2">
               <select
                 value={selectedPrId}
@@ -381,18 +381,18 @@ export const FormsDashboardPage: React.FC = () => {
           {isLoadingDetail ? (
             <div className="bg-white border border-slate-200 rounded-lg p-16 text-center text-slate-500 font-medium">
               <div className="w-8 h-8 rounded-full border-2 border-[#1a3a6b] border-t-transparent animate-spin mx-auto mb-4" />
-              Loading form parameters from Purchase Request details...
+              Loading form parameters from Purchase Indent details...
             </div>
           ) : !activePr ? (
             <div className="bg-white border border-slate-200 rounded-lg p-16 text-center text-slate-400 font-medium">
-              Select a Purchase Request to view forms.
+              Select a Purchase Indent to view forms.
             </div>
           ) : !isModuleActive ? (
             <div className="bg-white border border-slate-200 rounded-lg p-12 text-center max-w-md mx-auto shadow-sm my-16 space-y-4">
               <EyeOff className="text-slate-400 mx-auto" size={40} />
               <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Form Module Inactive</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                This form module is not active for Purchase Request <strong className="text-slate-700">{activePr.icr_number || `#${activePr.id}`}</strong>.
+                This form module is not active for Purchase Indent <strong className="text-slate-700">{activePr.icr_number || `#${activePr.id}`}</strong>.
               </p>
               <div className="p-3 bg-slate-50 border border-slate-100 rounded text-xs text-slate-600 italic">
                 "{inactiveReason}"

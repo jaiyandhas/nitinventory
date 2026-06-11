@@ -236,11 +236,11 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                 disabled={actionLoading}
                 className="flex items-center gap-1.5 text-sm bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 px-3 py-1.5 rounded transition font-medium focus:outline-none cursor-pointer"
               >
-                <XCircle size={14} className="text-red-600 animate-pulse" /> Cancel Request
+                <XCircle size={14} className="text-red-600 animate-pulse" /> Cancel Indent
               </button>
             )}
           </div>
-          <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PR #${pr.id}`}</h1>
+          <h1 className="text-xl font-bold text-slate-800 uppercase">{pr.icr_number || `PI #${pr.id}`}</h1>
           <p className="text-sm font-medium text-slate-600 mt-1">
             {pr.category?.title} · {pr.procurement?.name}
             {pr.category?.requirement_type && ` · Nature of Requirement: ${pr.category.requirement_type}`}
@@ -257,9 +257,9 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           {pr.parent_pr && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-blue-800">
               <span className="px-2 py-0.5 bg-blue-100 border border-blue-300 text-blue-900 rounded text-[10px] uppercase font-bold tracking-wide">Rolled Over</span>
-              <span>This request was rolled over from</span>
+              <span>This indent was rolled over from</span>
               <Link to={`/pr/${pr.parent_pr.id}`} className="font-mono font-black text-blue-900 hover:text-blue-950 underline decoration-blue-400 decoration-2 hover:decoration-blue-700">
-                {pr.parent_pr.icr_number || `PR #${pr.parent_pr.id}`}
+                {pr.parent_pr.icr_number || `PI #${pr.parent_pr.id}`}
               </Link>
               <span className="font-normal text-slate-500">due to the closure of the previous financial year.</span>
             </div>
@@ -267,9 +267,9 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           {pr.child_prs && pr.child_prs.map((child: any) => (
             <div key={child.id} className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-blue-800">
               <span className="px-2 py-0.5 bg-indigo-100 border border-indigo-300 text-indigo-900 rounded text-[10px] uppercase font-bold tracking-wide">Revised Sequence</span>
-              <span>This request has been transferred to new financial year as</span>
+              <span>This indent has been transferred to new financial year as</span>
               <Link to={`/pr/${child.id}`} className="font-mono font-black text-indigo-900 hover:text-indigo-950 underline decoration-indigo-400 decoration-2 hover:decoration-indigo-700">
-                {child.icr_number || `PR #${child.id}`}
+                {child.icr_number || `PI #${child.id}`}
               </Link>
             </div>
           ))}

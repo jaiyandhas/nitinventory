@@ -307,7 +307,7 @@ export interface Asset {
 }
 
 export const PR_STATUS_LABELS: Record<PRStatus, string> = {
-  pr_submitted: 'PR Submitted',
+  pr_submitted: 'Purchase Indent Submitted',
   in_progress: 'In Progress',
   sent_back: 'Sent Back',
   rejected: 'Rejected',

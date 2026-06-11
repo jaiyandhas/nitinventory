@@ -125,6 +125,9 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   const [lpcMinutesReference, setLpcMinutesReference] = useState('');
   const [lpcRemarks, setLpcRemarks] = useState('');
 
+  // DA form tab state: 'draft' = Tender Scheduling, 'vendors' = Bidding Registry
+  const [daTab, setDaTab] = useState<'draft' | 'vendors'>('draft');
+
   const phaseName = pr.flow?.phase_name;
   const hasExistingDraft = pr.documents?.some((d: any) => d.doc_key === 'draft_tender_document');
   const hasExistingTender = pr.documents?.some((d: any) => d.doc_key === 'tender_document');
@@ -310,362 +313,410 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         <div className="space-y-4 bg-white p-5 border border-slate-200 rounded-xl shadow-sm animate-fadeIn text-left">
           <h4 className="text-sm font-bold text-[#1a3a6b] border-b border-slate-100 pb-1.5 flex justify-between items-center">
             <span>Register Tender Details</span>
-            <span className="text-[10px] text-slate-400 font-normal">Please fill in specs and bidders</span>
+            <span className="text-[10px] text-slate-400 font-normal">Complete both sections before submitting</span>
           </h4>
-          
-          <div className="space-y-2">
-            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Specifications</h5>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="label text-slate-600 font-semibold text-xs">Tender Ref Number *</label>
-                <div className="relative mt-1">
-                  <input 
-                    type="text" 
-                    value={tenderRef} 
-                    onChange={(e) => setTenderRef(e.target.value)} 
-                    className="input-field pl-8 py-1.5 text-xs" 
-                    placeholder="e.g. NITT/CSE/2026/04" 
-                    required
-                  />
-                  <span className="absolute left-3 top-2 text-slate-400 text-xs font-semibold font-mono">#</span>
-                </div>
-              </div>
-              <div>
-                <label className="label text-slate-600 font-semibold text-xs">Date of Tender *</label>
-                <input 
-                  type="date" 
-                  value={tenderDate} 
-                  onChange={(e) => setTenderDate(e.target.value)} 
-                  className="input-field mt-1 py-1.5 text-xs" 
-                  required
-                />
-              </div>
-              <div>
-                <label className="label text-slate-600 font-semibold text-xs">Tech Bid Opening</label>
-                <input 
-                  type="date" 
-                  value={techOpenDate} 
-                  onChange={(e) => setTechOpenDate(e.target.value)} 
-                  className="input-field mt-1 py-1.5 text-xs" 
-                />
-              </div>
-              <div>
-                <label className="label text-slate-600 font-semibold text-xs">Fin Bid Opening</label>
-                <input 
-                  type="date" 
-                  value={finOpenDate} 
-                  onChange={(e) => setFinOpenDate(e.target.value)} 
-                  className="input-field mt-1 py-1.5 text-xs" 
-                />
-              </div>
-              <div className="lg:col-span-4">
-                <label className="label text-slate-600 font-semibold text-xs">External Vendor List Document URL</label>
-                <input 
-                  type="url" 
-                  value={vendorListLink} 
-                  onChange={(e) => setVendorListLink(e.target.value)} 
-                  className="input-field mt-1 py-1.5 text-xs" 
-                  placeholder="https://drive.google.com/..." 
-                />
-              </div>
-            </div>
+
+          {/* Tab Switcher */}
+          <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setDaTab('draft')}
+              className={`flex-1 py-2 px-3 transition-colors ${
+                daTab === 'draft'
+                  ? 'bg-[#1a3a6b] text-white'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              1. Tender Scheduling
+            </button>
+            <button
+              type="button"
+              onClick={() => setDaTab('vendors')}
+              className={`flex-1 py-2 px-3 transition-colors border-l border-slate-200 ${
+                daTab === 'vendors'
+                  ? 'bg-[#1a3a6b] text-white'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              2. Bidding Registry
+            </button>
           </div>
 
-          {(pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc')) && (
-            <div className="space-y-2 pt-2 border-t border-slate-100 animate-fadeIn">
-              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Limited Purchase Committee Approval</h5>
-              
-              <div className="flex items-start gap-2.5 bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-950 shadow-xs my-2">
-                <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0" />
-                <div>
-                  <h5 className="font-bold text-[10px] uppercase tracking-wide text-amber-800 mb-0.5">Local Purchase Committee (LPC) - GFR 155 Disclaimer</h5>
-                  <p className="text-[11px] leading-relaxed text-amber-700 italic">"The department proposed to procure the above item(s) through Local Purchase Committee (LPC) as per GFR 155. It will be ensured that the indented item(s) are not available in GeM portal before processing the LPC. Further, the committee shall survey the market and record the certificate as per GFR 155 before placing the PO."</p>
+          {/* Tab 1: Tender Scheduling */}
+          {daTab === 'draft' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Specifications</h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-xs">Tender Ref Number *</label>
+                    <div className="relative mt-1">
+                      <input
+                        type="text"
+                        value={tenderRef}
+                        onChange={(e) => setTenderRef(e.target.value)}
+                        className="input-field pl-8 py-1.5 text-xs"
+                        placeholder="e.g. NITT/CSE/2026/04"
+                        required
+                      />
+                      <span className="absolute left-3 top-2 text-slate-400 text-xs font-semibold font-mono">#</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-xs">Date of Tender *</label>
+                    <input
+                      type="date"
+                      value={tenderDate}
+                      onChange={(e) => setTenderDate(e.target.value)}
+                      className="input-field mt-1 py-1.5 text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-xs">Tech Bid Opening</label>
+                    <input
+                      type="date"
+                      value={techOpenDate}
+                      onChange={(e) => setTechOpenDate(e.target.value)}
+                      className="input-field mt-1 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-xs">Fin Bid Opening</label>
+                    <input
+                      type="date"
+                      value={finOpenDate}
+                      onChange={(e) => setFinOpenDate(e.target.value)}
+                      className="input-field mt-1 py-1.5 text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label text-slate-600 font-semibold text-xs">LPC Committee Members *</label>
-                  <input 
-                    type="text" 
-                    value={lpcCommitteeMembers} 
-                    onChange={(e) => setLpcCommitteeMembers(e.target.value)} 
-                    className="input-field mt-1 py-1.5 text-xs" 
-                    placeholder="Dr. A, Dr. B, Dr. C"
-                    required
+              <div className="space-y-2 pt-1">
+                <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Draft Tender Document</h5>
+                <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
+                  <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-1 text-xs">
+                    <span>Draft Tender Document *</span>
+                    {hasExistingDraft && (
+                      <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[9px] font-medium">
+                        Saved: {pr.documents?.find((d: any) => d.doc_key === 'draft_tender_document')?.original_name}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="file"
+                    onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)}
+                    className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                    required={!hasExistingDraft}
                   />
+                  <p className="text-[10px] text-slate-400 mt-1 italic">Upload the draft tender document for Superintendent review before proceeding to vendor registration.</p>
                 </div>
-                <div>
-                  <label className="label text-slate-600 font-semibold text-xs">Minutes Reference Number *</label>
-                  <input 
-                    type="text" 
-                    value={lpcMinutesReference} 
-                    onChange={(e) => setLpcMinutesReference(e.target.value)} 
-                    className="input-field mt-1 py-1.5 text-xs" 
-                    placeholder="e.g. NITT/LPC/MIN/2026/04" 
-                    required
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="label text-slate-600 font-semibold text-xs">LPC Remarks / Decision *</label>
-                  <textarea 
-                    value={lpcRemarks} 
-                    onChange={(e) => setLpcRemarks(e.target.value)} 
-                    className="input-field mt-1 py-1.5 text-xs h-16" 
-                    placeholder="Provide committee recommendation and decision details..."
-                    required
-                  />
-                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDaTab('vendors')}
+                  className="btn-primary py-2 px-4 text-xs font-semibold"
+                >
+                  Next: Bidding Registry →
+                </button>
               </div>
             </div>
           )}
 
-          <div className="space-y-2 pt-1">
-            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Documents</h5>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
-                <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-1 text-xs">
-                  <span>Draft Tender Document *</span>
-                  {hasExistingDraft && (
-                    <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[9px] font-medium">
-                      Saved: {pr.documents?.find((d: any) => d.doc_key === 'draft_tender_document')?.original_name}
-                    </span>
-                  )}
-                </label>
-                <input 
-                  type="file" 
-                  onChange={(e) => setDraftTenderDoc(e.target.files?.[0] || null)} 
-                  className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
-                  required={!hasExistingDraft}
+          {/* Tab 2: Bidding Registry */}
+          {daTab === 'vendors' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Vendor List URL</h5>
+                <input
+                  type="url"
+                  value={vendorListLink}
+                  onChange={(e) => setVendorListLink(e.target.value)}
+                  className="input-field py-1.5 text-xs"
+                  placeholder="https://drive.google.com/..."
                 />
               </div>
+
+              {(pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc')) && (
+                <div className="space-y-2 pt-2 border-t border-slate-100 animate-fadeIn">
+                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Limited Purchase Committee Approval</h5>
+
+                  <div className="flex items-start gap-2.5 bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-950 shadow-xs my-2">
+                    <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <h5 className="font-bold text-[10px] uppercase tracking-wide text-amber-800 mb-0.5">Local Purchase Committee (LPC) - GFR 155 Disclaimer</h5>
+                      <p className="text-[11px] leading-relaxed text-amber-700 italic">"The department proposed to procure the above item(s) through Local Purchase Committee (LPC) as per GFR 155. It will be ensured that the indented item(s) are not available in GeM portal before processing the LPC. Further, the committee shall survey the market and record the certificate as per GFR 155 before placing the PO."</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label text-slate-600 font-semibold text-xs">LPC Committee Members *</label>
+                      <input
+                        type="text"
+                        value={lpcCommitteeMembers}
+                        onChange={(e) => setLpcCommitteeMembers(e.target.value)}
+                        className="input-field mt-1 py-1.5 text-xs"
+                        placeholder="Dr. A, Dr. B, Dr. C"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="label text-slate-600 font-semibold text-xs">Minutes Reference Number *</label>
+                      <input
+                        type="text"
+                        value={lpcMinutesReference}
+                        onChange={(e) => setLpcMinutesReference(e.target.value)}
+                        className="input-field mt-1 py-1.5 text-xs"
+                        placeholder="e.g. NITT/LPC/MIN/2026/04"
+                        required
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label text-slate-600 font-semibold text-xs">LPC Remarks / Decision *</label>
+                      <textarea
+                        value={lpcRemarks}
+                        onChange={(e) => setLpcRemarks(e.target.value)}
+                        className="input-field mt-1 py-1.5 text-xs h-16"
+                        placeholder="Provide committee recommendation and decision details..."
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-wrap gap-3 justify-between items-center border-b border-slate-100/50 pb-1">
+                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
+                  <div className="flex items-center gap-2">
+                    {masterVendors.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) return;
+                          const selected = masterVendors.find(mv => mv.vendor_name === val);
+                          if (selected) {
+                            if (tenderVendors.some(v => v.name === selected.vendor_name)) {
+                              toast.error('Vendor already added');
+                              return;
+                            }
+                            const newVendors = [...tenderVendors];
+                            if (newVendors.length === 1 && !newVendors[0].name && !newVendors[0].email) {
+                              newVendors[0] = {
+                                name: selected.vendor_name,
+                                email: selected.email || '',
+                                quoted_amount: '',
+                                is_qualified: true,
+                                remarks: ''
+                              };
+                            } else {
+                              newVendors.push({
+                                name: selected.vendor_name,
+                                email: selected.email || '',
+                                quoted_amount: '',
+                                is_qualified: true,
+                                remarks: ''
+                              });
+                            }
+                            setTenderVendors(newVendors);
+                          }
+                        }}
+                        className="text-[10px] py-0.5 px-1.5 border border-slate-300 rounded bg-white font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#1a3a6b]"
+                      >
+                        <option value="">-- Quick Add Vendor --</option>
+                        {masterVendors.map(mv => (
+                          <option key={mv.id} value={mv.vendor_name}>{mv.vendor_name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTenderVendors([
+                          ...tenderVendors,
+                          { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
+                        ]);
+                      }}
+                      className="btn-secondary py-0.5 px-2 flex items-center gap-1 text-[10px] font-semibold border-slate-200 hover:border-slate-300"
+                    >
+                      <Plus size={11} /> Add Row
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
+                  <table className="min-w-[950px] divide-y divide-slate-100 text-xs" style={{ minWidth: '950px' }}>
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th className="px-2 py-1.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
+                        <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
+                        <th className="px-2 py-1.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
+                        <th className="px-2 py-1.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
+                        <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
+                        <th className="px-2 py-1.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {tenderVendors.map((vendor, index) => (
+                        <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                          <td className="px-1.5 py-1">
+                            <input
+                              type="text"
+                              list="master-vendors-datalist"
+                              value={vendor.name}
+                              onChange={(e) => {
+                                const name = e.target.value;
+                                const matched = masterVendors.find(mv => mv.vendor_name.toLowerCase() === name.toLowerCase());
+                                setTenderVendors(tenderVendors.map((v, i) => i === index ? {
+                                  ...v,
+                                  name,
+                                  email: matched ? matched.email || '' : v.email
+                                } : v));
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
+                              placeholder="e.g. Apple Inc."
+                              required
+                            />
+                          </td>
+                          <td className="px-1.5 py-1">
+                            <input
+                              type="email"
+                              value={vendor.email}
+                              onChange={(e) => {
+                                setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, email: e.target.value } : v));
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
+                              placeholder="email@example.com"
+                            />
+                          </td>
+                          <td className="px-1.5 py-1">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={vendor.quoted_amount}
+                                onChange={(e) => {
+                                  setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, quoted_amount: e.target.value } : v));
+                                }}
+                                className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 pl-4 pr-1 text-xs rounded transition-all placeholder:text-slate-300"
+                                placeholder="0.00"
+                              />
+                              <span className="absolute left-1 top-1.5 text-[10px] text-slate-400 font-semibold">₹</span>
+                            </div>
+                          </td>
+                          <td className="px-1.5 py-1">
+                            <select
+                              value={vendor.is_qualified ? 'qualified' : 'unqualified'}
+                              onChange={(e) => {
+                                setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, is_qualified: e.target.value === 'qualified' } : v));
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1 text-xs rounded transition-all"
+                            >
+                              <option value="qualified">Qualified</option>
+                              <option value="unqualified">Not Qualified</option>
+                            </select>
+                          </td>
+                          <td className="px-1.5 py-1">
+                            <input
+                              type="text"
+                              value={vendor.remarks}
+                              onChange={(e) => {
+                                setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, remarks: e.target.value } : v));
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
+                              placeholder="Remarks"
+                            />
+                          </td>
+                          <td className="px-1.5 py-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...tenderVendors];
+                                updated.splice(index, 1);
+                                setTenderVendors(updated);
+                              }}
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-0.5"
+                              title="Delete Row"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
+                const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
+                const threshold = pr.flow.tender_vendors_threshold;
+                return renderTenderRoutingNotice(vendorCount, threshold, pr.flow.tender_vendors_comparison, 'sm');
+              })()}
+
+              {/* Optional: Final Tender Document */}
               <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
                 <label className="label text-slate-600 font-semibold flex flex-wrap gap-1 items-center mb-1 text-xs">
-                  <span>Tender Document (Optional)</span>
+                  <span>Final Tender Document (Optional)</span>
                   {hasExistingTender && (
                     <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 text-[9px] font-medium">
                       Saved: {pr.documents?.find((d: any) => d.doc_key === 'tender_document')?.original_name}
                     </span>
                   )}
                 </label>
-                <input 
-                  type="file" 
-                  onChange={(e) => setTenderDoc(e.target.files?.[0] || null)} 
-                  className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" 
+                <input
+                  type="file"
+                  onChange={(e) => setTenderDoc(e.target.files?.[0] || null)}
+                  className="w-full text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
                 />
               </div>
-            </div>
-          </div>
 
-          <div className="space-y-2 pt-1">
-            <div className="flex flex-wrap gap-3 justify-between items-center border-b border-slate-100/50 pb-1">
-              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bidding Vendor Registry</h5>
-              <div className="flex items-center gap-2">
-                {masterVendors.length > 0 && (
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) return;
-                      const selected = masterVendors.find(mv => mv.vendor_name === val);
-                      if (selected) {
-                        if (tenderVendors.some(v => v.name === selected.vendor_name)) {
-                          toast.error('Vendor already added');
-                          return;
-                        }
-                        const newVendors = [...tenderVendors];
-                        if (newVendors.length === 1 && !newVendors[0].name && !newVendors[0].email) {
-                          newVendors[0] = {
-                            name: selected.vendor_name,
-                            email: selected.email || '',
-                            quoted_amount: '',
-                            is_qualified: true,
-                            remarks: ''
-                          };
-                        } else {
-                          newVendors.push({
-                            name: selected.vendor_name,
-                            email: selected.email || '',
-                            quoted_amount: '',
-                            is_qualified: true,
-                            remarks: ''
-                          });
-                        }
-                        setTenderVendors(newVendors);
-                      }
-                    }}
-                    className="text-[10px] py-0.5 px-1.5 border border-slate-300 rounded bg-white font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#1a3a6b]"
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide official remarks/justification to register and advance..."
+                  className="input-field min-h-[60px] text-xs py-1.5"
+                  required
+                />
+
+                <div className="flex flex-wrap gap-2.5 pt-1">
+                  <button
+                    onClick={handleTenderSubmit}
+                    disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
+                    className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
                   >
-                    <option value="">-- Quick Add Vendor --</option>
-                    {masterVendors.map(mv => (
-                      <option key={mv.id} value={mv.vendor_name}>{mv.vendor_name}</option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTenderVendors([
-                      ...tenderVendors,
-                      { name: '', email: '', quoted_amount: '', is_qualified: true, remarks: '' }
-                    ]);
-                  }}
-                  className="btn-secondary py-0.5 px-2 flex items-center gap-1 text-[10px] font-semibold border-slate-200 hover:border-slate-300"
-                >
-                  <Plus size={11} /> Add Row
-                </button>
+                    <CheckCircle2 size={14} /> Submit Tender Details &amp; Advance
+                  </button>
+
+                  <button
+                    onClick={() => onReject(remarks)}
+                    disabled={actionLoading || !remarks.trim()}
+                    className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                  >
+                    <XCircle size={14} /> Reject
+                  </button>
+
+                  {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                    <button
+                      onClick={() => setShowSendBackModal(true)}
+                      disabled={actionLoading}
+                      className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                    >
+                      <RotateCcw size={14} /> Send Back
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
-              <table className="min-w-[950px] divide-y divide-slate-100 text-xs" style={{ minWidth: '950px' }}>
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
-                    <th className="px-2 py-1.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
-                    <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
-                    <th className="px-2 py-1.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
-                    <th className="px-2 py-1.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
-                    <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
-                    <th className="px-2 py-1.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {tenderVendors.map((vendor, index) => (
-                    <tr key={index} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-1.5 py-1">
-                        <input
-                          type="text"
-                          list="master-vendors-datalist"
-                          value={vendor.name}
-                          onChange={(e) => {
-                            const name = e.target.value;
-                            const matched = masterVendors.find(mv => mv.vendor_name.toLowerCase() === name.toLowerCase());
-                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { 
-                              ...v, 
-                              name, 
-                              email: matched ? matched.email || '' : v.email 
-                            } : v));
-                          }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
-                          placeholder="e.g. Apple Inc."
-                          required
-                        />
-                      </td>
-                      <td className="px-1.5 py-1">
-                        <input
-                          type="email"
-                          value={vendor.email}
-                          onChange={(e) => {
-                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, email: e.target.value } : v));
-                          }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
-                          placeholder="email@example.com"
-                        />
-                      </td>
-                      <td className="px-1.5 py-1">
-                        <div className="relative">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={vendor.quoted_amount}
-                            onChange={(e) => {
-                              setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, quoted_amount: e.target.value } : v));
-                            }}
-                            className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 pl-4 pr-1 text-xs rounded transition-all placeholder:text-slate-300"
-                            placeholder="0.00"
-                          />
-                          <span className="absolute left-1 top-1.5 text-[10px] text-slate-400 font-semibold">₹</span>
-                        </div>
-                      </td>
-                      <td className="px-1.5 py-1">
-                        <select
-                          value={vendor.is_qualified ? 'qualified' : 'unqualified'}
-                          onChange={(e) => {
-                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, is_qualified: e.target.value === 'qualified' } : v));
-                          }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1 text-xs rounded transition-all"
-                        >
-                          <option value="qualified">Qualified</option>
-                          <option value="unqualified">Not Qualified</option>
-                        </select>
-                      </td>
-                      <td className="px-1.5 py-1">
-                        <input
-                          type="text"
-                          value={vendor.remarks}
-                          onChange={(e) => {
-                            setTenderVendors(tenderVendors.map((v, i) => i === index ? { ...v, remarks: e.target.value } : v));
-                          }}
-                          className="w-full bg-white border border-slate-200 focus:border-[#1a3a6b] focus:ring-1 focus:ring-[#1a3a6b] py-1 px-1.5 text-xs rounded transition-all placeholder:text-slate-300"
-                          placeholder="Remarks"
-                        />
-                      </td>
-                      <td className="px-1.5 py-1 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = [...tenderVendors];
-                            updated.splice(index, 1);
-                            setTenderVendors(updated);
-                          }}
-                          className="text-slate-400 hover:text-rose-600 transition-colors p-0.5"
-                          title="Delete Row"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {pr.flow?.tender_vendors_threshold !== null && pr.flow?.tender_vendors_threshold !== undefined && (() => {
-            const vendorCount = tenderVendors.filter(v => v.name && v.name.trim() !== '').length;
-            const threshold = pr.flow.tender_vendors_threshold;
-            return renderTenderRoutingNotice(vendorCount, threshold, pr.flow.tender_vendors_comparison, 'sm');
-          })()}
-
-          <div className="pt-2 border-t border-slate-100 space-y-2">
-            <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Provide official remarks/justification to register and advance..."
-              className="input-field min-h-[60px] text-xs py-1.5"
-              required
-            />
-            
-            <div className="flex flex-wrap gap-2.5 pt-1">
-              <button 
-                onClick={handleTenderSubmit} 
-                disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
-                className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
-              >
-                <CheckCircle2 size={14} /> Submit Tender Details &amp; Advance
-              </button>
-
-              <button 
-                onClick={() => onReject(remarks)} 
-                disabled={actionLoading || !remarks.trim()} 
-                className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
-              >
-                <XCircle size={14} /> Reject
-              </button>
-
-              {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
-                <button 
-                  onClick={() => setShowSendBackModal(true)} 
-                  disabled={actionLoading} 
-                  className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
-                >
-                  <RotateCcw size={14} /> Send Back
-                </button>
-              )}
-            </div>
-          </div>
-          
           <datalist id="master-vendors-datalist">
             {masterVendors.map(mv => (
               <option key={mv.id} value={mv.vendor_name}>{mv.email}</option>

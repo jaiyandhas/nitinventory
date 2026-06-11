@@ -37,8 +37,11 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
     await db.refresh(user, ["role"])
     group_key = user.role.group_key if user.role else None
 
+    from sqlalchemy import not_
+
     filters = [
-        BudgetMaster.financial_year_id == fy.id
+        BudgetMaster.financial_year_id == fy.id,
+        not_(BudgetMaster.file_no.ilike("TEMP%"))
     ]
     
     if group_key in ("hod", "faculty") and user.department_id:

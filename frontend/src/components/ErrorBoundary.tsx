@@ -54,7 +54,7 @@ export class ErrorBoundary extends Component<Props, State> {
         description = "The server could not process the submitted parameters. Please review your inputs for correctness.";
       } else if (errorMsg.includes("404") || errorMsg.toLowerCase().includes("not found")) {
         title = "Resource Not Found";
-        description = "The purchase request or budget resource you are looking for does not exist or has been removed.";
+        description = "The purchase indent or budget resource you are looking for does not exist or has been removed.";
       } else if (errorMsg.includes("429") || errorMsg.toLowerCase().includes("too many requests") || errorMsg.toLowerCase().includes("rate limit")) {
         title = "Rate Limit Exceeded";
         description = "You have made too many requests in a short period. Please wait a moment and try again.";

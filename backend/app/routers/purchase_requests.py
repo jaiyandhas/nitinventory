@@ -246,6 +246,11 @@ async def _persist_pr(
             raise HTTPException(status_code=403, detail="Budget file belongs to a different department")
         if user.role.group_key == "faculty" and bm.allocated_initiator_id != user.id:
             raise HTTPException(status_code=403, detail="Budget file is not allocated to you")
+        if bm.file_no.upper().startswith("TEMP"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Budget file {bm.file_no} has a temporary file number and cannot be selected for a Purchase Indent until the Dean allocates a permanent file number."
+            )
         budget_by_id[fid] = bm
         
         item_data = items_by_budget.get(fid)

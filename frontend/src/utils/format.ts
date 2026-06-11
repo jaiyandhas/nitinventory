@@ -25,9 +25,8 @@ export const formatCurrency = (amount?: number | null) => {
 
 export const formatFileNo = (fileNo?: string | null, userRole?: string | null): string => {
   if (!fileNo) return '-';
-  const isTemp = fileNo.toUpperCase().startsWith('TEMP');
   const isHodOrFaculty = userRole === 'hod' || userRole === 'faculty';
-  if (isTemp && isHodOrFaculty) {
+  if (isHodOrFaculty && fileNo.toUpperCase().startsWith('TEMP')) {
     return 'Approved';
   }
   return fileNo;

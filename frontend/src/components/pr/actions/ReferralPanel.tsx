@@ -182,13 +182,13 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
       formData.append('payload', JSON.stringify({ referred_to_id: Number(selectedReferralUser), query: referralQuery.trim() }));
       if (queryFile) formData.append('query_document', queryFile);
       await prApi.referPr(pr.id, formData);
-      toast.success('Purchase request referred successfully');
+      toast.success('Purchase indent referred successfully');
       setSelectedReferralUser('');
       setReferralQuery('');
       setQueryFile(null);
       refetch();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Failed to refer purchase request');
+      toast.error(e.response?.data?.detail || 'Failed to refer purchase indent');
     } finally {
       setActionLoading(false);
     }
@@ -274,7 +274,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
               <Users size={18} className="text-amber-600" /> Awaiting Consultation Response
             </h3>
             <p className="text-xs text-amber-700 font-medium leading-relaxed">
-              This purchase request has been referred to{' '}
+              This purchase indent has been referred to{' '}
               <span className="font-bold text-slate-800">{activeReferral.referred_to?.name} ({activeReferral.referred_to?.email})</span> for an opinion.
             </p>
             <div className="bg-white border border-amber-100 rounded p-3 text-xs text-slate-600 space-y-1">
@@ -304,7 +304,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
             <Users size={14} className="text-slate-500" /> Seek Ad-hoc Consultation (Optional)
           </h4>
           <p className="text-[11px] text-slate-500 font-medium">
-            Refer this purchase request to another user to seek their feedback or opinion. This will temporarily freeze the workflow until they respond.
+            Refer this purchase indent to another user to seek their feedback or opinion. This will temporarily freeze the workflow until they respond.
           </p>
           <form onSubmit={handleReferPr} className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end bg-white border border-slate-200 p-5 rounded-lg shadow-xs">
             <div className="space-y-1">

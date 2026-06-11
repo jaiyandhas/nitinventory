@@ -40,6 +40,7 @@ export const StepSelectFiles: React.FC<Props> = ({
     const filtered = budgetFiles.filter((f) => {
       if (f.id === current) return true;
       if (usedElsewhere.has(f.id)) return false;
+      if (f.file_no.toUpperCase().startsWith('TEMP')) return false;
       if (!filterText) return true;
       return (
         f.file_no.toLowerCase().includes(filterText) ||

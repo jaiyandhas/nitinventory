@@ -269,14 +269,10 @@ export const UsersPage: React.FC = () => {
                         <span className="font-bold text-slate-700 text-sm mt-0.5 block">{u.designation || 'N/A'}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400 font-semibold uppercase block tracking-wider">Gender</span>
-                        <span className="font-bold text-slate-700 text-sm mt-0.5 block">{u.gender || 'N/A'}</span>
-                      </div>
-                      <div>
                         <span className="text-slate-400 font-semibold uppercase block tracking-wider">Target Role</span>
                         <span className="font-bold text-slate-700 text-sm mt-0.5 block">{u.role?.name || 'N/A'}</span>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <span className="text-slate-400 font-semibold uppercase block tracking-wider">Department</span>
                         <span className="font-bold text-slate-700 text-sm mt-0.5 block">{u.department?.short_code || 'N/A'}</span>
                       </div>

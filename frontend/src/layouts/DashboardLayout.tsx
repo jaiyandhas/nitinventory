@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Wallet, Package, Box, Settings,
   Users, ChevronLeft, ChevronRight, LogOut, Bell, Menu, X,
-  Truck, AlertTriangle, BarChart2, User, Layers
+  Truck, AlertTriangle, BarChart2, User, Layers, PenLine
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,10 +16,10 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Purchase Requests', icon: FileText, href: '/pr' },
+  { label: 'Purchase Indents', icon: FileText, href: '/pr' },
   { label: 'Budget', icon: Wallet, href: '/budget', roles: ['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver'] },
   { label: 'Deliveries', icon: Truck, href: '/inventory/deliveries', roles: ['faculty', 'hod', 'verifier_sp', 'admin'] },
-  { label: 'Assets', icon: Box, href: '/assets', roles: ['hod', 'verifier_sp', 'admin'] },
+  { label: 'Assets', icon: Box, href: '/assets' },
   { label: 'Discrepancies', icon: AlertTriangle, href: '/inventory/discrepancies', roles: ['admin', 'verifier_sp', 'apex_approver'] },
   { label: 'Analytics', icon: BarChart2, href: '/analytics', roles: ['admin', 'apex_approver'] },
   { label: 'My Profile', icon: User, href: '/profile' },
@@ -35,7 +35,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const navigate = useNavigate();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
-    if (item.label === 'Purchase Requests' && user?.designation === 'Dean P&D (Budget)') {
+    if (item.label === 'Purchase Indents' && user?.designation === 'Dean P&D (Budget)') {
       return false;
     }
     return !item.roles || (user?.role && item.roles.includes(user.role.group_key));
@@ -175,6 +175,23 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             </button>
           </div>
         </header>
+
+        {/* Signature Required Banner */}
+        {user && !user.signature_path && location.pathname !== '/profile' && (
+          <div className="flex items-center gap-3 px-6 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-900 flex-shrink-0">
+            <PenLine size={15} className="text-amber-600 shrink-0" />
+            <p className="text-xs font-semibold flex-1">
+              <span className="font-bold">Digital Signature Required —</span>{' '}
+              Your account has no digital signature uploaded. Workflow approvals and official documents require your signature.
+            </p>
+            <Link
+              to="/profile"
+              className="shrink-0 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3 py-1 rounded transition-colors"
+            >
+              Upload Signature →
+            </Link>
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">

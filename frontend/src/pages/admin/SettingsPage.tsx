@@ -185,7 +185,7 @@ export const SettingsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin_categories'] });
       queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
     },
-    onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete category. It is referenced by existing purchase requests.')
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete category. It is referenced by existing purchase indents.')
   });
 
   // Procurement CRUD mutations
@@ -210,7 +210,7 @@ export const SettingsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin_procs'] });
       queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
     },
-    onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete procurement method. It is referenced by existing purchase requests.')
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete procurement method. It is referenced by existing purchase indents.')
   });
 
   // Financial Year mutations
@@ -301,8 +301,8 @@ export const SettingsPage: React.FC = () => {
       "This action will:\n" +
       "1. Deactivate and close the current financial year.\n" +
       "2. Activate the next financial year.\n" +
-      "3. Automatically rollover all active/in-progress purchase requests to the new financial year.\n" +
-      "4. Generate revised PR reference numbers (R-01, R-02, etc.) for the new year.\n" +
+      "3. Automatically rollover all active/in-progress purchase indents to the new financial year.\n" +
+      "4. Generate revised PI reference numbers (R-01, R-02, etc.) for the new year.\n" +
       "5. Transfer and lock the budget allocations for these items.\n\n" +
       "This operation is irreversible. Are you sure you want to proceed?")) {
       rolloverMutation.mutate();
@@ -787,7 +787,7 @@ export const SettingsPage: React.FC = () => {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 flex items-start gap-2 mb-6">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold">Cascade Deletion Warning:</span> Deleting a Purchase Category will immediately cascade and delete all associated workflow steps in the settings. If a category is already referenced by submitted purchase requests, deletion will be blocked by the server database.
+                <span className="font-bold">Cascade Deletion Warning:</span> Deleting a Purchase Category will immediately cascade and delete all associated workflow steps in the settings. If a category is already referenced by submitted purchase indents, deletion will be blocked by the server database.
               </div>
             </div>
 
@@ -1091,7 +1091,7 @@ export const SettingsPage: React.FC = () => {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 flex items-start gap-2 mb-6">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold">Cascade Deletion Warning:</span> Deleting a Procurement Mode will immediately cascade and delete all associated workflow steps in the settings. If a mode is already referenced by submitted purchase requests, deletion will be blocked by the server database.
+                <span className="font-bold">Cascade Deletion Warning:</span> Deleting a Procurement Mode will immediately cascade and delete all associated workflow steps in the settings. If a mode is already referenced by submitted purchase indents, deletion will be blocked by the server database.
               </div>
             </div>
 
@@ -1722,7 +1722,7 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Active Status</label>
                 <select name="is_active" defaultValue={editingCat?.is_active ? 'true' : 'false'} className="input-field w-full">
-                  <option value="true">Active (Enabled in PR creation)</option>
+                  <option value="true">Active (Enabled in PI creation)</option>
                   <option value="false">Inactive (Disabled)</option>
                 </select>
               </div>
@@ -1924,7 +1924,7 @@ export const SettingsPage: React.FC = () => {
           <RefreshCw className="animate-spin text-amber-400" size={48} />
           <h2 className="text-xl font-bold Outfit">Year-End Rollover in Progress</h2>
           <p className="text-sm text-slate-300 max-w-sm text-center">
-            Cloning active purchase requests, transferring locked budgets, and updating reference numbers. Please do not close or refresh this page.
+            Cloning active purchase indents, transferring locked budgets, and updating reference numbers. Please do not close or refresh this page.
           </p>
         </div>
       )}

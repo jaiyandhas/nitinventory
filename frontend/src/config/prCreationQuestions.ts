@@ -19,7 +19,7 @@ export const PR_CREATION_STEPS = [
   { id: 'select', label: 'Select Files', description: 'Choose budget files and mode of procurement' },
   { id: 'review', label: 'Review Selection', description: 'Confirm selected files before detailed questions' },
   { id: 'items', label: 'Item Details', description: 'Per-file procurement questions' },
-  { id: 'common', label: 'Common Details', description: 'Details applied to the entire purchase request' },
+  { id: 'common', label: 'Common Details', description: 'Details applied to the entire purchase indent' },
   { id: 'submit', label: 'Review & Submit', description: 'Terms acceptance and confirmation' },
 ] as const;
 

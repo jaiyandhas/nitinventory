@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save, Loader2, Plus, Check, Trash2, Paperclip, FileText, X } from 'lucide-react';
-import { adminApi, budgetApi } from '../../services/api';
+import { adminApi, budgetApi, authApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
@@ -13,7 +13,7 @@ export const BudgetFormPage: React.FC = () => {
   const isEdit = !!id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAdmin, isHod, user } = useAuth();
+  const { isAdmin, isHod, user, loading: authLoading } = useAuth();
   const userGroupKey = user?.role?.group_key || '';
 
   // Form states
@@ -27,7 +27,14 @@ export const BudgetFormPage: React.FC = () => {
   const [fileNo, setFileNo] = useState<string>('');
   const [isAutoRolling, setIsAutoRolling] = useState<boolean>(!isEdit);
   // isTemporary: HODs always create temporary budget files; Dean/Admin can opt-in
-  const [isTemporary, setIsTemporary] = useState<boolean>(isHod());
+  const [isTemporary, setIsTemporary] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      setIsTemporary(isHod());
+    }
+  }, [authLoading, user]);
+
   const [remarks, setRemarks] = useState<string>('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = React.useRef<HTMLInputElement>(null);
@@ -60,7 +67,7 @@ export const BudgetFormPage: React.FC = () => {
   // Queries
   const { data: depts = [], isLoading: loadingDepts } = useQuery({
     queryKey: ['admin_departments'],
-    queryFn: () => adminApi.departments().then(res => res.data),
+    queryFn: () => authApi.departments().then(res => res.data),
   });
 
   const { data: fys = [], isLoading: loadingFys } = useQuery({
@@ -103,14 +110,14 @@ export const BudgetFormPage: React.FC = () => {
 
   // Set initial department — HODs are locked to their own department
   useEffect(() => {
-    if (!isEdit && depts.length > 0) {
+    if (!isEdit && !authLoading && depts.length > 0) {
       if (isHod() && user?.department_id) {
         setDepartmentId(user.department_id);
       } else if (departmentId === 0) {
         setDepartmentId(depts[0].id);
       }
     }
-  }, [isEdit, depts, departmentId, user]);
+  }, [isEdit, depts, departmentId, user, authLoading]);
 
   useEffect(() => {
     if (!isEdit && fys.length > 0 && financialYearId === 0) {
@@ -118,6 +125,22 @@ export const BudgetFormPage: React.FC = () => {
       if (activeFy) setFinancialYearId(activeFy.id);
     }
   }, [isEdit, fys, financialYearId]);
+
+  // Sync selected source of fund and item category with loaded options if default value is not present
+  useEffect(() => {
+    if (!isEdit && cats) {
+      if (cats.source_of_fund_categories && cats.source_of_fund_categories.length > 0) {
+        if (!cats.source_of_fund_categories.includes(expenditureCategory)) {
+          setExpenditureCategory(cats.source_of_fund_categories[0]);
+        }
+      }
+      if (cats.item_categories && cats.item_categories.length > 0) {
+        if (!cats.item_categories.includes(category)) {
+          setCategory(cats.item_categories[0]);
+        }
+      }
+    }
+  }, [isEdit, cats, expenditureCategory, category]);
 
   // Auto-roll file number; HOD-created files get TEMP/ prefix when isTemporary is on
   useEffect(() => {
@@ -243,7 +266,7 @@ export const BudgetFormPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!departmentId || !financialYearId || !expenditureCategory || !category || !itemName || !fileNo) {
+    if (!departmentId || !financialYearId || !expenditureCategory || !category || !itemName || !fileNo || !remarks.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -299,7 +322,7 @@ export const BudgetFormPage: React.FC = () => {
 
   const totalCost = unitCost * quantity;
 
-  if (loadingDepts || loadingFys || loadingCats || (isEdit && loadingDetail)) {
+  if (authLoading || loadingDepts || loadingFys || loadingCats || (isEdit && loadingDetail)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
         <Loader2 size={36} className="animate-spin text-[#1a3a6b]" />
@@ -572,24 +595,29 @@ export const BudgetFormPage: React.FC = () => {
             </div>
 
             {/* File Number and Auto-roll settings */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-semibold text-slate-800">File Number / Budget Reference</span>
+            {!isHod() && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-slate-800">File Number / Budget Reference</span>
+                </div>
+   
+                <input
+                  type="text"
+                  placeholder={`${isTemporary ? 'TEMP' : 'NITT'}/F.No.0000/${expenditureCategory || 'FUND'}/${fys.find((f: any) => f.id === financialYearId)?.label || '2026-27'}/${depts.find((d: any) => d.id === departmentId)?.short_code || 'DEPT'}`.toUpperCase()}
+                  value={fileNo}
+                  disabled
+                  required
+                  className="input-field w-full font-mono tracking-wider text-sm bg-slate-100 text-slate-600 border-dashed"
+                />
+   
+                <p className="text-xs text-slate-500 flex items-center gap-1">
+                  <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code:{' '}
+                  <code className="font-mono bg-slate-200 px-1 rounded uppercase">
+                    {`${isTemporary ? 'TEMP' : 'NITT'}/F.No.0000/${expenditureCategory || 'FUND'}/${fys.find((f: any) => f.id === financialYearId)?.label || '2026-27'}/${depts.find((d: any) => d.id === departmentId)?.short_code || 'DEPT'}`}
+                  </code>
+                </p>
               </div>
- 
-              <input
-                type="text"
-                placeholder="NITT/F.No.0000/CAPEX/2026-27/CSE"
-                value={fileNo}
-                disabled
-                required
-                className="input-field w-full font-mono tracking-wider text-sm bg-slate-100 text-slate-600 border-dashed"
-              />
- 
-              <p className="text-xs text-slate-500 flex items-center gap-1">
-                <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/F.No.0000/CAPEX/2026-27/CSE</code>
-              </p>
-            </div>
+            )}
 
             {/* R&C Specific Fields */}
             {expenditureCategory === 'R&C' && (
@@ -649,14 +677,15 @@ export const BudgetFormPage: React.FC = () => {
             {/* Remarks / Details */}
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-800 flex justify-between items-center" htmlFor="budgetRemarks">
-                <span>Remarks / Justification <span className="text-xs text-slate-400 font-normal">(Optional)</span></span>
+                <span>Remarks / Justification <span className="text-rose-500">*</span></span>
               </label>
               <textarea
                 id="budgetRemarks"
                 rows={3}
-                placeholder="Enter optional comments or remarks for HODs to view..."
+                placeholder="Enter comments or remarks for HODs to view..."
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
+                required
                 className="input-field w-full text-sm resize-none bg-white"
               />
             </div>

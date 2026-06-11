@@ -98,7 +98,7 @@ export const DeliveryDetailPage: React.FC = () => {
           <div>
             <h3 className="text-md font-bold text-amber-800">Awaiting Initiator Confirmation</h3>
             <p className="text-sm text-amber-700 mt-1">
-              This delivery is currently pending confirmation from the purchase request initiator (faculty/staff).
+              This delivery is currently pending confirmation from the purchase indent initiator (faculty/staff).
               Once the initiator uploads the invoice number, invoice PDF, and delivery challan PDF, you will be enabled to log your receipts and verify the items.
             </p>
           </div>
@@ -113,7 +113,7 @@ export const DeliveryDetailPage: React.FC = () => {
             Confirm Delivery Receipt
           </h3>
           <p className="text-sm text-slate-600 mb-6">
-            As the initiator of the purchase request, please confirm that the items have been received. Upload the vendor's invoice PDF and the delivery challan PDF, and provide the invoice number to proceed.
+            As the initiator of the purchase indent, please confirm that the items have been received. Upload the vendor's invoice PDF and the delivery challan PDF, and provide the invoice number to proceed.
           </p>
           <form onSubmit={handleConfirmSubmit} className="space-y-4 max-w-xl">
             <div>

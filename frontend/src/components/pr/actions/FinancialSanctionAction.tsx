@@ -37,12 +37,12 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
 }) => {
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to approve and advance'); return; }
-    if (!window.confirm('Are you sure you want to approve and advance this purchase request?')) return;
+    if (!window.confirm('Are you sure you want to approve and advance this purchase indent?')) return;
     
     setActionLoading(true);
     try {
       await prApi.advance(pr.id, remarks);
-      toast.success('PR advanced successfully');
+      toast.success('Purchase Indent advanced successfully');
       setRemarks('');
       refetch();
     } catch (e: any) {
