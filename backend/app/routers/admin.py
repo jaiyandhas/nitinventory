@@ -645,7 +645,7 @@ async def update_setting(key: str, body: dict, db: AsyncSession = Depends(get_db
 @router.get("/budget")
 async def list_budget(
     skip: int = 0,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=2000),
     search: Optional[str] = None,
     department_id: Optional[int] = None,
     financial_year_id: Optional[int] = None,
@@ -1114,7 +1114,9 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "expert1_id": b.expert1_id,
         "expert2_id": b.expert2_id,
         "director_faculty_id": b.director_faculty_id,
-        "allocated_initiator_id": b.allocated_initiator_id
+        "allocated_initiator_id": b.allocated_initiator_id,
+        "attachment_path": b.attachment_path,
+        "attachment_url": f"/static/uploads/{b.attachment_path}" if b.attachment_path else None,
     }
 
 
