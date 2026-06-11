@@ -78,7 +78,7 @@ export const prApi = {
     api.post(`/pr/${id}/clarify`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   respondClarification: (id: number, clarificationId: number, formData: FormData) =>
     api.post(`/pr/${id}/clarify/${clarificationId}/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  allocateBudgetFile: (id: number, data: { file_no?: string; remarks?: string }) =>
+  allocateBudgetFile: (id: number, data: { file_no?: string; remarks?: string; selected_budget_file_id?: number | null }) =>
     api.post(`/pr/${id}/allocate-budget-file`, data),
 };
 
@@ -154,7 +154,8 @@ export const adminApi = {
   roles: () => api.get('/admin/roles'),
   financialYears: () => api.get('/admin/financial-years'),
   createFinancialYear: (data: object) => api.post('/admin/financial-years', data),
-  rolloverFinancialYear: () => api.post('/admin/financial-years/rollover', {}),
+  rolloverFinancialYear: (budget_file_ids?: number[]) => api.post('/admin/financial-years/rollover', { budget_file_ids }),
+  getRolloverCandidates: () => api.get('/admin/financial-years/rollover-candidates'),
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
   budget: (params?: { skip?: number; limit?: number; search?: string; department_id?: number; financial_year_id?: number; is_temporary?: boolean }) => api.get('/admin/budget', { params }),

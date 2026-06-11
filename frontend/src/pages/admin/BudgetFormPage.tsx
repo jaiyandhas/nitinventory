@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save, Loader2, Plus, Check, Trash2, Paperclip, FileText, X } from 'lucide-react';
-import { adminApi } from '../../services/api';
+import { adminApi, budgetApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
@@ -32,6 +32,11 @@ export const BudgetFormPage: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = React.useRef<HTMLInputElement>(null);
 
+  // R&C specific fields
+  const [projectCode, setProjectCode] = useState<string>('');
+  const [principalInvestigator, setPrincipalInvestigator] = useState<string>('');
+  const [projectDueDate, setProjectDueDate] = useState<string>('');
+
   const handleTemporaryToggle = (checked: boolean) => {
     if (isHod()) return;
     setIsTemporary(checked);
@@ -59,8 +64,8 @@ export const BudgetFormPage: React.FC = () => {
   });
 
   const { data: fys = [], isLoading: loadingFys } = useQuery({
-    queryKey: ['admin_financial_years'],
-    queryFn: () => adminApi.financialYears().then(res => res.data),
+    queryKey: ['budget_financial_years'],
+    queryFn: () => budgetApi.financialYears().then(res => res.data),
   });
 
   const { data: cats = { source_of_fund_categories: ['CAPEX', 'OPEX'], expenditure_categories: ['CAPEX', 'OPEX'], item_categories: ['computer', 'lab_equipment', 'software', 'furniture'] }, isLoading: loadingCats } = useQuery({
@@ -88,6 +93,9 @@ export const BudgetFormPage: React.FC = () => {
       setFileNo(budgetDetail.file_no);
       setRemarks(budgetDetail.remarks || '');
       setIsTemporary(budgetDetail.file_no.toUpperCase().startsWith('TEMP/'));
+      setProjectCode(budgetDetail.project_code || '');
+      setPrincipalInvestigator(budgetDetail.principal_investigator || '');
+      setProjectDueDate(budgetDetail.project_due_date || '');
       // For existing files, default auto-rolling to false so we don't accidentally overwrite their file number
       setIsAutoRolling(false);
     }
@@ -239,22 +247,54 @@ export const BudgetFormPage: React.FC = () => {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (expenditureCategory === 'R&C') {
+      if (!projectCode.trim() || !principalInvestigator.trim() || !projectDueDate) {
+        toast.error('Project Code, Principal Investigator, and Project Due Date are required for R&C source of fund');
+        return;
+      }
+    }
     if (!isEdit && !attachmentFile) {
       toast.error('A supporting document attachment is required');
       return;
     }
-    const formData = new FormData();
-    formData.append('department_id', String(departmentId));
-    formData.append('financial_year_id', String(financialYearId));
-    formData.append('source_of_fund', expenditureCategory);
-    formData.append('category', category);
-    formData.append('item_name', itemName);
-    formData.append('unit_cost', String(unitCost));
-    formData.append('quantity', String(quantity));
-    formData.append('file_no', fileNo);
-    if (remarks) formData.append('remarks', remarks);
-    if (attachmentFile) formData.append('attachment', attachmentFile);
-    saveMutation.mutate(formData as any);
+
+    if (isEdit) {
+      const payload: any = {
+        department_id: departmentId,
+        financial_year_id: financialYearId,
+        source_of_fund: expenditureCategory,
+        category,
+        item_name: itemName,
+        unit_cost: unitCost,
+        quantity,
+        file_no: fileNo,
+        remarks,
+      };
+      if (expenditureCategory === 'R&C') {
+        payload.project_code = projectCode.trim();
+        payload.principal_investigator = principalInvestigator.trim();
+        payload.project_due_date = projectDueDate;
+      }
+      saveMutation.mutate(payload);
+    } else {
+      const formData = new FormData();
+      formData.append('department_id', String(departmentId));
+      formData.append('financial_year_id', String(financialYearId));
+      formData.append('source_of_fund', expenditureCategory);
+      formData.append('category', category);
+      formData.append('item_name', itemName);
+      formData.append('unit_cost', String(unitCost));
+      formData.append('quantity', String(quantity));
+      formData.append('file_no', fileNo);
+      if (remarks) formData.append('remarks', remarks);
+      if (attachmentFile) formData.append('attachment', attachmentFile);
+      if (expenditureCategory === 'R&C') {
+        formData.append('project_code', projectCode.trim());
+        formData.append('principal_investigator', principalInvestigator.trim());
+        formData.append('project_due_date', projectDueDate);
+      }
+      saveMutation.mutate(formData as any);
+    }
   };
 
   const totalCost = unitCost * quantity;
@@ -550,6 +590,61 @@ export const BudgetFormPage: React.FC = () => {
                 <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/F.No.0000/CAPEX/2026-27/CSE</code>
               </p>
             </div>
+
+            {/* R&C Specific Fields */}
+            {expenditureCategory === 'R&C' && (
+              <div className="bg-[#1a3a6b]/5 border border-[#1a3a6b]/15 rounded-xl p-5 space-y-4">
+                <h3 className="text-sm font-semibold text-[#1a3a6b] border-b border-[#1a3a6b]/10 pb-2">
+                  Research & Consultancy (R&C) Project Details
+                </h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Project Code */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      Project Code <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. R-C/CSE/PROJ/2026/05"
+                      value={projectCode}
+                      onChange={(e) => setProjectCode(e.target.value)}
+                      required
+                      className="input-field w-full bg-white"
+                    />
+                  </div>
+
+                  {/* Principal Investigator */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      Principal Investigator <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Dr. A. Kumar"
+                      value={principalInvestigator}
+                      onChange={(e) => setPrincipalInvestigator(e.target.value)}
+                      required
+                      className="input-field w-full bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Project Due Date */}
+                <div className="w-full sm:w-1/2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    Project Due Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={projectDueDate}
+                    onChange={(e) => setProjectDueDate(e.target.value)}
+                    required
+                    className="input-field w-full bg-white"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Remarks / Details */}
             <div className="space-y-1.5">

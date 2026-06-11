@@ -127,6 +127,7 @@ export type PRStatus =
 export interface PurchaseRequest {
   id: number;
   icr_number?: string;
+  financial_year_id?: number;
   current_status: PRStatus;
   amount: number;
   purchase_type: string;

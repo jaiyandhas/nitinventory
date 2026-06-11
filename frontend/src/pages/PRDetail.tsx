@@ -105,11 +105,16 @@ export const PRDetailPage: React.FC = () => {
 
   // Budget File Allocation state & mutation
   const [budgetAllocRemarks, setBudgetAllocRemarks] = useState('');
+  const [selectedBudgetFileId, setSelectedBudgetFileId] = useState<number | ''>('');
   const allocateBudgetFileMutation = useMutation({
-    mutationFn: () => prApi.allocateBudgetFile(Number(id), { remarks: budgetAllocRemarks }),
+    mutationFn: () => prApi.allocateBudgetFile(Number(id), {
+      remarks: budgetAllocRemarks,
+      selected_budget_file_id: selectedBudgetFileId === '' ? null : Number(selectedBudgetFileId)
+    }),
     onSuccess: () => {
       toast.success('Budget file number allocated — PR has resumed.');
       setBudgetAllocRemarks('');
+      setSelectedBudgetFileId('');
       queryClient.invalidateQueries({ queryKey: ['pr', id] });
     },
     onError: (err: any) => {
@@ -131,6 +136,17 @@ export const PRDetailPage: React.FC = () => {
     queryKey: ['departmentFaculty'],
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
     enabled: !!pr && user?.role?.group_key === 'hod' && (pr.flow?.expected_group === 'hod' || pr.flow?.expected_role_name?.toLowerCase().includes('hod') || pr.flow?.phase_name === 'Administrative Approval'),
+  });
+
+  const { data: permanentBudgets = [] } = useQuery<any[]>({
+    queryKey: ['permanentBudgets', pr?.initiator?.department?.id || pr?.initiator_id, pr?.financial_year_id],
+    queryFn: () => adminApi.budget({
+      department_id: pr?.initiator?.department?.id,
+      financial_year_id: pr?.financial_year_id,
+      is_temporary: false,
+      limit: 1000
+    }).then(r => r.data.items || []),
+    enabled: !!pr && pr.current_status === 'budget_file_allocation' && ['dean_approver', 'admin'].includes(user?.role?.group_key || ''),
   });
 
   const getActiveStageIndex = (pr: PurchaseRequest): number => {
@@ -395,8 +411,26 @@ export const PRDetailPage: React.FC = () => {
                   {['dean_approver', 'admin'].includes(user?.role?.group_key || '') ? (
                     <div className="space-y-4 pt-3 border-t border-amber-200">
                       <p className="text-xs font-semibold text-slate-700">
-                        Automatically assign the permanent file numbers shown above and resume the request:
+                        Assign a permanent budget file and resume the request:
                       </p>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1" htmlFor="selected-budget-file">
+                          Allocate to Existing Budget File <span className="text-slate-400 font-normal">(Optional - Choose to link to an existing permanent budget instead of auto-generating new numbers)</span>
+                        </label>
+                        <select
+                          id="selected-budget-file"
+                          value={selectedBudgetFileId}
+                          onChange={(e) => setSelectedBudgetFileId(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="input-field w-full text-sm bg-white border border-slate-200 rounded p-2 focus:outline-none focus:ring-1 focus:ring-[#1a3a6b]"
+                        >
+                          <option value="">-- Auto-Generate Permanent Rolling Number --</option>
+                          {permanentBudgets.map((b: any) => (
+                            <option key={b.id} value={b.id}>
+                              {b.file_no} ({b.item_name}) - Available: {formatCurrency(b.available_balance ?? b.available_amount ?? 0)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1" htmlFor="budget-alloc-remarks">
                           Allocation Remarks <span className="text-slate-400 font-normal">(Optional)</span>
@@ -413,7 +447,10 @@ export const PRDetailPage: React.FC = () => {
                       <button
                         id="budget-alloc-submit-btn"
                         onClick={() => {
-                          if (window.confirm('Automatically allocate permanent file numbers and resume this procurement request?')) {
+                          const msg = selectedBudgetFileId 
+                            ? 'Assign selected permanent budget file and resume this procurement request?' 
+                            : 'Automatically allocate permanent file numbers and resume this procurement request?';
+                          if (window.confirm(msg)) {
                             allocateBudgetFileMutation.mutate();
                           }
                         }}
@@ -422,6 +459,8 @@ export const PRDetailPage: React.FC = () => {
                       >
                         {allocateBudgetFileMutation.isPending ? (
                           <><span className="animate-spin">⏳</span> Allocating &amp; Resuming...</>
+                        ) : selectedBudgetFileId ? (
+                          <>✅ Assign Selected Budget &amp; Resume PR</>
                         ) : (
                           <>✅ Allocate Permanent File Numbers &amp; Resume PR</>
                         )}

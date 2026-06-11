@@ -66,6 +66,39 @@ async def _find_pr_in_budget_file_allocation(db) -> PurchaseRequest | None:
     return res.scalars().first()
 
 
+async def _make_dummy_pr(db, initiator: User, amount: float = 100000.0) -> PurchaseRequest:
+    """Create a dummy purchase request in the database."""
+    from app.models.budget import ProcurementManager, PurchaseCategory
+    
+    proc_res = await db.execute(select(ProcurementManager).limit(1))
+    proc = proc_res.scalar_one()
+    
+    cat_res = await db.execute(select(PurchaseCategory).limit(1))
+    cat = cat_res.scalar_one()
+    
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+    fy = fy_res.scalar_one()
+
+    pr = PurchaseRequest(
+        amount=amount,
+        purchase_type="department",
+        initiator_id=initiator.id,
+        category_id=cat.id,
+        financial_year_id=fy.id,
+        procurement_id=proc.id,
+        current_status="draft",
+    )
+    db.add(pr)
+    await db.flush()
+    
+    # Initialize the flow
+    flow_service = FlowEngineService(db)
+    await flow_service.initialize(pr, initiator)
+    await db.refresh(pr)
+    
+    return pr
+
+
 # ─── test: HOD department scoping on budget creation ───────────────────────
 
 @pytest.mark.asyncio
@@ -139,11 +172,7 @@ async def test_flow_engine_blocks_manual_actions_when_paused(db_session):
     engine = FlowEngineService(db_session, bg)
 
     # Create a synthetic PR with budget_file_allocation status
-    res = await db_session.execute(
-        select(PurchaseRequest).limit(1)
-    )
-    pr = res.scalar_one()
-    original_status = pr.current_status
+    pr = await _make_dummy_pr(db_session, hod)
     pr.current_status = RequestStatus.BUDGET_FILE_ALLOCATION
     await db_session.flush()
 
@@ -155,9 +184,6 @@ async def test_flow_engine_blocks_manual_actions_when_paused(db_session):
 
     with pytest.raises(ValueError, match="paused"):
         await engine.send_back(pr, hod, to_step=1, reason="test")
-
-    # Restore original status
-    pr.current_status = original_status
     await db_session.flush()
 
 
@@ -189,16 +215,19 @@ async def test_auto_resume_on_budget_file_update(db_session):
     # Create a temp budget file
     temp_bm = await _make_temp_budget(db_session, hod)
 
-    # Simulate a PR paused at budget_file_allocation that links to this budget file
-    pr_res = await db_session.execute(select(PurchaseRequest).limit(1))
-    pr = pr_res.scalar_one()
-    original_status = pr.current_status
-
-    # Link the item to our temp budget file (override first item)
-    await db_session.refresh(pr, ["items"])
-    if pr.items:
-        original_bm_id = pr.items[0].budget_file_id
-        pr.items[0].budget_file_id = temp_bm.id
+    # Create a dummy PR and link its item to our temp budget file
+    pr = await _make_dummy_pr(db_session, hod)
+    item = PurchaseRequestItem(
+        purchase_request_id=pr.id,
+        item_description="Test Item",
+        quantity=1,
+        estimated_total=100000.0,
+        budget_file_id=temp_bm.id,
+        requirement_type="temp",
+        availability="no",
+        site_readiness=True,
+    )
+    db_session.add(item)
     pr.current_status = RequestStatus.BUDGET_FILE_ALLOCATION
     await db_session.flush()
 
@@ -228,11 +257,6 @@ async def test_auto_resume_on_budget_file_update(db_session):
     assert "CAPEX" in alloc_entry.remarks
     assert "CSE" in alloc_entry.remarks
 
-    # Restore original state
-    await db_session.refresh(pr, ["items"])
-    pr.current_status = original_status
-    if pr.items:
-        pr.items[0].budget_file_id = original_bm_id
     await db_session.flush()
 
 
@@ -266,14 +290,18 @@ async def test_direct_allocation_endpoint(db_session):
 
     # Create a temp budget file and attach it to a PR
     temp_bm = await _make_temp_budget(db_session, hod)
-    pr_res = await db_session.execute(select(PurchaseRequest).options().limit(1))
-    pr = pr_res.scalar_one()
-    original_status = pr.current_status
-
-    await db_session.refresh(pr, ["items"])
-    original_bm_id = pr.items[0].budget_file_id if pr.items else None
-    if pr.items:
-        pr.items[0].budget_file_id = temp_bm.id
+    pr = await _make_dummy_pr(db_session, hod)
+    item = PurchaseRequestItem(
+        purchase_request_id=pr.id,
+        item_description="Test Item",
+        quantity=1,
+        estimated_total=100000.0,
+        budget_file_id=temp_bm.id,
+        requirement_type="temp",
+        availability="no",
+        site_readiness=True,
+    )
+    db_session.add(item)
     pr.current_status = RequestStatus.BUDGET_FILE_ALLOCATION
     await db_session.flush()
 
@@ -311,11 +339,6 @@ async def test_direct_allocation_endpoint(db_session):
     )
     assert alloc_entry is not None
 
-    # Restore
-    await db_session.refresh(pr, ["items"])
-    pr.current_status = original_status
-    if pr.items and original_bm_id is not None:
-        pr.items[0].budget_file_id = original_bm_id
     await db_session.flush()
 
 
@@ -339,13 +362,8 @@ async def test_direct_allocation_rejects_non_paused_pr(db_session):
         pytest.skip("No dean_approver user in seed data")
     await db_session.refresh(dean, ["role"])
 
-    # Find a PR that is NOT paused
-    pr_res = await db_session.execute(
-        select(PurchaseRequest).where(
-            PurchaseRequest.current_status != RequestStatus.BUDGET_FILE_ALLOCATION
-        ).limit(1)
-    )
-    pr = pr_res.scalar_one()
+    hod = await _get_user(db_session, "hod.cse@nitt.edu")
+    pr = await _make_dummy_pr(db_session, hod)
 
     with pytest.raises(HTTPException) as exc_info:
         await allocate_budget_file(
@@ -382,14 +400,18 @@ async def test_direct_allocation_endpoint_auto_roll(db_session):
 
     # Create a temp budget file and attach it to a PR
     temp_bm = await _make_temp_budget(db_session, hod)
-    pr_res = await db_session.execute(select(PurchaseRequest).options().limit(1))
-    pr = pr_res.scalar_one()
-    original_status = pr.current_status
-
-    await db_session.refresh(pr, ["items"])
-    original_bm_id = pr.items[0].budget_file_id if pr.items else None
-    if pr.items:
-        pr.items[0].budget_file_id = temp_bm.id
+    pr = await _make_dummy_pr(db_session, hod)
+    item = PurchaseRequestItem(
+        purchase_request_id=pr.id,
+        item_description="Test Item",
+        quantity=1,
+        estimated_total=100000.0,
+        budget_file_id=temp_bm.id,
+        requirement_type="temp",
+        availability="no",
+        site_readiness=True,
+    )
+    db_session.add(item)
     pr.current_status = RequestStatus.BUDGET_FILE_ALLOCATION
     await db_session.flush()
 
@@ -479,5 +501,108 @@ async def test_hod_cannot_edit_permanent_budget_file(db_session):
         await update_budget(permanent_bm.id, body, db_session, user=hod)
     assert exc_info.value.status_code == 403
     assert "cannot modify allocated permanent" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_direct_allocation_endpoint_with_selected_budget_file(db_session):
+    """Test allocating a paused purchase request to an existing permanent budget file."""
+    db_session.commit = db_session.flush
+
+    # 1. Setup a paused PR in BUDGET_FILE_ALLOCATION status
+    from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, RequestStatus
+    from app.models.budget import BudgetMaster
+    from app.routers.purchase_requests import allocate_budget_file
+    from unittest.mock import MagicMock
+
+    # Fetch admin user
+    admin = await _get_user(db_session, "dean.pd@nitt.edu")
+    await db_session.refresh(admin, ["role"])
+
+    # Create a temporary budget
+    temp_bm = BudgetMaster(
+        file_no="TEMP/F.No.9999/CAPEX/2026-27/CSE",
+        department_id=1,
+        item_name="Temporary Item",
+        source_of_fund="CAPEX",
+        category="computer",
+        course_code="CS101",
+        unit_cost=80000.0,
+        quantity=1,
+        total_allocation=80000.0,
+        financial_year_id=2,
+        committed_amount=80000.0
+    )
+    db_session.add(temp_bm)
+
+    # Create a permanent budget to allocate to
+    perm_bm = BudgetMaster(
+        file_no="NITT/F.No.0077/CAPEX/2026-27/CSE",
+        department_id=1,
+        item_name="Permanent Item",
+        source_of_fund="CAPEX",
+        category="computer",
+        course_code="CS101",
+        unit_cost=200000.0,
+        quantity=2,
+        total_allocation=400000.0,
+        financial_year_id=2,
+        committed_amount=0.0
+    )
+    db_session.add(perm_bm)
+    await db_session.flush()
+
+    # Create paused PR
+    pr = PurchaseRequest(
+        amount=80000.0,
+        purchase_type="department",
+        initiator_id=admin.id,
+        category_id=1,
+        financial_year_id=2,
+        procurement_id=1,
+        current_status=RequestStatus.BUDGET_FILE_ALLOCATION,
+    )
+    db_session.add(pr)
+    await db_session.flush()
+
+    # Associate item with temporary budget
+    item = PurchaseRequestItem(
+        purchase_request_id=pr.id,
+        item_description="PR Laptop",
+        quantity=1,
+        estimated_total=80000.0,
+        budget_file_id=temp_bm.id,
+        requirement_type="temp",
+        availability="no",
+        site_readiness=True
+    )
+    db_session.add(item)
+    await db_session.flush()
+
+    # Call allocate_budget_file with selected_budget_file_id
+    body = {
+        "selected_budget_file_id": perm_bm.id,
+        "remarks": "Assigned to existing general computer budget"
+    }
+    background_tasks = MagicMock()
+    res = await allocate_budget_file(pr.id, body, background_tasks, db_session, user=admin)
+    assert "allocated" in res["message"].lower()
+
+    # Assert locked amounts are updated
+    await db_session.refresh(perm_bm)
+    assert perm_bm.committed_amount == 80000.0
+
+    # Assert PR status and item budget reference is updated
+    await db_session.refresh(pr)
+    assert pr.current_status == RequestStatus.IN_PROGRESS
+    
+    await db_session.refresh(item)
+    assert item.budget_file_id == perm_bm.id
+
+    # Verify temp budget is deleted since it is no longer referenced
+    deleted_temp_res = await db_session.execute(
+        select(BudgetMaster).where(BudgetMaster.id == temp_bm.id)
+    )
+    assert deleted_temp_res.scalar_one_or_none() is None
+
 
 

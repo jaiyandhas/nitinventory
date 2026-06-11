@@ -81,6 +81,9 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   const isHOD = user && user.role?.group_key === 'hod' && pr.budget_file && Number(pr.budget_file.department_id) === Number(user.department_id || user.department?.id);
   const isDirector = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
 
+  const allFileNos = Array.from(new Set((pr.items || []).map((item: any) => item.budget_file?.file_no).filter(Boolean)));
+  const allFileNosStr = allFileNos.map(f => formatFileNo(f as string, user?.role?.group_key)).join(', ');
+
   // HOD department faculties
   const { data: deptFaculties = [] } = useQuery<any[]>({
     queryKey: ['departmentFaculty'],
@@ -290,6 +293,10 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Created</div>
           <div className="text-sm font-medium text-slate-800">{new Date(pr.created_at).toLocaleDateString()}</div>
+        </div>
+        <div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Budget File(s)</div>
+          <div className="text-sm font-bold text-[#1a3a6b]">{allFileNosStr || '-'}</div>
         </div>
         
         {pr.flow && (
@@ -540,7 +547,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Configure Purchase Committee</h2>
-                <p className="text-xs text-blue-200 mt-1">Budget File: {formatFileNo(pr.budget_file.file_no, user?.role?.group_key)}</p>
+                <p className="text-xs text-blue-200 mt-1">Budget File(s): {allFileNosStr || '-'}</p>
               </div>
               <button 
                 type="button"

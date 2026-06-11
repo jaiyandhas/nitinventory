@@ -1,6 +1,8 @@
 import React from 'react';
 import { Award } from 'lucide-react';
 import { PurchaseRequest } from '../../../types';
+import { useAuth } from '../../../context/AuthContext';
+import { formatFileNo } from '../../../utils/format';
 
 interface PRItemsTableProps {
   pr: PurchaseRequest;
@@ -23,6 +25,8 @@ const getDocLabel = (docKey: string): string => {
 };
 
 export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }) => {
+  const { user } = useAuth();
+
   return (
     <div className="space-y-6 text-left">
       {/* Items */}
@@ -32,15 +36,26 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Procurement Items</h3>
           </div>
           <div className="divide-y divide-slate-200">
-            {pr.items.map(item => (
-              <div key={item.id} className="flex justify-between items-center px-6 py-4">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-slate-700">{item.item_description}</span>
-                  <span className="text-xs text-slate-500 font-semibold mt-0.5">Quantity: {item.quantity ?? 1}</span>
+            {pr.items.map(item => {
+              const fileNo = (item as any).budget_file?.file_no;
+              const formattedFileNo = fileNo ? formatFileNo(fileNo, user?.role?.group_key) : null;
+              return (
+                <div key={item.id} className="flex justify-between items-center px-6 py-4">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-slate-700">{item.item_description}</span>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-slate-500 font-semibold">Quantity: {item.quantity ?? 1}</span>
+                      {formattedFileNo && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          Budget: {formattedFileNo}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-[#1a3a6b]">{formatCurrency(item.estimated_total)}</span>
                 </div>
-                <span className="text-sm font-bold text-[#1a3a6b]">{formatCurrency(item.estimated_total)}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

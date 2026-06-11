@@ -28,6 +28,8 @@ class JsonFormatter(logging.Formatter):
             "filename": record.filename,
             "lineno": record.lineno,
         }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
         request_id = request_id_contextvar.get(None)
         if request_id:
             log_record["request_id"] = request_id

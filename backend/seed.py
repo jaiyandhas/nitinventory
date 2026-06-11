@@ -73,6 +73,9 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS expert2_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS director_faculty_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS allocated_initiator_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"))
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS project_code VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS principal_investigator VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS project_due_date DATE;"))
 
         # Update existing purchase categories for cat3 bounds
         await conn.execute(text("UPDATE purchase_categories SET max_amount = 999999999, title = REPLACE(title, 'Rs. 10,00,001 to Rs. 30,00,000', 'Rs. 10,00,001 and above') WHERE title LIKE '%Rs. 10,00,001 to Rs. 30,00,000%';"))
@@ -157,39 +160,96 @@ async def seed():
     async with SessionLocal() as db:
         print("🌱 Checking database state for seeding...")
 
-        # 1. Departments
-        dept_check = await db.execute(select(Department).limit(1))
-        has_depts = dept_check.scalar_one_or_none() is not None
-        cse = None
-        if not has_depts:
-            print("  Seeding departments...")
-            departments_spec = [
-                ("Computer Science and Engineering", "CSE"),
-                ("Electronics and Communication Engineering", "ECE"),
-                ("Electrical and Electronics Engineering", "EEE"),
-                ("Mechanical Engineering", "MECH"),
-                ("Civil Engineering", "CIVIL"),
-                ("Metallurgical and Materials Engineering", "MME"),
-                ("Instrumentation and Control Engineering", "ICE"),
-                ("Chemical Engineering", "CHEM"),
-                ("Production Engineering", "PROD"),
-                ("Chemistry", "CHY"),
-                ("Physics", "PHY"),
-                ("Mathematics", "MATH"),
-                ("Computer Applications", "CA"),
-                ("Management Studies", "DOMS"),
-                ("Architecture", "ARCH"),
-                ("Humanities and Social Sciences", "HSS")
-            ]
-            for name, code in departments_spec:
-                dept = Department(name=name, short_code=code)
-                db.add(dept)
-                if code == "CSE":
-                    cse = dept
-            await db.flush()
-        else:
-            cse_res = await db.execute(select(Department).where(Department.short_code == "CSE"))
-            cse = cse_res.scalar_one_or_none()
+        # 1. Departments and Users from CSV
+        import csv
+        import re
+
+        # Delete existing transactional and budget data to prevent FK violations
+        tables_to_delete = [
+            "asset_logs", "asset_movements", "assets", "payments", "discrepancies",
+            "stores_asset_logs", "dept_asset_logs", "delivery_items", "deliveries",
+            "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
+            "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
+            "technical_evaluations", "financial_evaluations", "commercial_evaluations",
+            "documents", "purchase_request_items", "purchase_requests", "budget_master"
+        ]
+        for table in tables_to_delete:
+            await db.execute(text(f"DELETE FROM {table};"))
+        await db.execute(text("DELETE FROM users CASCADE;"))
+        await db.execute(text("DELETE FROM departments CASCADE;"))
+        await db.flush()
+
+        # Parse CSVs to find unique departments
+        depts_dict = {}  # department_name -> short_code
+        hods_dict = {}   # department_name -> (name, email)
+        
+        hods_csv_path = "/app/Data_Of_Users/Hods.csv"
+        if os.path.exists(hods_csv_path):
+            with open(hods_csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    name = row["Name"].strip()
+                    dept = row["Department"].strip()
+                    email = row["Email"].strip().lower()
+                    m = re.match(r"hod([a-zA-Z]+)@", email)
+                    code = m.group(1).upper() if m else dept[:4].upper()
+                    depts_dict[dept] = code
+                    hods_dict[dept] = (name, email)
+
+        faculty_csv_path = "/app/Data_Of_Users/Faculty.csv"
+        faculty_list = []
+        if os.path.exists(faculty_csv_path):
+            with open(faculty_csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    name = row["Name"].strip()
+                    email = row["Email"].strip().lower()
+                    dept = row["Department"].strip()
+                    faculty_list.append((name, email, dept))
+                    if dept not in depts_dict:
+                        code = "".join(w[0] for w in dept.split() if w[0].isalnum()).upper()
+                        if not code:
+                            code = dept[:3].upper()
+                        depts_dict[dept] = code
+
+        deans_csv_path = "/app/Data_Of_Users/Deans.csv"
+        deans_list = []
+        if os.path.exists(deans_csv_path):
+            with open(deans_csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    name_key = next((k for k in row.keys() if "name" in k.lower()), "Name")
+                    name = row[name_key].strip()
+                    dept = row["Department"].strip()
+                    email = row["Email"].strip().lower()
+                    deans_list.append((name, email, dept))
+
+        dir_reg_csv_path = "/app/Data_Of_Users/Director and Registrar.csv"
+        dir_reg_list = []
+        if os.path.exists(dir_reg_csv_path):
+            with open(dir_reg_csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    name = row["Name"].strip()
+                    dept = row["Department"].strip()
+                    email = row["Email"].strip().lower()
+                    dir_reg_list.append((name, email, dept))
+
+        # Seed departments
+        seeded_depts = {}
+        for name, code in depts_dict.items():
+            dept = Department(name=name, short_code=code)
+            db.add(dept)
+            seeded_depts[name] = dept
+        
+        # Ensure CSE exists
+        if "Computer Science and Engineering" not in seeded_depts:
+            dept = Department(name="Computer Science and Engineering", short_code="CSE")
+            db.add(dept)
+            seeded_depts["Computer Science and Engineering"] = dept
+            
+        await db.flush()
+        cse = seeded_depts["Computer Science and Engineering"]
 
         # 2. Roles
         roles_check = await db.execute(select(RoleManager).limit(1))
@@ -209,6 +269,7 @@ async def seed():
                 ("Deputy Registrar", "deputy_registrar", "verifier_sp"),
                 ("Dean P&D", "dean_pd", "dean_approver"),
                 ("Director", "director", "apex_approver"),
+                ("Registrar", "registrar", "apex_approver"),
             ]
             for name, value, group_key in roles_spec:
                 r = RoleManager(name=name, value=value, group_key=group_key)
@@ -219,56 +280,173 @@ async def seed():
             roles_res = await db.execute(select(RoleManager))
             for r in roles_res.scalars():
                 roles[r.value] = r
+            if "registrar" not in roles:
+                r = RoleManager(name="Registrar", value="registrar", group_key="apex_approver")
+                db.add(r)
+                await db.flush()
+                roles["registrar"] = r
 
-        # 3. Users
-        users_check = await db.execute(select(User).limit(1))
-        has_users = users_check.scalar_one_or_none() is not None
-        users: dict[str, User] = {}
-        if not has_users:
-            print("  Seeding users...")
-            users_spec = [
-                ("Mr.", "Administrator", "admin@nitt.edu", "System Administrator", "male", "admin", None),
-                ("Dr.", "A. Kumar", "faculty.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Dr.", "B. Prasad", "faculty1.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Dr.", "C. Singh", "faculty2.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
-                ("Prof.", "D. Rajan", "hod.cse@nitt.edu", "Head of Department", "male", "hod", cse),
-                ("Prof.", "H. Dean", "dean.pd@nitt.edu", "Dean P&D", "male", "dean_pd", None),
-                ("Prof.", "J. Director", "director@nitt.edu", "Director", "male", "director", None),
-                ("Mr.", "L. Superintendent", "sp.stores@nitt.edu", "Superintendent S&P", "male", "superintendent", None),
-                ("Mr.", "K. DA Stores", "da.stores@nitt.edu", "Dealing Assistant", "male", "dealing_assistant", None),
-                ("Mr.", "M. Consultant", "consultant.stores@nitt.edu", "Consultant S&P", "male", "consultant_sp", None),
-                ("Mr.", "N. Asst Registrar", "ar.stores@nitt.edu", "Assistant Registrar", "male", "assistant_registrar", None),
-                ("Mr.", "O. Dy Registrar", "dr.stores@nitt.edu", "Deputy Registrar", "male", "deputy_registrar", None),
-                ("Dr.", "P. Associate Dean", "vg.pd@nitt.edu", "Associate Dean P&D", "male", "adpd", None),
-                ("Prof.", "Q. Dean Budget", "dean.budget@nitt.edu", "Dean P&D (Budget)", "male", "dean_pd", None),
-            ]
-            for title, name, email, desig, gender, role_val, dept in users_spec:
-                u = User(
-                    title=title,
-                    name=name,
-                    email=email,
-                    hashed_password=DEMO_PASSWORD,
-                    designation=desig,
-                    gender=gender,
-                    role_id=roles[role_val].id,
-                    department_id=dept.id if dept else None,
-                    is_active=True,
-                    is_approved=True,
-                )
-                db.add(u)
-                users[email] = u
-            await db.flush()
-        else:
-            users_res = await db.execute(select(User))
-            for u in users_res.scalars():
-                users[u.email] = u
+        # 3. Seed Users
+        # Seed system/test accounts
+        system_users_spec = [
+            ("Mr.", "Administrator", "admin@nitt.edu", "System Administrator", "male", "admin", None),
+            ("Mr.", "L. Superintendent", "sp.stores@nitt.edu", "Superintendent S&P", "male", "superintendent", None),
+            ("Mr.", "K. DA Stores", "da.stores@nitt.edu", "Dealing Assistant", "male", "dealing_assistant", None),
+            ("Mr.", "M. Consultant", "consultant.stores@nitt.edu", "Consultant S&P", "male", "consultant_sp", None),
+            ("Mr.", "N. Asst Registrar", "ar.stores@nitt.edu", "Assistant Registrar", "male", "assistant_registrar", None),
+            ("Mr.", "O. Dy Registrar", "dr.stores@nitt.edu", "Deputy Registrar", "male", "deputy_registrar", None),
+            ("Dr.", "P. Associate Dean", "vg.pd@nitt.edu", "Associate Dean P&D", "male", "adpd", None),
+            ("Prof.", "Q. Dean Budget", "dean.budget@nitt.edu", "Dean P&D (Budget)", "male", "dean_pd", None),
+            ("Dr.", "A. Kumar", "faculty.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+            ("Dr.", "B. Prasad", "faculty1.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+            ("Dr.", "C. Singh", "faculty2.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
+            ("Prof.", "D. Rajan", "hod.cse@nitt.edu", "Head of Department", "male", "hod", cse),
+            ("Prof.", "H. Dean", "dean.pd@nitt.edu", "Dean P&D", "male", "dean_pd", None),
+        ]
+        
+        users = {}
+        for title, name, email, desig, gender, role_val, dept in system_users_spec:
+            u = User(
+                title=title,
+                name=name,
+                email=email.lower(),
+                hashed_password=DEMO_PASSWORD,
+                designation=desig,
+                gender=gender,
+                role_id=roles[role_val].id,
+                department_id=dept.id if dept else None,
+                is_active=True,
+                is_approved=True,
+            )
+            db.add(u)
+            users[email.lower()] = u
+        await db.flush()
 
-        # Seed dummy digital signatures for workflow approval steps.
-        # Some demo users might not have uploaded signatures yet, and PO approvals require signature_path.
+        def parse_name_title(full_name: str):
+            full_name = full_name.strip()
+            prefixes = ["Dr. (Mrs.)", "Dr.", "Prof.", "Mr.", "Mrs.", "Ms."]
+            for prefix in prefixes:
+                if full_name.startswith(prefix):
+                    return prefix, full_name[len(prefix):].strip()
+            return "Mr.", full_name
+
+        # Director & Registrar
+        for name, email, dept_name in dir_reg_list:
+            email_lower = email.lower()
+            if email_lower in users:
+                continue
+            title, name_clean = parse_name_title(name)
+            role_val = "director" if "director" in dept_name.lower() or "director" in email_lower else "registrar"
+            desig = "Director" if role_val == "director" else "Registrar"
+            u = User(
+                title=title,
+                name=name_clean,
+                email=email_lower,
+                hashed_password=DEMO_PASSWORD,
+                designation=desig,
+                gender="female" if "aghila" in name.lower() else "male",
+                role_id=roles[role_val].id,
+                department_id=None,
+                is_active=True,
+                is_approved=True,
+            )
+            db.add(u)
+            users[email_lower] = u
+        await db.flush()
+
+        # Deans
+        for name, email, dept_name in deans_list:
+            email_lower = email.lower()
+            if email_lower in users:
+                continue
+            title, name_clean = parse_name_title(name)
+            u = User(
+                title=title,
+                name=name_clean,
+                email=email_lower,
+                hashed_password=DEMO_PASSWORD,
+                designation=f"Dean ({dept_name})",
+                gender="female" if "premalatha" in name.lower() or "uma" in name.lower() else "male",
+                role_id=roles["dean_pd"].id,
+                department_id=None,
+                is_active=True,
+                is_approved=True,
+            )
+            db.add(u)
+            users[email_lower] = u
+        await db.flush()
+
+        # HODs
+        for dept_name, (name, email) in hods_dict.items():
+            email_lower = email.lower()
+            if email_lower in users:
+                continue
+            title, name_clean = parse_name_title(name)
+            dept = seeded_depts.get(dept_name)
+            u = User(
+                title=title,
+                name=name_clean,
+                email=email_lower,
+                hashed_password=DEMO_PASSWORD,
+                designation="Head of Department",
+                gender="female" if "rajeswari" in name.lower() or "nagalakshmi" in name.lower() or "sridevi" in name.lower() or "jayalekshmi" in name.lower() else "male",
+                role_id=roles["hod"].id,
+                department_id=dept.id if dept else None,
+                is_active=True,
+                is_approved=True,
+            )
+            db.add(u)
+            users[email_lower] = u
+        await db.flush()
+
+        # Faculty
+        for name, email, dept_name in faculty_list:
+            email_lower = email.lower()
+            if email_lower in users:
+                continue
+            title, name_clean = parse_name_title(name)
+            dept = seeded_depts.get(dept_name)
+            
+            is_hod_user = any(h[1] == email_lower for h in hods_dict.values())
+            if is_hod_user:
+                continue
+
+            u = User(
+                title=title,
+                name=name_clean,
+                email=email_lower,
+                hashed_password=DEMO_PASSWORD,
+                designation="Assistant Professor",
+                gender="female" if "mrs" in name.lower() or "miss" in name.lower() or "female" in name.lower() or "sangeetha" in name.lower() or "janet" in name.lower() or "hemalatha" in name.lower() else "male",
+                role_id=roles["faculty"].id,
+                department_id=dept.id if dept else None,
+                is_active=True,
+                is_approved=True,
+            )
+            db.add(u)
+            users[email_lower] = u
+        await db.flush()
+
+        # Set digital signatures
         default_sig_rel_path = "signatures/6_ae8ad3496eae4809b4a946314e0c79e1_signature.png"
         for u in users.values():
             if not u.signature_path:
                 u.signature_path = default_sig_rel_path
+        await db.flush()
+
+        # Update expert nominee IDs for all departments
+        all_users_res = await db.execute(select(User))
+        all_seeded_users = all_users_res.scalars().all()
+        for dept in seeded_depts.values():
+            dept_faculties = [u for u in all_seeded_users if u.department_id == dept.id and u.role_id == roles["faculty"].id]
+            if len(dept_faculties) >= 2:
+                dept.expert1_id = dept_faculties[0].id
+                dept.expert2_id = dept_faculties[1].id
+                dept.director_faculty_id = dept_faculties[1].id
+            elif len(dept_faculties) == 1:
+                dept.expert1_id = dept_faculties[0].id
+                dept.expert2_id = dept_faculties[0].id
+                dept.director_faculty_id = dept_faculties[0].id
         await db.flush()
 
         # 4. Financial Year
@@ -634,6 +812,16 @@ async def seed():
                 db.add(Settings(key_name=key, value=val))
             await db.flush()
 
+        # Seed/update budget source of fund categories
+        sf_res = await db.execute(select(Settings).where(Settings.key_name == "budget_source_of_fund_categories"))
+        sf_obj = sf_res.scalar_one_or_none()
+        default_sf = "CAPEX (OH-35),REVEX (OH-31),HOSTEL,NIMCET,ID,PMRF,SEED-GRANT,HEFA,STUDENT-WELFARE,R&C"
+        if sf_obj:
+            sf_obj.value = default_sf
+        else:
+            db.add(Settings(key_name="budget_source_of_fund_categories", value=default_sf))
+        await db.flush()
+
         # Seed designations if not present
         desig_check = await db.execute(select(Settings).where(Settings.key_name == "designations"))
         if not desig_check.scalar_one_or_none():
@@ -676,532 +864,10 @@ async def seed():
                 utilized_amount=0.0,
             ))
             await db.flush()
-            print("  Seeded 1 temporary budget file")
-
-        # Reseed 8 representative purchase requests at various stages of completion.
-        # Default behavior is to preserve existing PRs (prevents "PR disappearance" during routine seeding).
-        from app.models.purchase_request import PurchaseRequest
-        if not RESET_DEMO_DATA:
-            pr_exists = (await db.execute(select(PurchaseRequest.id).limit(1))).scalar_one_or_none()
-            if pr_exists is not None:
-                await db.commit()
-                print("✅ Workflow/masters reseeded. Existing purchase requests preserved.")
-                return
-
-        print("🌱 Seeding 8 representative workflow-centric purchase requests...")
-        from app.models.purchase_request import (
-            PurchaseRequest,
-            PurchaseRequestItem,
-            PurchaseRequestFlow,
-            PurchaseRequestHistory,
-            RequestStatus,
-            CommercialEvaluation,
-            TechnicalEvaluation,
-            FinancialEvaluation,
-            PurchaseRequestAssignment,
-            BillPassing,
-            Document
-        )
-        from app.models.inventory import Delivery, DeliveryItem
-        from app.models.asset import Asset
 
         faculty = users["faculty.cse@nitt.edu"]
-        
-        def seed_pac_file(pr_id: int, doc_key: str, original_name: str, filename: str):
-            rel_path = f"attachments/{pr_id}/{filename}"
-            abs_path = os.path.join(settings.STORAGE_PATH, rel_path)
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            with open(abs_path, "wb") as f:
-                f.write(b"%PDF-1.4\n%mock PDF file for seeding\n%%EOF\n")
-            return Document(
-                purchase_request_id=pr_id,
-                doc_key=doc_key,
-                doc_value={"path": rel_path, "original_name": original_name},
-                uploaded_by_id=faculty.id,
-                updated_at=datetime.utcnow(),
-            )
-
         faculty1 = users["faculty1.cse@nitt.edu"]
         faculty2 = users["faculty2.cse@nitt.edu"]
-        hod = users["hod.cse@nitt.edu"]
-        dean = users["dean.pd@nitt.edu"]
-        director = users["director@nitt.edu"]
-        sp = users["sp.stores@nitt.edu"]
-        da = users["da.stores@nitt.edu"]
-
-        # Helper function to get Category ID
-        async def get_category(proc_id, amount):
-            res = await db.execute(
-                select(PurchaseCategory).where(
-                    PurchaseCategory.procurement_id == proc_id,
-                    PurchaseCategory.min_amount <= amount,
-                    PurchaseCategory.max_amount >= amount
-                )
-            )
-            return res.scalar_one()
-
-        # Helper function to create PR
-        async def create_seeded_pr(
-            icr_number, proc_manager, amount, current_status,
-            initiator, form_data, budget_item_name, budget_file_no,
-            flow_phase=None, flow_step_order=None, budget_deduct=False
-        ):
-            # Create a budget master file for this PR
-            bm = BudgetMaster(
-                department_id=cse.id,
-                financial_year_id=fy.id,
-                source_of_fund="CAPEX" if amount > 100000 else "OPEX",
-                item_name=budget_item_name,
-                category="computer" if "server" in budget_item_name.lower() or "workstation" in budget_item_name.lower() else "equipment",
-                course_code="CSE-SEED-" + icr_number.split("/")[-1],
-                unit_cost=float(amount),
-                quantity=1,
-                total_allocation=float(amount),
-                file_no=budget_file_no,
-                is_revision=False,
-                committed_amount=0.0 if budget_deduct else float(amount),
-                utilized_amount=float(amount) if budget_deduct else 0.0,
-                expert1_id=faculty1.id,
-                expert2_id=faculty2.id,
-                director_faculty_id=faculty2.id,
-                allocated_initiator_id=initiator.id
-            )
-            db.add(bm)
-            await db.flush()
-
-            # Get Category
-            cat = await get_category(proc_manager.id, amount)
-
-            # Create PurchaseRequest
-            pr = PurchaseRequest(
-                icr_number=icr_number,
-                category_id=cat.id,
-                financial_year_id=fy.id,
-                initiator_id=initiator.id,
-                procurement_id=proc_manager.id,
-                purchase_type="department",
-                current_status=current_status,
-                amount=amount,
-                emd=2.0,
-                performance_security=3.0,
-                delivery_location="CSE Department, NIT Tiruchirappalli",
-                delivery_mode="Door delivery",
-                basis_of_estimate_details="Market survey and vendor quotations",
-                faculty1_id=faculty1.id,
-                faculty2_id=faculty2.id,
-                faculty3_id=faculty2.id,
-                form_data=form_data
-            )
-            db.add(pr)
-            await db.flush()
-
-            # Create PurchaseRequestItem
-            pri = PurchaseRequestItem(
-                purchase_request_id=pr.id,
-                budget_file_id=bm.id,
-                item_description=budget_item_name,
-                quantity=1,
-                estimated_total=amount,
-                requirement_type="Research",
-                availability="No",
-                site_readiness=True,
-                justification_for_procurement="This item is essential for departmental research lab infrastructure and student assignments.",
-                installation_required=False,
-                tech_specs_text="Standard specifications compliant with GFR 2017.",
-            )
-            db.add(pri)
-            await db.flush()
-
-            # Create initial submission history
-            h1 = PurchaseRequestHistory(
-                purchase_request_id=pr.id,
-                current_approver_id=initiator.id,
-                status="PR Submitted",
-                remarks="Auto-advanced (PI is first assignee)" if flow_phase else "Initial submission of Purchase Indent.",
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=initiator.name,
-                frozen_designation=initiator.designation,
-                frozen_department="Computer Science and Engineering",
-            )
-            db.add(h1)
-            await db.flush()
-
-            # Create flow record if active flow
-            if flow_phase:
-                flow = PurchaseRequestFlow(
-                    purchase_request_id=pr.id,
-                    phase_id=flow_phase.id,
-                    step_order=flow_step_order,
-                    rejected=False
-                )
-                db.add(flow)
-                await db.flush()
-                
-            return pr, bm
-
-        # Retrieve procurement methods
-        gem_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "GeM"))).scalar_one()
-        cppp_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "CPPP"))).scalar_one()
-        lt_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Limited Tender"))).scalar_one()
-        pac_proc = (await db.execute(select(ProcurementManager).where(ProcurementManager.name == "Proprietary Purchase"))).scalar_one()
-
-        # Retrieve phases
-        aa_phase = phases["AA"]
-        td_phase = phases["TD"]
-        te_phase = phases["TE"]
-        fs_phase = phases["FS"]
-        po_phase = phases["PO"]
-
-        # PR 1 (Request Stage): GeM procurement, status pr_submitted
-        pr1, bm1 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/001",
-            proc_manager=gem_proc,
-            amount=80000.0,
-            current_status="pr_submitted",
-            initiator=faculty,
-            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1001"},
-            budget_item_name="GeM Consumables (Cat1)",
-            budget_file_no="NITT/F.No.0001/OPEX/2026-27/CSE",
-            flow_phase=None,
-            flow_step_order=None
-        )
-
-        # PR 2 (AA Stage): CPPP procurement, status in_progress, HOD approval step
-        pr2, bm2 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/002",
-            proc_manager=cppp_proc,
-            amount=750000.0,
-            current_status="in_progress",
-            initiator=faculty,
-            form_data={"tender_id": "CPPP/CSE/2026/02", "publication_date": "2026-05-01", "gem_nac_attached": True},
-            budget_item_name="High-End Workstations (CPPP)",
-            budget_file_no="NITT/F.No.0002/CAPEX/2026-27/CSE",
-            flow_phase=aa_phase,
-            flow_step_order=2
-        )
-
-        # PR 3 (Tendering Stage): Limited Tender, status in_progress, DA tender registration step
-        pr3, bm3 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/003",
-            proc_manager=lt_proc,
-            amount=450000.0,
-            current_status="in_progress",
-            initiator=faculty,
-            form_data={"invited_vendors": "Vendor Alpha, Vendor Beta, Vendor Gamma", "gem_nac_attached": True},
-            budget_item_name="Lab Equipment Kits (LT)",
-            budget_file_no="NITT/F.No.0003/CAPEX/2026-27/CSE",
-            flow_phase=td_phase,
-            flow_step_order=2
-        )
-        # History for PR 3
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved and forwarded to Dean."),
-            (dean, "Approved", "Administratively approved."),
-            (sp, "Forwarded to next phase", "Assigned to Dealing Assistant.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr3.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-                frozen_department="Computer Science and Engineering" if actor_user.department_id else None
-            ))
-        # Assignment for PR 3
-        db.add(PurchaseRequestAssignment(
-            purchase_request_id=pr3.id,
-            assigned_by_id=sp.id,
-            assigned_da_id=da.id,
-            status="pending"
-        ))
-
-        # PR 4 (Technical Evaluation Stage): Proprietary purchase, status in_progress, awaiting committee technical evaluation
-        pr4, bm4 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/004",
-            proc_manager=pac_proc,
-            amount=980000.0,
-            current_status="in_progress",
-            initiator=faculty,
-            form_data={
-                "manufacturer_name": "Keysight Technologies",
-                "manufacturer_address": "Bengaluru",
-                "justification_type": "sole_manufacturer",
-                "finance_concurrence_ref": "FC/2026/001",
-                "gem_nac_attached": True
-            },
-            budget_item_name="Keysight Spectrum Analyzer (PAC)",
-            budget_file_no="NITT/F.No.0004/CAPEX/2026-27/CSE",
-            flow_phase=te_phase,
-            flow_step_order=1
-        )
-        pr4.tender_reference_number = "PAC/CSE/2026/04"
-        pr4.date_of_tender = date(2026, 5, 10)
-        pr4.date_of_tech_bid_opening = date(2026, 5, 20)
-        pr4.date_of_financial_bid_opening = date(2026, 5, 22)
-        pr4.te_initiated_at = datetime.utcnow()
-        db.add(pr4)
-        db.add(seed_pac_file(pr4.id, "dept_pac_file", "dept_pac_form.pdf", "dummy_dept_pac.pdf"))
-        db.add(seed_pac_file(pr4.id, "oem_pac_file", "oem_pac_certificate.pdf", "dummy_oem_pac.pdf"))
-        db.add(seed_pac_file(pr4.id, "oem_auth_file", "oem_authorization.pdf", "dummy_oem_auth.pdf"))
-        # Commercial evaluation for PR 4
-        db.add(CommercialEvaluation(
-            purchase_request_id=pr4.id,
-            vendor_name="Keysight Technologies India Pvt. Ltd.",
-            vendor_email="sales@keysight.com",
-            is_qualified=True,
-            remarks="OEM Manufacturer bid registered."
-        ))
-        # History for PR 4
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved by HOD."),
-            (dean, "Approved", "Approved by Dean P&D."),
-            (sp, "Forwarded to next phase", "Tender registration assigned."),
-            (da, "Tender Details Registered", "Tender details and OEM bidder registered.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr4.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-            ))
-
-        # PR 5 (Financial Sanction Stage): Limited Tender, status in_progress, awaiting initiator financial bid entries
-        pr5, bm5 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/005",
-            proc_manager=lt_proc,
-            amount=1500000.0,
-            current_status="in_progress",
-            initiator=faculty,
-            form_data={"invited_vendors": "Alpha Tech, Beta Eng, Gamma Systems", "gem_nac_attached": True},
-            budget_item_name="GPU Server Nodes (LT)",
-            budget_file_no="NITT/F.No.0005/CAPEX/2026-27/CSE",
-            flow_phase=fs_phase,
-            flow_step_order=1
-        )
-        pr5.tender_reference_number = "LTE/CSE/2026/05"
-        pr5.date_of_tender = date(2026, 5, 5)
-        pr5.date_of_tech_bid_opening = date(2026, 5, 15)
-        pr5.date_of_financial_bid_opening = date(2026, 5, 18)
-        db.add(pr5)
-        # Commercial evaluations for PR 5
-        db.add(CommercialEvaluation(purchase_request_id=pr5.id, vendor_name="Alpha Tech", vendor_email="info@alphatech.com", is_qualified=True))
-        db.add(CommercialEvaluation(purchase_request_id=pr5.id, vendor_name="Beta Eng", vendor_email="sales@betaeng.com", is_qualified=True))
-        # Technical evaluations for PR 5
-        db.add(TechnicalEvaluation(purchase_request_id=pr5.id, vendor_name="Alpha Tech", is_qualified=True, remarks="Complies with technical requirements"))
-        db.add(TechnicalEvaluation(purchase_request_id=pr5.id, vendor_name="Beta Eng", is_qualified=True, remarks="Complies with technical requirements"))
-        # History for PR 5
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved by HOD."),
-            (dean, "Approved", "Approved by Dean."),
-            (director, "Approved", "Approved by Director."),
-            (da, "Tender Details Registered", "Tender details and bidders registered."),
-            (hod, "Technical Evaluation Approved", "Committee signs TE phase."),
-            (faculty1, "Technical Evaluation Approved", "Expert 1 signs."),
-            (faculty2, "Technical Evaluation Approved", "Expert 2 signs."),
-            (dean, "Technical Evaluation Phase Completed", "Dean certifies TE phase completed.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr5.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-            ))
-
-        # PR 6 (Purchase Order Stage): GeM procurement, status in_progress, awaiting HOD PO signature
-        pr6, bm6 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/006",
-            proc_manager=gem_proc,
-            amount=600000.0,
-            current_status="in_progress",
-            initiator=faculty,
-            form_data={"gem_link": "https://gem.gov.in/bid/GEM/2026/B/1006"},
-            budget_item_name="Office Workstations (GeM)",
-            budget_file_no="NITT/F.No.0006/CAPEX/2026-27/CSE",
-            flow_phase=po_phase,
-            flow_step_order=1
-        )
-        pr6.tender_reference_number = "GEM/CSE/2026/06"
-        pr6.date_of_tender = date(2026, 5, 1)
-        db.add(pr6)
-        # Commercial & Technical evaluations for PR 6
-        db.add(CommercialEvaluation(purchase_request_id=pr6.id, vendor_name="Alpha Technologies Pvt. Ltd.", is_qualified=True))
-        db.add(TechnicalEvaluation(purchase_request_id=pr6.id, vendor_name="Alpha Technologies Pvt. Ltd.", is_qualified=True))
-        # Financial evaluations L1 for PR 6
-        db.add(FinancialEvaluation(
-            purchase_request_id=pr6.id,
-            vendor_name="Alpha Technologies Pvt. Ltd.",
-            quoted_amount=550000.0,
-            ranking="L1",
-            is_awarded=True,
-            remarks="L1 bidder accepted."
-        ))
-        # History for PR 6
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved."),
-            (dean, "Approved", "Approved."),
-            (da, "Tender Details Registered", "Registered bid."),
-            (dean, "Technical Evaluation Phase Completed", "TE completed."),
-            (dean, "Financial Sanction Approved", "FS completed.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr6.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-            ))
-
-        # PR 7 (Delivery Stage): LPC procurement, status po_issued, awaiting GRN receipt logging
-        pr7, bm7 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/007",
-            proc_manager=lt_proc,
-            amount=50000.0,
-            current_status="po_issued",
-            initiator=faculty,
-            form_data={"invited_vendors": "Local Furniture Vendor", "gem_nac_attached": True},
-            budget_item_name="LPC Lab Furniture",
-            budget_file_no="NITT/F.No.0007/OPEX/2026-27/CSE",
-            flow_phase=None,
-            flow_step_order=None
-        )
-        pr7.po_approved_at = datetime.utcnow()
-        db.add(pr7)
-        # History for PR 7
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved."),
-            (da, "PO Registered", "PO reference GEM-PO-1007 generated.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr7.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-            ))
-        # Pending delivery record for PR 7
-        d7 = Delivery(
-            po_id=pr7.id,
-            challan_number="CH-2026-77",
-            invoice_number="INV-2026-77",
-            department_id=cse.id,
-            status="pending",
-            created_at=datetime.utcnow()
-        )
-        db.add(d7)
-        await db.flush()
-        db.add(DeliveryItem(
-            delivery_id=d7.id,
-            name="LPC Lab Furniture",
-            category="furniture",
-            challan_quantity=1,
-            unit_price=50000.0
-        ))
-
-        # PR 8 (Asset Registration Stage): Proprietary purchase, status completed, with assets generated
-        pr8, bm8 = await create_seeded_pr(
-            icr_number="ICR/CSE/2026-27/008",
-            proc_manager=pac_proc,
-            amount=2400000.0,
-            current_status="completed",
-            initiator=faculty,
-            form_data={
-                "manufacturer_name": "Thermo Fisher Scientific",
-                "manufacturer_address": "Mumbai",
-                "justification_type": "sole_manufacturer",
-                "gem_nac_attached": True
-            },
-            budget_item_name="Mass Spectrometer System (PAC)",
-            budget_file_no="NITT/F.No.0008/CAPEX/2026-27/CSE",
-            flow_phase=None,
-            flow_step_order=None,
-            budget_deduct=True
-        )
-        pr8.po_approved_at = datetime.utcnow()
-        db.add(pr8)
-        db.add(seed_pac_file(pr8.id, "dept_pac_file", "dept_pac_form.pdf", "dummy_dept_pac.pdf"))
-        db.add(seed_pac_file(pr8.id, "oem_pac_file", "oem_pac_certificate.pdf", "dummy_oem_pac.pdf"))
-        db.add(seed_pac_file(pr8.id, "oem_auth_file", "oem_authorization.pdf", "dummy_oem_auth.pdf"))
-        # History for PR 8
-        for actor_user, status_str, remarks_str in [
-            (hod, "Approved", "Approved by HOD."),
-            (dean, "Approved", "Approved by Dean P&D."),
-            (director, "Approved", "Approved by Director."),
-            (da, "Tender Details Registered", "Registered proprietary tender."),
-            (hod, "Technical Evaluation Approved", "TSC completed."),
-            (dean, "Financial Sanction Approved", "FS completed."),
-            (da, "PO Dispatched", "PO issued to Thermo Fisher."),
-            (hod, "Goods Received", "Delivered item received and logged in department."),
-            (da, "Bill Passed (PR Completed)", "Passed payment invoice.")
-        ]:
-            db.add(PurchaseRequestHistory(
-                purchase_request_id=pr8.id,
-                current_approver_id=actor_user.id,
-                status=status_str,
-                remarks=remarks_str,
-                acted_at=datetime.utcnow(),
-                frozen_actor_name=actor_user.name,
-                frozen_designation=actor_user.designation,
-            ))
-        # Verified delivery record for PR 8
-        d8 = Delivery(
-            po_id=pr8.id,
-            challan_number="CH-2026-88",
-            invoice_number="INV-2026-88",
-            department_id=cse.id,
-            status="verified",
-            received_date=datetime.utcnow(),
-            created_at=datetime.utcnow()
-        )
-        db.add(d8)
-        await db.flush()
-        di8 = DeliveryItem(
-            delivery_id=d8.id,
-            name="Mass Spectrometer System",
-            category="equipment",
-            challan_quantity=1,
-            unit_price=2400000.0
-        )
-        db.add(di8)
-        await db.flush()
-        # Bill passing certificate for PR 8
-        db.add(BillPassing(
-            purchase_request_id=pr8.id,
-            invoice_number="INV-2026-88",
-            invoice_date=datetime.utcnow(),
-            bill_amount=2400000.0,
-            gst_amount=432000.0,
-            payment_terms="Immediate",
-            remarks="Equipment received and verified. Bill passed to finance.",
-            passed_by_id=da.id
-        ))
-        # Registered asset for PR 8
-        db.add(Asset(
-            asset_tag="NITT-CSE-2026-0001",
-            name="Mass Spectrometer System",
-            category="lab_equipment",
-            department_id=cse.id,
-            building="CSE Building",
-            room="Research Lab 2",
-            custodian="Dr. A. Kumar",
-            serial_number="MS-998877",
-            condition="working",
-            purchase_date=date(2026, 6, 1),
-            unit_cost=2400000.0,
-            delivery_item_id=di8.id,
-            created_at=datetime.utcnow()
-        ))
 
         # Seed 4 free budget files for E2E testing
         for i, (item_name, amount) in enumerate([

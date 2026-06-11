@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.limiter import limiter
-from sqlalchemy import select, and_, delete, or_
+from sqlalchemy import select, and_, delete, or_, func
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
@@ -999,7 +999,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             )
         )
     )
-    hod = hod_res.scalar_one_or_none()
+    hod = hod_res.scalars().first()
     
     expert1 = users_by_id.get(dept.expert1_id) if dept and dept.expert1_id else None
     expert2 = users_by_id.get(dept.expert2_id) if dept and dept.expert2_id else None
@@ -1146,7 +1146,21 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             for ref in pr.referrals
         ],
         "history": history,
-        "items": [{"id": i.id, "item_description": i.item_description, "estimated_total": i.estimated_total, "quantity": i.quantity} for i in pr.items],
+        "items": [
+            {
+                "id": i.id,
+                "item_description": i.item_description,
+                "estimated_total": i.estimated_total,
+                "quantity": i.quantity,
+                "budget_file_id": i.budget_file_id,
+                "budget_file": {
+                    "id": i.budget_file.id,
+                    "file_no": i.budget_file.file_no,
+                    "department_id": i.budget_file.department_id,
+                } if i.budget_file else None,
+            }
+            for i in pr.items
+        ],
         "flow": {
             "phase_id": pr.flow.phase_id,
             "phase_name": phase_name,
@@ -2417,6 +2431,7 @@ async def allocate_budget_file(
 
     new_file_no = (body.get("file_no") or "").strip().upper()
     allocation_remarks = (body.get("remarks") or "").strip()
+    selected_budget_file_id = body.get("selected_budget_file_id")
 
     if new_file_no and new_file_no.upper().startswith("TEMP"):
         raise HTTPException(status_code=400, detail="The allocated file number must not be a temporary reference (must not start with TEMP)")
@@ -2424,26 +2439,64 @@ async def allocate_budget_file(
     # Update all temporary budget files linked to this PR to the permanent file number
     updated_budget_ids = set()
     allocated_names = []
-    for item in pr.items:
-        if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
-            if item.budget_file.id not in updated_budget_ids:
-                old_file_no = item.budget_file.file_no
-                if new_file_no:
-                    item_file_no = new_file_no
-                else:
-                    from app.routers.admin import generate_permanent_file_number
-                    item_file_no = await generate_permanent_file_number(
-                        db,
-                        item.budget_file.department_id,
-                        item.budget_file.source_of_fund,
-                        item.budget_file.financial_year_id
-                    )
-                item.budget_file.file_no = item_file_no
+
+    if selected_budget_file_id:
+        from app.models.budget import BudgetMaster
+        new_bm_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == selected_budget_file_id))
+        new_bm = new_bm_res.scalar_one_or_none()
+        if not new_bm:
+            raise HTTPException(status_code=404, detail="Selected budget file not found")
+        if new_bm.file_no.upper().startswith("TEMP"):
+            raise HTTPException(status_code=400, detail="Selected budget file must be a permanent reference")
+
+        for item in pr.items:
+            old_bm = item.budget_file
+            if old_bm and old_bm.file_no.upper().startswith("TEMP"):
+                old_file_no = old_bm.file_no
+                old_budget_id = old_bm.id
+
+                # Dec locked amount on old temp budget
+                old_bm.committed_amount = max(0.0, old_bm.committed_amount - item.estimated_total)
+
+                # Inc locked amount on new selected budget
+                new_bm.committed_amount += item.estimated_total
+
+                # Re-link item to the permanent budget
+                item.budget_file_id = new_bm.id
                 await db.flush()
-                updated_budget_ids.add(item.budget_file.id)
-                if allocation_remarks:
-                    item.budget_file.remarks = allocation_remarks
-                allocated_names.append(f"{old_file_no} -> {item_file_no}")
+
+                updated_budget_ids.add(old_budget_id)
+                allocated_names.append(f"{old_file_no} -> {new_bm.file_no} (Assigned Existing)")
+
+                # Clean up the old temporary budget file if no longer referenced anywhere
+                ref_count_res = await db.execute(
+                    select(func.count(PurchaseRequestItem.id)).where(PurchaseRequestItem.budget_file_id == old_budget_id)
+                )
+                ref_count = ref_count_res.scalar() or 0
+                if ref_count == 0:
+                    await db.delete(old_bm)
+                    await db.flush()
+    else:
+        for item in pr.items:
+            if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
+                if item.budget_file.id not in updated_budget_ids:
+                    old_file_no = item.budget_file.file_no
+                    if new_file_no:
+                        item_file_no = new_file_no
+                    else:
+                        from app.routers.admin import generate_permanent_file_number
+                        item_file_no = await generate_permanent_file_number(
+                            db,
+                            item.budget_file.department_id,
+                            item.budget_file.source_of_fund,
+                            item.budget_file.financial_year_id
+                        )
+                    item.budget_file.file_no = item_file_no
+                    await db.flush()
+                    updated_budget_ids.add(item.budget_file.id)
+                    if allocation_remarks:
+                        item.budget_file.remarks = allocation_remarks
+                    allocated_names.append(f"{old_file_no} -> {item_file_no}")
 
     if not updated_budget_ids:
         raise HTTPException(

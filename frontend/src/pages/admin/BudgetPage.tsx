@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip } from 'lucide-react';
+import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatFileNo } from '../../utils/format';
@@ -34,6 +34,11 @@ export const BudgetPage: React.FC = () => {
   const [selectedBudgetForAllocation, setSelectedBudgetForAllocation] = useState<any>(null);
   const [allocationRemarks, setAllocationRemarks] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'review' | 'allocate'>('active');
+
+  // Rollover modal states
+  const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
+  const [selectedRolloverIds, setSelectedRolloverIds] = useState<Set<number>>(new Set());
+  const [rolloverResult, setRolloverResult] = useState<any>(null);
 
   // Core Queries
   const [page, setPage] = useState(1);
@@ -71,6 +76,21 @@ export const BudgetPage: React.FC = () => {
     queryKey: ['all_users'],
     queryFn: () => budgetApi.allUsers().then(res => res.data)
   });
+
+  // Rollover candidates — only fetched when modal is open
+  const { data: rolloverCandidates = [], isLoading: loadingCandidates } = useQuery({
+    queryKey: ['rollover_candidates'],
+    queryFn: () => adminApi.getRolloverCandidates().then(res => res.data),
+    enabled: isRolloverModalOpen,
+  });
+
+  // Group candidates by department for display
+  const candidatesByDept = (rolloverCandidates as any[]).reduce((acc: Record<string, any[]>, c: any) => {
+    const key = c.department_code || String(c.department_id);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(c);
+    return acc;
+  }, {});
 
   const isWriteAllowed = user && user.role?.group_key === 'dean_approver';
   const isHOD = user && user.role?.group_key === 'hod';
@@ -129,6 +149,20 @@ export const BudgetPage: React.FC = () => {
       toast.error(err.response?.data?.detail || 'Failed to assign permanent file number');
       setSelectedBudgetId(null);
     }
+  });
+
+  const rolloverMutation = useMutation({
+    mutationFn: (budgetFileIds: number[]) => adminApi.rolloverFinancialYear(budgetFileIds.length > 0 ? budgetFileIds : undefined),
+    onSuccess: (res) => {
+      setRolloverResult(res.data);
+      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
+      queryClient.invalidateQueries({ queryKey: ['budget_financial_years'] });
+      queryClient.invalidateQueries({ queryKey: ['rollover_candidates'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Rollover failed');
+    },
   });
 
 
@@ -210,16 +244,29 @@ export const BudgetPage: React.FC = () => {
         {(isWriteAllowed || isHOD) && (
           <div className="flex gap-2">
             {isWriteAllowed && (
-              <button
-                onClick={() => {
-                  setUploadResult(null);
-                  setCsvFile(null);
-                  setIsCsvModalOpen(true);
-                }}
-                className="btn-secondary flex items-center gap-2 border-slate-300 px-4 py-2 hover:bg-slate-100 transition-all font-semibold"
-              >
-                <Upload size={16} /> Bulk Upload CSV
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    setIsRolloverModalOpen(true);
+                    setRolloverResult(null);
+                    setSelectedRolloverIds(new Set());
+                  }}
+                  className="btn-secondary flex items-center gap-2 border-orange-300 text-orange-700 hover:bg-orange-50 px-4 py-2 font-semibold transition-all"
+                  title="Roll over the active financial year to next year"
+                >
+                  <RefreshCw size={15} /> FY Rollover
+                </button>
+                <button
+                  onClick={() => {
+                    setUploadResult(null);
+                    setCsvFile(null);
+                    setIsCsvModalOpen(true);
+                  }}
+                  className="btn-secondary flex items-center gap-2 border-slate-300 px-4 py-2 hover:bg-slate-100 transition-all font-semibold"
+                >
+                  <Upload size={16} /> Bulk Upload CSV
+                </button>
+              </>
             )}
             <button 
               onClick={() => navigate('/budget/create')} 
@@ -1010,6 +1057,204 @@ export const BudgetPage: React.FC = () => {
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* ── Financial Year Rollover Modal ─────────────────────────────── */}
+      {isRolloverModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200">
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-200 bg-gradient-to-r from-orange-600 to-amber-500 text-white rounded-t-2xl flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <CalendarDays size={18} />
+                  <h2 className="text-lg font-bold">Financial Year Rollover</h2>
+                </div>
+                <p className="text-xs text-orange-100">
+                  Select which unused budget files to carry forward to the next financial year.
+                  Selected files will be renamed with an <code className="bg-orange-700/40 px-1 py-0.5 rounded text-[11px]">R</code> prefix (revised).
+                </p>
+              </div>
+              {!rolloverMutation.isSuccess && (
+                <button
+                  onClick={() => setIsRolloverModalOpen(false)}
+                  className="text-white/80 hover:text-white text-2xl leading-none font-bold"
+                >×</button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {rolloverResult ? (
+                /* ── Success state ── */
+                <div className="flex flex-col items-center gap-6 py-6">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <CheckCircle size={32} className="text-emerald-500" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-slate-800">Rollover Successful!</h3>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Financial year <span className="font-semibold text-orange-600">{rolloverResult.closed_year}</span> has been closed.
+                      Now active: <span className="font-semibold text-emerald-600">{rolloverResult.opened_year}</span>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                      <p className="text-xs font-bold text-blue-500 uppercase tracking-wide">PRs Rolled Over</p>
+                      <p className="text-3xl font-bold text-blue-700 mt-1">{rolloverResult.rolled_over_pr_count ?? rolloverResult.rolled_over_count ?? 0}</p>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                      <p className="text-xs font-bold text-orange-500 uppercase tracking-wide">Budget Files Rolled</p>
+                      <p className="text-3xl font-bold text-orange-600 mt-1">{rolloverResult.rolled_over_file_count ?? 0}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsRolloverModalOpen(false)}
+                    className="btn-primary px-8 mt-2"
+                  >Close</button>
+                </div>
+              ) : loadingCandidates ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 size={28} className="animate-spin text-orange-500" />
+                  <span className="ml-3 text-slate-500">Loading unused budget files...</span>
+                </div>
+              ) : rolloverCandidates.length === 0 ? (
+                <div className="flex flex-col items-center gap-4 py-12 text-center">
+                  <CalendarDays size={40} className="text-slate-300" />
+                  <div>
+                    <p className="font-semibold text-slate-600">No unused budget files found</p>
+                    <p className="text-sm text-slate-400 mt-1">All active-year files have pending PRs or have already been utilized.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Select all toggle */}
+                  <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                    <div>
+                      <p className="font-semibold text-orange-800 text-sm">
+                        {selectedRolloverIds.size} of {(rolloverCandidates as any[]).length} files selected
+                      </p>
+                      <p className="text-xs text-orange-600 mt-0.5">
+                        Only selected files will receive a revised (R-prefix) file number in the new FY.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRolloverIds(new Set((rolloverCandidates as any[]).map((c: any) => c.id)))}
+                        className="text-xs font-semibold text-orange-700 hover:text-orange-900 bg-white border border-orange-300 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors"
+                      >Select All</button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRolloverIds(new Set())}
+                        className="text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                      >Clear</button>
+                    </div>
+                  </div>
+
+                  {/* Grouped by department */}
+                  {Object.entries(candidatesByDept).map(([deptCode, files]: [string, any]) => (
+                    <div key={deptCode} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-100 px-4 py-2.5 flex items-center justify-between">
+                        <span className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                          <span className="bg-[#1a3a6b] text-white text-[11px] font-bold px-2 py-0.5 rounded">{deptCode}</span>
+                          {depts.find((d: any) => d.short_code === deptCode)?.name || deptCode}
+                        </span>
+                        <span className="text-xs text-slate-500">{files.length} file{files.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {files.map((c: any) => {
+                          const checked = selectedRolloverIds.has(c.id);
+                          const revisedNo = c.file_no
+                            .replace(c.fy_label, '(next-FY)')
+                            .replace(/F\.No\./gi, 'R');
+                          return (
+                            <label
+                              key={c.id}
+                              className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                                checked ? 'bg-orange-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  setSelectedRolloverIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(c.id);
+                                    else next.delete(c.id);
+                                    return next;
+                                  });
+                                }}
+                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                    {c.file_no}
+                                  </span>
+                                  {c.is_temporary && (
+                                    <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">TEMP</span>
+                                  )}
+                                  {checked && (
+                                    <span className="text-[10px] text-orange-600 font-semibold flex items-center gap-0.5">
+                                      → <span className="font-mono">{revisedNo}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 mt-0.5 font-medium truncate">{c.item_name}</p>
+                                <p className="text-[11px] text-slate-400">
+                                  {c.source_of_fund} · {formatCurrency(c.total_allocation)} · Qty {c.quantity}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!rolloverResult && (
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-between items-center gap-3">
+                <div className="text-xs text-slate-500">
+                  {selectedRolloverIds.size === 0 && !loadingCandidates && rolloverCandidates.length > 0 && (
+                    <span className="text-amber-600 font-medium">⚠ No files selected — only in-progress PRs will be carried over.</span>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsRolloverModalOpen(false)}
+                    className="btn-secondary text-sm px-5"
+                    disabled={rolloverMutation.isPending}
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    disabled={rolloverMutation.isPending}
+                    onClick={() => {
+                      if (!window.confirm(
+                        `This will CLOSE the current financial year and open the next one.\n\n` +
+                        `${selectedRolloverIds.size} unused budget file(s) will be carried over with revised file numbers.\n\n` +
+                        `This action cannot be undone. Proceed?`
+                      )) return;
+                      rolloverMutation.mutate(Array.from(selectedRolloverIds));
+                    }}
+                    className="flex items-center gap-2 px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold rounded-lg shadow transition-colors disabled:opacity-60"
+                  >
+                    {rolloverMutation.isPending ? (
+                      <><Loader2 size={15} className="animate-spin" /> Rolling Over...</>
+                    ) : (
+                      <><RefreshCw size={15} /> Confirm FY Rollover</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

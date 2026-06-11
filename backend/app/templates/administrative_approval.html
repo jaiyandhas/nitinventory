@@ -194,7 +194,7 @@
     {% set first_item_details = items_details[0] if items_details else none %}
     
     <div style="font-weight: bold; font-size: 11pt; margin-bottom: 10px;">
-        File No: <span class="bold">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else '-' }}</span>
+        File No: <span class="bold">{{ file_nos_str }}</span>
     </div>
 
     <table class="details-table" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -687,7 +687,7 @@
 
     <!-- File No -->
     <div style="font-size: 9.5pt; font-weight: bold; margin-bottom: 10px;">
-        File No: <span style="font-weight: bold;">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else '' }}</span>
+        File No: <span style="font-weight: bold;">{{ file_nos_str if file_nos_str != '-' else '' }}</span>
     </div>
 
     <!-- Details Table — exact layout as official form -->
@@ -1038,7 +1038,7 @@
     <table class="details-table">
         <tr>
             <th style="width: 30%">File Number & Date Reference</th>
-            <td style="width: 70%" class="bold">{{ pr.items[0].budget_file.file_no if (pr.items and pr.items[0].budget_file) else '-' }} · {{ pr_created_at_str }}</td>
+            <td style="width: 70%" class="bold">{{ file_nos_str }} · {{ pr_created_at_str }}</td>
         </tr>
         <tr>
             <th>Description of article</th>
@@ -1195,7 +1195,7 @@
     <table class="details-table">
         <tr>
             <th>File No</th>
-            <td class="bold">{{ pr.items[0].budget_file.file_no if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td class="bold">{{ file_nos_str }}</td>
             <th>Name of Department</th>
             <td>{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
         </tr>
@@ -1304,7 +1304,7 @@
     <table class="details-table" style="width: 100%; margin-bottom: 15px;">
         <tr>
             <th style="width: 20%">File No:</th>
-            <td style="width: 30%">{{ pr.items[0].budget_file.file_no if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td style="width: 30%">{{ file_nos_str }}</td>
             <th style="width: 20%">Date:</th>
             <td style="width: 30%">{{ bp.passed_at.strftime('%d/%m/%Y') if bp else '-' }}</td>
         </tr>
@@ -1598,7 +1598,7 @@
         {% set first_item = pr.items[0] if pr.items else none %}
         <tr>
             <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">File No:</td>
-            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else (pr.file_no or '-') }}</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ file_nos_str }}</td>
         </tr>
         <tr>
             <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Name of the Department</td>
@@ -1704,7 +1704,7 @@
         <br/><br/>
         And recommends to reinitiate the purchase through <span style="text-decoration: underline; font-weight: bold;">{{ pr.po_cancellations[0].reinitiation_method|upper if pr.po_cancellations else 'DIRECT / GeM / LIMITED TENDER / CPPP' }}</span>.
         <br/><br/>
-        Hence the competent authority is requested to approve the cancellation of purchase order and reinitiate the procurement. The Dean P&D office is requested to reallocate the sanctioned amount for the above mentioned File No: <strong>{{ first_item.budget_file.file_no if (first_item and first_item.budget_file) else (pr.file_no or '_______________') }}</strong> to enable reinitiating the procurement for the same item.
+        Hence the competent authority is requested to approve the cancellation of purchase order and reinitiate the procurement. The Dean P&D office is requested to reallocate the sanctioned amount for the above mentioned File No: <strong>{{ file_nos_str if file_nos_str != '-' else '_______________' }}</strong> to enable reinitiating the procurement for the same item.
     </div>
 
     <table style="width: 100%; border-collapse: collapse; margin-top: 20px; border: 1px solid #333; font-size: 8.5pt;">
@@ -2145,7 +2145,7 @@
     <table class="details-table">
         <tr>
             <th>File No</th>
-            <td class="bold">{{ pr.items[0].budget_file.file_no if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td class="bold">{{ file_nos_str }}</td>
             <th>Tender Reference</th>
             <td class="bold">{{ pr.tender_reference_number or 'N/A' }}</td>
         </tr>

@@ -184,7 +184,7 @@ class PDFService:
                     )
                 )
             )
-            hod_user = hod_res.scalar_one_or_none()
+            hod_user = hod_res.scalars().first()
 
         def to_file_url(rel_path):
             if not rel_path:
@@ -214,6 +214,9 @@ class PDFService:
             if os.path.exists(full_path):
                 return to_file_url(clean_path)
             return None
+
+        if pr.form_data is None:
+            pr.form_data = {}
 
         dept = pr.initiator.department if (pr.initiator and pr.initiator.department) else None
         
@@ -505,10 +508,19 @@ class PDFService:
                 "uploaded_at_str": updated_local.strftime("%d/%m/%Y %H:%M") if updated_local else "-"
             })
 
+        # Collect unique file numbers from all items in this purchase request
+        unique_file_nos = []
+        for item in pr.items:
+            if item.budget_file and item.budget_file.file_no:
+                if item.budget_file.file_no not in unique_file_nos:
+                    unique_file_nos.append(item.budget_file.file_no)
+        file_nos_str = ", ".join(unique_file_nos) if unique_file_nos else "-"
+
         templates = Jinja2Templates(directory="app/templates")
         templates.env.filters["format_inr"] = format_inr
         html_content = templates.get_template("administrative_approval.html").render({
             "pr": pr,
+            "file_nos_str": file_nos_str,
             "module": module,
             "history_serialized": history_serialized,
             "referrals_serialized": referrals_serialized,

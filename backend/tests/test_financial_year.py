@@ -240,3 +240,57 @@ async def test_financial_year_rollover_execution(db_session):
     )
     new_budget = new_budget_res.scalar_one()
     assert new_budget.locked_amount == 150000.0
+
+
+@pytest.mark.asyncio
+async def test_financial_year_rollover_with_unused_and_r_format(db_session):
+    """Test rollover formats budget files with 'F.No.' to 'R' and clones unused budget master files."""
+    db_session.commit = db_session.flush
+
+    # 1. Fetch active FY
+    active_fy_res = await db_session.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+    old_active_fy = active_fy_res.scalar_one()
+
+    # Fetch CSE Department
+    from app.models.user import Department
+    dept_res = await db_session.execute(select(Department).limit(1))
+    dept = dept_res.scalar_one()
+
+    # Create unused budget in active FY with F.No.
+    unused_budget = BudgetMaster(
+        file_no="NITT/F.No.1234/CAPEX/2026-27/CSE",
+        department_id=dept.id,
+        item_name="Unused Budget Head",
+        source_of_fund="CAPEX",
+        category="equipment",
+        course_code="CS101",
+        unit_cost=100000.0,
+        quantity=1,
+        total_allocation=100000.0,
+        financial_year_id=old_active_fy.id,
+        committed_amount=0.0,
+        utilized_amount=0.0
+    )
+    db_session.add(unused_budget)
+    await db_session.flush()
+
+    # Run rollover
+    res = await financial_year_rollover(db=db_session, _=None)
+    assert "rollover completed successfully" in res["message"].lower()
+
+    # Find the next FY
+    new_fy_res = await db_session.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+    new_active_fy = new_fy_res.scalar_one()
+
+    # Assert unused budget was cloned to the next FY and file number has R instead of F.No.
+    rolled_budget_res = await db_session.execute(
+        select(BudgetMaster).where(
+            BudgetMaster.department_id == dept.id,
+            BudgetMaster.financial_year_id == new_active_fy.id,
+            BudgetMaster.file_no == "NITT/R1234/CAPEX/2027-28/CSE"
+        )
+    )
+    rolled_budget = rolled_budget_res.scalar_one_or_none()
+    assert rolled_budget is not None
+    assert rolled_budget.total_allocation == 100000.0
+

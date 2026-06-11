@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_own_department
@@ -27,11 +27,8 @@ async def get_procurement_methods(db: AsyncSession = Depends(get_db), user: User
 @router.get("/files")
 async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Budget files selectable for PR creation. Scoped to user's department."""
-    now = datetime.utcnow().date()
     fy_result = await db.execute(
-        select(FinancialYear).where(
-            and_(FinancialYear.start_date <= now, FinancialYear.end_date >= now)
-        )
+        select(FinancialYear).where(FinancialYear.is_active == True)
     )
     fy = fy_result.scalar_one_or_none()
     if not fy:
@@ -92,6 +89,9 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
                 "name": b.allocated_initiator.name,
                 "email": b.allocated_initiator.email
             } if b.allocated_initiator else None,
+            "project_code": b.project_code,
+            "principal_investigator": b.principal_investigator,
+            "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
         }
         for b in entries
     ]
@@ -116,11 +116,8 @@ async def department_faculty(db: AsyncSession = Depends(get_db), user: User = De
 @router.get("/overview")
 async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Department budget overview: total, locked, deducted, available."""
-    now = datetime.utcnow().date()
     fy_result = await db.execute(
-        select(FinancialYear).where(
-            and_(FinancialYear.start_date <= now, FinancialYear.end_date >= now)
-        )
+        select(FinancialYear).where(FinancialYear.is_active == True)
     )
     fy = fy_result.scalar_one_or_none()
     if not fy:

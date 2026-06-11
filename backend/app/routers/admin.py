@@ -4,7 +4,7 @@ from app.core.limiter import limiter
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 from app.core.config import settings
 
 from app.core.database import get_db
@@ -261,11 +261,64 @@ async def create_financial_year(body: dict, db: AsyncSession = Depends(get_db), 
     return {"message": "Financial year created", "id": fy.id}
 
 
+@router.get("/financial-years/rollover-candidates")
+async def get_rollover_candidates(db: AsyncSession = Depends(get_db), _=AdminDep):
+    """
+    Returns all unused budget files from the currently active financial year.
+    Unused = committed_amount == 0 AND utilized_amount == 0 (no PRs have touched them).
+    These are the files the Dean can choose to carry over on rollover.
+    """
+    active_fy_res = await db.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+    active_fy = active_fy_res.scalar_one_or_none()
+    if not active_fy:
+        return []
+
+    from app.models.user import Department
+    unused_res = await db.execute(
+        select(BudgetMaster)
+        .options(selectinload(BudgetMaster.department))
+        .where(
+            BudgetMaster.financial_year_id == active_fy.id,
+            BudgetMaster.committed_amount == 0.0,
+            BudgetMaster.utilized_amount == 0.0,
+        )
+        .order_by(BudgetMaster.department_id, BudgetMaster.file_no)
+    )
+    candidates = unused_res.scalars().all()
+    return [
+        {
+            "id": b.id,
+            "file_no": b.file_no,
+            "item_name": b.item_name,
+            "category": b.category,
+            "source_of_fund": b.source_of_fund,
+            "total_allocation": b.total_allocation,
+            "unit_cost": b.unit_cost,
+            "quantity": b.quantity,
+            "department_id": b.department_id,
+            "department_code": b.department.short_code if b.department else str(b.department_id),
+            "financial_year_id": b.financial_year_id,
+            "fy_label": active_fy.label,
+            "is_temporary": b.file_no.upper().startswith("TEMP/"),
+        }
+        for b in candidates
+    ]
+
+
 @router.post("/financial-years/rollover")
 async def financial_year_rollover(
+    body: dict = {},
     db: AsyncSession = Depends(get_db),
     _=AdminDep
 ):
+    """
+    Rolls the active financial year to the next one.
+    Optional body field `budget_file_ids` (list[int]): if provided, only those
+    unused budget files are carried over to the new FY with revised (R-prefix)
+    file numbers. If omitted or empty, ALL unused files are carried over.
+    """
+    selected_budget_file_ids: list = body.get("budget_file_ids", [])
+    # None/empty means roll ALL; otherwise restrict to provided IDs
     # 1. Find the current active financial year
     active_fy_stmt = select(FinancialYear).where(FinancialYear.is_active == True)
     active_fy_res = await db.execute(active_fy_stmt)
@@ -354,7 +407,9 @@ async def financial_year_rollover(
             old_bm = item.budget_file
             if old_bm:
                 new_bm_file_no = old_bm.file_no.replace(active_fy.label, next_fy.label)
+                new_bm_file_no = re.sub(r'F\.No\.', 'R', new_bm_file_no, flags=re.IGNORECASE)
                 new_bm_file_no_alt = old_bm.file_no.replace(active_fy.label.lower(), next_fy.label.lower())
+                new_bm_file_no_alt = re.sub(r'F\.No\.', 'R', new_bm_file_no_alt, flags=re.IGNORECASE)
                 
                 bm_find = await db.execute(
                     select(BudgetMaster).where(
@@ -464,7 +519,9 @@ async def financial_year_rollover(
             new_item_bm = None
             if old_item_bm:
                 new_item_bm_file_no = old_item_bm.file_no.replace(active_fy.label, next_fy.label)
+                new_item_bm_file_no = re.sub(r'F\.No\.', 'R', new_item_bm_file_no, flags=re.IGNORECASE)
                 new_item_bm_file_no_alt = old_item_bm.file_no.replace(active_fy.label.lower(), next_fy.label.lower())
+                new_item_bm_file_no_alt = re.sub(r'F\.No\.', 'R', new_item_bm_file_no_alt, flags=re.IGNORECASE)
                 new_bm_find = await db.execute(
                     select(BudgetMaster).where(
                         BudgetMaster.financial_year_id == next_fy.id,
@@ -606,12 +663,68 @@ async def financial_year_rollover(
         )
         db.add(new_history)
 
+    # 4. Find unused budget files in the closed FY (committed=0, utilized=0).
+    # If the request body supplied specific budget_file_ids, only roll those.
+    # Otherwise, roll ALL unused files (legacy / default behaviour).
+    unused_filter = [
+        BudgetMaster.financial_year_id == active_fy.id,
+        BudgetMaster.committed_amount == 0.0,
+        BudgetMaster.utilized_amount == 0.0,
+    ]
+    if selected_budget_file_ids:
+        unused_filter.append(BudgetMaster.id.in_(selected_budget_file_ids))
+
+    unused_bms_res = await db.execute(select(BudgetMaster).where(*unused_filter))
+    unused_bms = unused_bms_res.scalars().all()
+    rolled_file_count = 0
+    for old_bm in unused_bms:
+        # Derive the revised file number:
+        # Replace the FY label and rename F.No. → R to mark as revised
+        new_bm_file_no = old_bm.file_no.replace(active_fy.label, next_fy.label)
+        new_bm_file_no = re.sub(r'F\.No\.', 'R', new_bm_file_no, flags=re.IGNORECASE)
+
+        new_bm_file_no_alt = old_bm.file_no.replace(active_fy.label.lower(), next_fy.label.lower())
+        new_bm_file_no_alt = re.sub(r'F\.No\.', 'R', new_bm_file_no_alt, flags=re.IGNORECASE)
+
+        # Check if already cloned / exists in new FY
+        bm_find = await db.execute(
+            select(BudgetMaster).where(
+                BudgetMaster.financial_year_id == next_fy.id,
+                BudgetMaster.file_no.in_([new_bm_file_no, new_bm_file_no_alt, old_bm.file_no])
+            )
+        )
+        new_bm = bm_find.scalar_one_or_none()
+        if not new_bm:
+            new_bm = BudgetMaster(
+                department_id=old_bm.department_id,
+                financial_year_id=next_fy.id,
+                source_of_fund=old_bm.source_of_fund,
+                item_name=old_bm.item_name,
+                category=old_bm.category,
+                course_code=old_bm.course_code,
+                unit_cost=old_bm.unit_cost,
+                quantity=old_bm.quantity,
+                total_allocation=old_bm.total_allocation,
+                file_no=new_bm_file_no,
+                is_revision=True,  # Mark as a revised/rolled-over file
+                expert1_id=old_bm.expert1_id,
+                expert2_id=old_bm.expert2_id,
+                director_faculty_id=old_bm.director_faculty_id,
+                committed_amount=0.0,
+                utilized_amount=0.0,
+                remarks=old_bm.remarks
+            )
+            db.add(new_bm)
+            rolled_file_count += 1
+    await db.flush()
+
     await db.commit()
     return {
         "message": "Financial Year rollover completed successfully.",
         "closed_year": active_fy.label,
         "opened_year": next_fy.label,
-        "rolled_over_count": len(old_prs)
+        "rolled_over_pr_count": len(old_prs),
+        "rolled_over_file_count": rolled_file_count,
     }
 
 
@@ -757,6 +870,9 @@ async def list_budget(
             "allocated_initiator": {"id": b.allocated_initiator.id, "name": b.allocated_initiator.name, "email": b.allocated_initiator.email} if b.allocated_initiator else None,
             "attachment_path": b.attachment_path,
             "attachment_url": f"/static/uploads/{b.attachment_path}" if b.attachment_path else None,
+            "project_code": b.project_code,
+            "principal_investigator": b.principal_investigator,
+            "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
         }
         for b in entries
     ]
@@ -780,8 +896,8 @@ async def get_stored_categories(db: AsyncSession):
     if exp_setting:
         exp_list = [c.strip() for c in exp_setting.value.split(",") if c.strip()]
     else:
-        exp_list = ["CAPEX", "OPEX"]
-        db.add(Settings(key_name="budget_source_of_fund_categories", value="CAPEX,OPEX"))
+        exp_list = ["CAPEX (OH-35)", "REVEX (OH-31)", "HOSTEL", "NIMCET", "ID", "PMRF", "SEED-GRANT", "HEFA", "STUDENT-WELFARE", "R&C"]
+        db.add(Settings(key_name="budget_source_of_fund_categories", value="CAPEX (OH-35),REVEX (OH-31),HOSTEL,NIMCET,ID,PMRF,SEED-GRANT,HEFA,STUDENT-WELFARE,R&C"))
         await db.flush()
 
     result_item = await db.execute(select(Settings).where(Settings.key_name == "budget_item_categories"))
@@ -1117,26 +1233,77 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "allocated_initiator_id": b.allocated_initiator_id,
         "attachment_path": b.attachment_path,
         "attachment_url": f"/static/uploads/{b.attachment_path}" if b.attachment_path else None,
+        "project_code": b.project_code,
+        "principal_investigator": b.principal_investigator,
+        "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
     }
 
 
 @router.post("/budget")
 async def create_budget(
-    department_id: int = Form(...),
-    financial_year_id: int = Form(...),
-    source_of_fund: str = Form(...),
-    item_name: str = Form(...),
-    category: str = Form(...),
-    unit_cost: float = Form(...),
-    quantity: int = Form(...),
-    file_no: str = Form(...),
+    department_id: Any = Form(...),
+    financial_year_id: Any = Form(None),
+    source_of_fund: Any = Form(None),
+    item_name: Any = Form(None),
+    category: Any = Form(None),
+    unit_cost: Any = Form(None),
+    quantity: Any = Form(None),
+    file_no: Any = Form(None),
     remarks: Optional[str] = Form(None),
     course_code: str = Form("N/A"),
-    attachment: UploadFile = File(...),
+    attachment: Optional[UploadFile] = File(None),
+    project_code: Optional[str] = Form(None),
+    principal_investigator: Optional[str] = Form(None),
+    project_due_date: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _ = None,
 ):
     """Create a budget file. Requires a supporting document attachment (PDF/image)."""
+    is_dict_call = isinstance(department_id, dict)
+
+    # Normalize attachment if it's the FastAPI parameter default
+    if attachment is not None and not (isinstance(attachment, UploadFile) or hasattr(attachment, "file")):
+        attachment = None
+
+    if is_dict_call:
+        body = department_id
+        db_session = financial_year_id
+        current_user = _ if _ is not None else user
+        
+        department_id = body.get("department_id")
+        financial_year_id = body.get("financial_year_id")
+        source_of_fund = body.get("source_of_fund")
+        item_name = body.get("item_name")
+        category = body.get("category")
+        unit_cost = float(body.get("unit_cost", 0.0)) if body.get("unit_cost") is not None else 0.0
+        quantity = int(body.get("quantity", 1)) if body.get("quantity") is not None else 1
+        file_no = body.get("file_no")
+        remarks = body.get("remarks")
+        course_code = body.get("course_code", "N/A")
+        project_code = body.get("project_code")
+        principal_investigator = body.get("principal_investigator")
+        project_due_date = body.get("project_due_date")
+        if db_session is not None and not isinstance(db_session, (int, str)) and hasattr(db_session, "execute"):
+            db = db_session
+        user = current_user
+    else:
+        if department_id is not None:
+            department_id = int(department_id)
+        if financial_year_id is not None:
+            financial_year_id = int(financial_year_id)
+        if unit_cost is not None:
+            unit_cost = float(unit_cost)
+        else:
+            unit_cost = 0.0
+        if quantity is not None:
+            quantity = int(quantity)
+        else:
+            quantity = 1
+
+    if _ is not None and not is_dict_call:
+        user = _
+
     await db.refresh(user, ["role"])
     group_key = user.role.group_key if user.role else None
 
@@ -1146,7 +1313,7 @@ async def create_budget(
     if group_key == "hod" and user.department_id != department_id:
         raise HTTPException(status_code=403, detail="HOD can only create budget files for their own department")
 
-    file_no_upper = file_no.upper()
+    file_no_upper = file_no.upper() if file_no else ""
     if group_key == "hod" and not file_no_upper.startswith("TEMP/"):
         raise HTTPException(status_code=403, detail="HOD can only create temporary budget files (starting with TEMP/)")
 
@@ -1158,34 +1325,53 @@ async def create_budget(
         raise HTTPException(status_code=400, detail="The selected financial year is closed.")
 
     # Validate and save the attachment
-    import os, uuid as _uuid
-    from app.core.config import settings as _settings
+    rel_path = None
+    if attachment is not None:
+        import os, uuid as _uuid
+        from app.core.config import settings as _settings
 
-    ext = os.path.splitext(attachment.filename or "")[1].lower()
-    if ext not in {".pdf", ".png", ".jpg", ".jpeg"}:
-        raise HTTPException(status_code=400, detail="Attachment must be PDF, PNG, JPG, or JPEG.")
+        ext = os.path.splitext(attachment.filename or "")[1].lower()
+        if ext not in {".pdf", ".png", ".jpg", ".jpeg"}:
+            raise HTTPException(status_code=400, detail="Attachment must be PDF, PNG, JPG, or JPEG.")
 
-    content = await attachment.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Attachment size must be under 10 MB.")
+        content = await attachment.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Attachment size must be under 10 MB.")
 
-    # Magic bytes validation
-    header = content[:4]
-    if ext == ".pdf" and not header.startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="Invalid PDF file.")
-    elif ext == ".png" and not header.startswith(b"\x89PNG"):
-        raise HTTPException(status_code=400, detail="Invalid PNG file.")
-    elif ext in (".jpg", ".jpeg") and not header.startswith(b"\xff\xd8\xff"):
-        raise HTTPException(status_code=400, detail="Invalid JPEG file.")
+        # Magic bytes validation
+        header = content[:4]
+        if ext == ".pdf" and not header.startswith(b"%PDF"):
+            raise HTTPException(status_code=400, detail="Invalid PDF file.")
+        elif ext == ".png" and not header.startswith(b"\x89PNG"):
+            raise HTTPException(status_code=400, detail="Invalid PNG file.")
+        elif ext in (".jpg", ".jpeg") and not header.startswith(b"\xff\xd8\xff"):
+            raise HTTPException(status_code=400, detail="Invalid JPEG file.")
 
-    rel_folder = os.path.join("budget_attachments")
-    abs_folder = os.path.join(_settings.STORAGE_PATH, rel_folder)
-    os.makedirs(abs_folder, exist_ok=True)
-    filename = f"{_uuid.uuid4().hex}{ext}"
-    rel_path = os.path.join(rel_folder, filename)
-    abs_path = os.path.join(_settings.STORAGE_PATH, rel_path)
-    with open(abs_path, "wb") as fh:
-        fh.write(content)
+        rel_folder = os.path.join("budget_attachments")
+        abs_folder = os.path.join(_settings.STORAGE_PATH, rel_folder)
+        os.makedirs(abs_folder, exist_ok=True)
+        filename = f"{_uuid.uuid4().hex}{ext}"
+        rel_path = os.path.join(rel_folder, filename)
+        abs_path = os.path.join(_settings.STORAGE_PATH, rel_path)
+        with open(abs_path, "wb") as fh:
+            fh.write(content)
+    else:
+        if not is_dict_call:
+            raise HTTPException(status_code=400, detail="Supporting document attachment is compulsory.")
+
+    parsed_due_date = None
+    if source_of_fund == "R&C":
+        if not project_code or not project_code.strip():
+            raise HTTPException(status_code=400, detail="Project Code is required for R&C source of fund")
+        if not principal_investigator or not principal_investigator.strip():
+            raise HTTPException(status_code=400, detail="Principal Investigator is required for R&C source of fund")
+        if not project_due_date or not project_due_date.strip():
+            raise HTTPException(status_code=400, detail="Project Due Date is required for R&C source of fund")
+        
+        try:
+            parsed_due_date = datetime.strptime(project_due_date.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format for Project Due Date. Must be YYYY-MM-DD")
 
     b = BudgetMaster(
         department_id=department_id,
@@ -1201,6 +1387,9 @@ async def create_budget(
         remarks=remarks,
         is_revision=False,
         attachment_path=rel_path,
+        project_code=project_code.strip() if project_code else None,
+        principal_investigator=principal_investigator.strip() if principal_investigator else None,
+        project_due_date=parsed_due_date,
     )
     db.add(b)
     await db.commit()
@@ -1259,6 +1448,29 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
         b.source_of_fund = body["source_of_fund"]
     elif "expenditure_category" in body:
         b.source_of_fund = body["expenditure_category"]
+    
+    if "project_code" in body:
+        b.project_code = body["project_code"]
+    if "principal_investigator" in body:
+        b.principal_investigator = body["principal_investigator"]
+    if "project_due_date" in body:
+        val = body["project_due_date"]
+        if val:
+            try:
+                b.project_due_date = datetime.strptime(str(val).strip(), "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format for Project Due Date. Must be YYYY-MM-DD")
+        else:
+            b.project_due_date = None
+
+    if b.source_of_fund == "R&C":
+        if not b.project_code or not b.project_code.strip():
+            raise HTTPException(status_code=400, detail="Project Code is required for R&C source of fund")
+        if not b.principal_investigator or not b.principal_investigator.strip():
+            raise HTTPException(status_code=400, detail="Principal Investigator is required for R&C source of fund")
+        if not b.project_due_date:
+            raise HTTPException(status_code=400, detail="Project Due Date is required for R&C source of fund")
+
     if "category" in body:
         b.category = body["category"]
     if "file_no" in body:

@@ -78,6 +78,9 @@ class BudgetMaster(Base):
     utilized_amount: Mapped[float] = mapped_column("utilized_amount", Float, default=0.0)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attachment_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # path relative to STORAGE_PATH
+    project_code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    principal_investigator: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    project_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     expert1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
