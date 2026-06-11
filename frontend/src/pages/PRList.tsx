@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { formatCurrency } from '../utils/format';
 import { Plus } from 'lucide-react';
 import { prApi } from '../services/api';
 import { PurchaseRequest, PR_STATUS_COLORS, PR_STATUS_LABELS, PRStatus } from '../types';
@@ -20,10 +21,7 @@ export const PRListPage: React.FC = () => {
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit) || 1;
 
-  const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+
 
   return (
     <div className="space-y-5">

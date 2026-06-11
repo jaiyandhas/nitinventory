@@ -318,3 +318,55 @@ async def test_manual_asset_creation_with_quantity_and_supplier_fields(db_sessio
         assert asset.stock_register_volume == "4"
         assert asset.stock_register_page == "67"
         assert asset.remarks == "Lab upgrade batch"
+
+
+@pytest.mark.asyncio
+async def test_public_qr_profile_returns_all_details(db_session):
+    """Test that public_asset_profile returns all required metadata for physical scans."""
+    from app.routers.assets import public_asset_profile
+    from app.models.asset import AssetCondition
+
+    # Retrieve HOD user
+    user_q = await db_session.execute(
+        select(User).options(selectinload(User.role)).where(User.email == "hod.cse@nitt.edu")
+    )
+    hod_user = user_q.scalar_one()
+
+    # Create an asset with full metadata
+    svc = AssetService(db_session)
+    asset = await svc.register_asset({
+        "name": "Audit Scanner",
+        "legacy_asset_tag": "LEG-AUDIT-SCAN-99",
+        "category": "lab_equipment",
+        "department_id": hod_user.department_id,
+        "year": "2026",
+        "building": "Main Admin",
+        "room": "Stores room",
+        "custodian": "Mr. Storekeeper",
+        "serial_number": "SN-AUDIT-9999",
+        "fund_source": "plan_fund",
+        "remarks": "For scanner testing"
+    }, hod_user)
+    asset.purchase_date = datetime.strptime("2026-05-10", "%Y-%m-%d").date()
+    asset.warranty_expiry = datetime.strptime("2028-05-10", "%Y-%m-%d").date()
+    await db_session.flush()
+
+    # Call the public QR profile endpoint
+    res = await public_asset_profile(asset.asset_tag, db=db_session)
+
+    # Check that all details are returned
+    assert res["asset_tag"] == asset.asset_tag
+    assert res["asset_name"] == "Audit Scanner"
+    assert res["location"] == "Main Admin Stores room"
+    assert res["custodian_name"] == "Mr. Storekeeper"
+    assert res["category"] == "lab_equipment"
+    assert res["legacy_asset_tag"] == "LEG-AUDIT-SCAN-99"
+    assert res["fund_source"] == "plan_fund"
+    assert res["condition"] == AssetCondition.WORKING
+    assert res["building"] == "Main Admin"
+    assert res["room"] == "Stores room"
+    assert res["custodian"] == "Mr. Storekeeper"
+    assert res["serial_number"] == "SN-AUDIT-9999"
+    assert res["purchase_date"].isoformat() == "2026-05-10"
+    assert res["warranty_expiry"].isoformat() == "2028-05-10"
+

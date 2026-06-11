@@ -27,6 +27,7 @@ export function buildPRCreateFormData(
     mop: procurementMethodId,
     purchase_type: common.purchase_type || 'departmental',
     nominee_id: common.nominee_id ? Number(common.nominee_id) : null,
+    initiator_id: common.initiator_id ? Number(common.initiator_id) : null,
     basis_of_estimate: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : common.basis_of_estimate,
     basis_of_estimate_others: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : null,
     emd: Number(common.emd),

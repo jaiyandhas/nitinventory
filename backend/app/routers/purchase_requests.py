@@ -192,6 +192,29 @@ async def _persist_pr(
     if not user.is_approved:
         raise HTTPException(status_code=403, detail="Your profile is not yet approved by the administrator.")
     uploads = uploads or {}
+    initiator_id = user.id
+    if user.role.group_key == "hod":
+        if not payload.initiator_id:
+            raise HTTPException(status_code=400, detail="Purchase Initiator must be assigned by HOD")
+        init_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(
+                and_(
+                    User.id == payload.initiator_id,
+                    User.department_id == user.department_id,
+                    RoleManager.group_key == "faculty",
+                )
+            )
+        )
+        target_init = init_res.scalar_one_or_none()
+        if not target_init:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid Purchase Initiator. The initiator must be a faculty member in your department."
+            )
+        initiator_id = payload.initiator_id
+
     selected_file_ids = payload.selected_file_ids
 
     if not payload.items:
@@ -361,7 +384,7 @@ async def _persist_pr(
         "mii_clause": payload.mii_clause,
         "mii_justification": payload.mii_justification,
     })
-
+ 
     any_training_required = False
     specs_dict = merged_form_data.get("specs", {})
     if isinstance(specs_dict, dict):
@@ -372,7 +395,7 @@ async def _persist_pr(
     pr = PurchaseRequest(
         category_id=category.id,
         financial_year_id=financial_year.id,
-        initiator_id=user.id,
+        initiator_id=initiator_id,
         nominee_id=payload.nominee_id,
         procurement_id=procurement.id,
         purchase_type=payload.purchase_type,
@@ -2357,6 +2380,112 @@ async def cancel_tender(
         status_code=400,
         detail="Cancellation is only allowed once the Purchase Order has been issued"
     )
+
+
+@router.post("/{pr_id}/allocate-budget-file")
+async def allocate_budget_file(
+    pr_id: int,
+    body: dict,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Allow Dean Budget/Finance or Admin to directly allocate a permanent budget file number
+    and resume a purchase request paused at the Budget File Allocation stage."""
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+    if group_key not in ("dean_approver", "admin"):
+        raise HTTPException(status_code=403, detail="Only Dean Budget/Finance or Admin can allocate a budget file number")
+
+    result = await db.execute(
+        select(PurchaseRequest)
+        .options(
+            selectinload(PurchaseRequest.items).selectinload(PurchaseRequestItem.budget_file),
+            selectinload(PurchaseRequest.flow),
+        )
+        .where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    if pr.current_status != RequestStatus.BUDGET_FILE_ALLOCATION:
+        raise HTTPException(
+            status_code=400,
+            detail="This purchase request is not paused at the Budget File Allocation stage"
+        )
+
+    new_file_no = (body.get("file_no") or "").strip().upper()
+    allocation_remarks = (body.get("remarks") or "").strip()
+
+    if new_file_no and new_file_no.upper().startswith("TEMP"):
+        raise HTTPException(status_code=400, detail="The allocated file number must not be a temporary reference (must not start with TEMP)")
+
+    # Update all temporary budget files linked to this PR to the permanent file number
+    updated_budget_ids = set()
+    allocated_names = []
+    for item in pr.items:
+        if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
+            if item.budget_file.id not in updated_budget_ids:
+                old_file_no = item.budget_file.file_no
+                if new_file_no:
+                    item_file_no = new_file_no
+                else:
+                    from app.routers.admin import generate_permanent_file_number
+                    item_file_no = await generate_permanent_file_number(
+                        db,
+                        item.budget_file.department_id,
+                        item.budget_file.source_of_fund,
+                        item.budget_file.financial_year_id
+                    )
+                item.budget_file.file_no = item_file_no
+                await db.flush()
+                updated_budget_ids.add(item.budget_file.id)
+                if allocation_remarks:
+                    item.budget_file.remarks = allocation_remarks
+                allocated_names.append(f"{old_file_no} -> {item_file_no}")
+
+    if not updated_budget_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No temporary budget files found to allocate"
+        )
+
+    # Resume the PR
+    pr.current_status = RequestStatus.IN_PROGRESS
+    allocation_date_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    history_remarks = "Budget Files Allocated:\n" + "\n".join(allocated_names) + f"\nAllocation Date: {allocation_date_str}"
+    if allocation_remarks:
+        history_remarks += f"\nRemarks: {allocation_remarks}"
+
+    flow_engine = FlowEngineService(db, background_tasks)
+    await flow_engine._add_history(pr, user, "Budget File Allocated", history_remarks)
+
+    # Notify next step approver(s)
+    if pr.flow:
+        from app.services.email_service import EmailService
+        new_step_result = await db.execute(
+            select(WorkFlowHierarchy).options(
+                selectinload(WorkFlowHierarchy.role),
+                selectinload(WorkFlowHierarchy.user),
+            ).where(
+                flow_engine._wf_filters(pr, pr.flow.phase_id, step_order=pr.flow.step_order)
+            )
+        )
+        new_step = new_step_result.scalar_one_or_none()
+        if new_step:
+            email_svc = EmailService(background_tasks)
+            if new_step.user_type == "user" and new_step.user_id:
+                user_res = await db.execute(select(User.email).where(User.id == new_step.user_id))
+                email_addr = user_res.scalar_one_or_none()
+                next_emails = [email_addr] if email_addr else []
+            else:
+                next_emails = await flow_engine.get_next_approvers_emails(pr, new_step.user_group)
+            for email_addr in next_emails:
+                email_svc.notify_next_approver(pr.id, pr.icr_number, new_step.role.name if new_step.role else new_step.user_group, email_addr)
+
+    await db.commit()
+    return {"message": "Budget file number allocated and purchase request resumed successfully"}
 
 
 @router.post("/{pr_id}/reinitiate")

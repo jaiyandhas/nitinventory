@@ -121,7 +121,8 @@ export type PRStatus =
   | 'po_issued'
   | 'cancelled'
   | 'completed'
-  | 'rolled_over';
+  | 'rolled_over'
+  | 'budget_file_allocation';
 
 export interface PurchaseRequest {
   id: number;
@@ -312,6 +313,7 @@ export const PR_STATUS_LABELS: Record<PRStatus, string> = {
   cancelled: 'Cancelled',
   completed: 'Completed',
   rolled_over: 'Rolled Over',
+  budget_file_allocation: 'Awaiting Budget File Allocation',
 };
 
 export const PR_STATUS_COLORS: Record<PRStatus, string> = {
@@ -323,6 +325,7 @@ export const PR_STATUS_COLORS: Record<PRStatus, string> = {
   cancelled: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
   completed: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
   rolled_over: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  budget_file_allocation: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
 };
 
 export interface FinancialYear {

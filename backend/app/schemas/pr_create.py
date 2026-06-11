@@ -26,6 +26,7 @@ class PRCreatePayload(BaseModel):
     selected_file_ids: List[int] = Field(min_length=1)
     mop: int
     nominee_id: Optional[int] = None
+    initiator_id: Optional[int] = None
     basis_of_estimate: str
     emd: float
     performance_security: float

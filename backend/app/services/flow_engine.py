@@ -333,7 +333,9 @@ class FlowEngineService:
         # Special functional tag validations
         if step.user_type == "purchase_initiator":
             if pr.initiator_id != user.id:
-                raise ValueError("Only the purchase initiator can perform this step")
+                await self.db.refresh(pr, ["initiator"])
+                if not (user.role.group_key == "hod" and pr.initiator.department_id == user.department_id):
+                    raise ValueError("Only the purchase initiator can perform this step")
             return
             
         elif step.user_type == "da_assigner":
@@ -485,6 +487,9 @@ class FlowEngineService:
     async def advance(self, pr: PurchaseRequest, acted_by: User, remarks: Optional[str] = None,
                        status: Optional[str] = None, db_flush: bool = True) -> PurchaseRequest:
         """Advance the purchase request to the next workflow step or phase, sending email notifications and updating status."""
+        if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
+            raise ValueError("This request is currently paused waiting for Budget File Allocation.")
+
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
@@ -608,16 +613,29 @@ class FlowEngineService:
                 elif current_phase.phase_name == "Financial Sanction":
                     pr.fs_approved_at = datetime.utcnow()
 
+                is_budget_file_number_required = False
+                if current_phase.phase_name == "Administrative Approval":
+                    await self.db.refresh(pr, ["items"])
+                    for item in pr.items:
+                        await self.db.refresh(item, ["budget_file"])
+                        if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
+                            is_budget_file_number_required = True
+                            break
+
                 next_phase = await self._get_next_valid_phase(pr, current_phase)
                 if next_phase:
                     flow.phase_id = next_phase.id
                     flow.step_order = 1
-                    pr.current_status = RequestStatus.IN_PROGRESS
-                    if next_phase.phase_name == "Technical Evaluation":
-                        pr.te_initiated_at = datetime.utcnow()
-                        await sync_tech_committee_to_pr(self.db, pr)
-                    if not is_tech_eval_step:
-                        await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
+                    if is_budget_file_number_required:
+                        pr.current_status = RequestStatus.BUDGET_FILE_ALLOCATION
+                        await self._add_history(pr, acted_by, "Awaiting Budget File Allocation", remarks)
+                    else:
+                        pr.current_status = RequestStatus.IN_PROGRESS
+                        if next_phase.phase_name == "Technical Evaluation":
+                            pr.te_initiated_at = datetime.utcnow()
+                            await sync_tech_committee_to_pr(self.db, pr)
+                        if not is_tech_eval_step:
+                            await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
                 else:
                     # Workflow complete — final PO step is faculty goods receipt
                     completed_step = await self._get_step_def(pr, current_phase.id, current_step)
@@ -728,6 +746,9 @@ class FlowEngineService:
 
     async def reject(self, pr: PurchaseRequest, rejected_by: User, reason: str) -> bool:
         """Reject the purchase request, unlocking its budget and notifying the initiator."""
+        if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
+            raise ValueError("This request is currently paused waiting for Budget File Allocation.")
+
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow to reject for PR #{pr.id}")
@@ -756,6 +777,9 @@ class FlowEngineService:
 
     async def send_back(self, pr: PurchaseRequest, acted_by: User, to_step: int, reason: str) -> None:
         """Send the purchase request back to a previous workflow step within the current phase."""
+        if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
+            raise ValueError("This request is currently paused waiting for Budget File Allocation.")
+
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")

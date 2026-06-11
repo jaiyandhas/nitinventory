@@ -12,7 +12,7 @@ from app.core.deps import require_roles, get_current_user
 from app.core.security import get_password_hash
 from app.models.user import User, Department, RoleManager
 from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings
-from app.models.purchase_request import WorkFlowHierarchy
+from app.models.purchase_request import WorkFlowHierarchy, PurchaseRequest, PurchaseRequestItem, RequestStatus, PurchaseRequestHistory
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
@@ -977,12 +977,13 @@ async def get_next_file_number(
     source_of_fund: str = Query(None),
     expenditure_category: str = Query(None),
     financial_year_id: int = Query(...),
+    is_temporary: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     _=BudgetViewDep
 ):
     from app.models.user import Department
     from app.models.budget import FinancialYear, BudgetMaster
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
 
     fund = source_of_fund or expenditure_category
     if not fund:
@@ -998,13 +999,27 @@ async def get_next_file_number(
     if not fy:
         raise HTTPException(status_code=404, detail="Financial Year not found")
 
-    stmt = select(func.count(BudgetMaster.id)).where(
-        and_(
-            BudgetMaster.department_id == department_id,
-            BudgetMaster.source_of_fund == fund,
-            BudgetMaster.financial_year_id == financial_year_id
+    if is_temporary:
+        stmt = select(func.count(BudgetMaster.id)).where(
+            and_(
+                BudgetMaster.department_id == department_id,
+                BudgetMaster.source_of_fund == fund,
+                BudgetMaster.financial_year_id == financial_year_id,
+                BudgetMaster.file_no.ilike("TEMP/%")
+            )
         )
-    )
+    else:
+        stmt = select(func.count(BudgetMaster.id)).where(
+            and_(
+                BudgetMaster.department_id == department_id,
+                BudgetMaster.source_of_fund == fund,
+                BudgetMaster.financial_year_id == financial_year_id,
+                or_(
+                    BudgetMaster.file_no.ilike("NITT/%"),
+                    ~BudgetMaster.file_no.ilike("TEMP/%")
+                )
+            )
+        )
     count_res = await db.execute(stmt)
     count = count_res.scalar() or 0
     next_num = count + 1
@@ -1013,8 +1028,53 @@ async def get_next_file_number(
     source_code = fund.upper()
     fy_label = fy.label.upper()
 
-    file_no = f"NITT/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
+    if is_temporary:
+        file_no = f"TEMP/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
+    else:
+        file_no = f"NITT/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
     return {"file_no": file_no}
+
+
+async def generate_permanent_file_number(
+    db: AsyncSession,
+    department_id: int,
+    source_of_fund: str,
+    financial_year_id: int
+) -> str:
+    from app.models.user import Department
+    from app.models.budget import FinancialYear, BudgetMaster
+    from sqlalchemy import func, and_, or_
+
+    dept_res = await db.execute(select(Department).where(Department.id == department_id))
+    dept = dept_res.scalar_one_or_none()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == financial_year_id))
+    fy = fy_res.scalar_one_or_none()
+    if not fy:
+        raise HTTPException(status_code=404, detail="Financial Year not found")
+
+    stmt = select(func.count(BudgetMaster.id)).where(
+        and_(
+            BudgetMaster.department_id == department_id,
+            BudgetMaster.source_of_fund == source_of_fund,
+            BudgetMaster.financial_year_id == financial_year_id,
+            or_(
+                BudgetMaster.file_no.ilike("NITT/%"),
+                ~BudgetMaster.file_no.ilike("TEMP/%")
+            )
+        )
+    )
+    count_res = await db.execute(stmt)
+    count = count_res.scalar() or 0
+    next_num = count + 1
+
+    dept_code = dept.short_code.upper()
+    source_code = source_of_fund.upper()
+    fy_label = fy.label.upper()
+
+    return f"NITT/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
 
 
 @router.get("/budget/{b_id}")
@@ -1047,7 +1107,23 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
 
 
 @router.post("/budget")
-async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
+async def create_budget(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user), _=None):
+    if _ is not None:
+        user = _
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+    
+    if group_key not in ("dean_approver", "admin", "hod"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+    dept_id = int(body["department_id"])
+    if group_key == "hod" and user.department_id != dept_id:
+        raise HTTPException(status_code=403, detail="HOD can only create budget files for their own department")
+
+    file_no = body.get("file_no", "").upper()
+    if group_key == "hod" and not file_no.startswith("TEMP/"):
+        raise HTTPException(status_code=403, detail="HOD can only create temporary budget files (starting with TEMP/)")
+
     fy_id = int(body["financial_year_id"])
     fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == fy_id))
     fy = fy_res.scalar_one_or_none()
@@ -1057,7 +1133,7 @@ async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBu
         raise HTTPException(status_code=400, detail="The selected financial year is closed. Budgets in closed financial years cannot be modified.")
 
     b = BudgetMaster(
-        department_id=int(body["department_id"]),
+        department_id=dept_id,
         financial_year_id=fy_id,
         source_of_fund=body.get("source_of_fund") or body.get("expenditure_category"),
         item_name=body["item_name"],
@@ -1077,12 +1153,33 @@ async def create_budget(body: dict, db: AsyncSession = Depends(get_db), _=DeanBu
 
 
 @router.put("/budget/{b_id}")
-async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
+async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user), _=None):
+    if _ is not None:
+        user = _
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+    
+    if group_key not in ("dean_approver", "admin", "hod"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == b_id))
     b = result.scalar_one_or_none()
     if not b:
         raise HTTPException(status_code=404, detail="Not found")
+
+    if group_key == "hod" and b.department_id != user.department_id:
+        raise HTTPException(status_code=403, detail="HOD can only update budget files for their own department")
+        
+    if group_key == "hod" and "department_id" in body and int(body["department_id"]) != user.department_id:
+        raise HTTPException(status_code=403, detail="HOD cannot change department of the budget file")
+
+    if group_key == "hod" and not b.file_no.upper().startswith("TEMP/"):
+        raise HTTPException(status_code=403, detail="HOD cannot modify allocated permanent budget files")
+
+    if group_key == "hod" and "file_no" in body:
+        new_file_no = body["file_no"].upper()
+        if not new_file_no.startswith("TEMP/"):
+            raise HTTPException(status_code=403, detail="HOD can only assign temporary file numbers (starting with TEMP/)")
 
     # Check if current budget file belongs to closed financial year
     current_fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == b.financial_year_id))
@@ -1090,6 +1187,7 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     if current_fy and current_fy.is_closed:
         raise HTTPException(status_code=400, detail="The current financial year for this budget is closed. Budgets in closed financial years cannot be modified.")
 
+    old_file_no = b.file_no
     b.item_name = body.get("item_name", b.item_name)
     if "department_id" in body:
         b.department_id = int(body["department_id"])
@@ -1109,7 +1207,12 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     if "category" in body:
         b.category = body["category"]
     if "file_no" in body:
-        b.file_no = body["file_no"].upper()
+        new_file_no = body["file_no"].upper()
+        if old_file_no.upper().startswith("TEMP") and not new_file_no.upper().startswith("TEMP"):
+            new_file_no = await generate_permanent_file_number(
+                db, b.department_id, b.source_of_fund, b.financial_year_id
+            )
+        b.file_no = new_file_no
     if "unit_cost" in body and "quantity" in body:
         b.unit_cost = float(body["unit_cost"])
         b.quantity = int(body["quantity"])
@@ -1118,6 +1221,84 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
         b.allocated_initiator_id = body["allocated_initiator_id"]
     if "remarks" in body:
         b.remarks = body["remarks"]
+
+    # Check for TEMP -> non-TEMP transition and resume associated PRs
+    if "file_no" in body:
+        new_file_no = b.file_no
+        if old_file_no.upper().startswith("TEMP") and not new_file_no.upper().startswith("TEMP"):
+            stmt = (
+                select(PurchaseRequest)
+                .options(
+                    selectinload(PurchaseRequest.flow),
+                    selectinload(PurchaseRequest.items)
+                )
+                .join(PurchaseRequestItem)
+                .where(
+                    and_(
+                        PurchaseRequest.current_status == RequestStatus.BUDGET_FILE_ALLOCATION,
+                        PurchaseRequestItem.budget_file_id == b.id
+                    )
+                )
+            )
+            prs_res = await db.execute(stmt)
+            prs_to_resume = prs_res.scalars().all()
+            
+            for pr in prs_to_resume:
+                other_items_stmt = select(PurchaseRequestItem).where(
+                    and_(
+                        PurchaseRequestItem.purchase_request_id == pr.id,
+                        PurchaseRequestItem.budget_file_id != b.id
+                    )
+                )
+                other_items_res = await db.execute(other_items_stmt)
+                other_items = other_items_res.scalars().all()
+                
+                all_clear = True
+                for item in other_items:
+                    await db.refresh(item, ["budget_file"])
+                    if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
+                        all_clear = False
+                        break
+                        
+                if all_clear:
+                    pr.current_status = RequestStatus.IN_PROGRESS
+                    allocation_date_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    update_remarks = body.get("remarks", "")
+                    history_remarks = f"Budget File Number: {new_file_no}\nAllocation Date: {allocation_date_str}\nRemarks: {update_remarks}"
+                    
+                    from app.services.flow_engine import FlowEngineService
+                    flow_engine = FlowEngineService(db)
+                    await flow_engine._add_history(
+                        pr,
+                        user,
+                        "Budget File Allocated",
+                        history_remarks
+                    )
+                    
+                    # Notify next step
+                    if pr.flow:
+                        from app.models.purchase_request import WorkFlowHierarchy
+                        from app.services.email_service import EmailService
+                        new_step_result = await db.execute(
+                            select(WorkFlowHierarchy).options(
+                                selectinload(WorkFlowHierarchy.role),
+                                selectinload(WorkFlowHierarchy.user)
+                            ).where(
+                                flow_engine._wf_filters(pr, pr.flow.phase_id, step_order=pr.flow.step_order)
+                            )
+                        )
+                        new_step = new_step_result.scalar_one_or_none()
+                        if new_step:
+                            email_svc = EmailService(None)
+                            if new_step.user_type == "user" and new_step.user_id:
+                                user_res = await db.execute(select(User.email).where(User.id == new_step.user_id))
+                                email = user_res.scalar_one_or_none()
+                                next_emails = [email] if email else []
+                            else:
+                                next_emails = await flow_engine.get_next_approvers_emails(pr, new_step.user_group)
+                            for email in next_emails:
+                                email_svc.notify_next_approver(pr.id, pr.icr_number, new_step.role.name if new_step.role else new_step.user_group, email)
+
     await db.commit()
     return {"message": "Budget updated"}
 

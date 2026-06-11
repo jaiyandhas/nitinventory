@@ -11,6 +11,8 @@ interface Props {
   formSchema?: any;
   totalCost?: number;
   onUpdate: (patch: Partial<PRCommonFormState>) => void;
+  isHod?: boolean;
+  departmentFaculty?: any[];
 }
 
 export const StepCommonDetails: React.FC<Props> = ({
@@ -19,6 +21,8 @@ export const StepCommonDetails: React.FC<Props> = ({
   formSchema,
   totalCost = 0,
   onUpdate,
+  isHod = false,
+  departmentFaculty = [],
 }) => {
   const getDisclaimer = () => {
     const name = procurementName.toLowerCase();
@@ -63,6 +67,36 @@ export const StepCommonDetails: React.FC<Props> = ({
           </div>
         )}
       </div>
+
+      {isHod && departmentFaculty.length > 0 && (
+        <div className="bg-[#f8fafc] border border-slate-205 rounded-xl p-5 space-y-4 shadow-sm border-l-4 border-l-[#1a3a6b]">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-4 rounded-full bg-[#1a3a6b] inline-block" />
+            <span className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wider">
+              Purchase Initiator Assignment
+            </span>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Assign Purchase Initiator (Faculty Member) *</label>
+            <select
+              required
+              className="input-field bg-white w-full border border-slate-300 rounded-lg p-2.5 text-sm"
+              value={common.initiator_id || ''}
+              onChange={(e) => onUpdate({ initiator_id: e.target.value })}
+            >
+              <option value="" disabled>-- Select Faculty Member --</option>
+              {departmentFaculty.map((f: any) => (
+                <option key={f.id} value={f.id}>
+                  {f.name} ({f.email})
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 font-medium mt-1">
+              Select a faculty member from your department to serve as the purchase initiator for this request.
+            </p>
+          </div>
+        </div>
+      )}
 
     {formSchema && (
       <div id="procurement-specific-fields" className="scroll-mt-6">

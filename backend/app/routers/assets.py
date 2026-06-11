@@ -19,6 +19,16 @@ class PublicAssetView(BaseModel):
     location: str
     custodian_name: Optional[str] = None
     department_name: Optional[str] = None
+    category: Optional[str] = None
+    legacy_asset_tag: Optional[str] = None
+    fund_source: Optional[str] = None
+    condition: Optional[str] = None
+    building: Optional[str] = None
+    room: Optional[str] = None
+    custodian: Optional[str] = None
+    serial_number: Optional[str] = None
+    purchase_date: Optional[date] = None
+    warranty_expiry: Optional[date] = None
 
     class Config:
         from_attributes = True
@@ -193,6 +203,16 @@ async def public_asset_profile(asset_tag: str, db: AsyncSession = Depends(get_db
         "location": f"{asset.building or ''} {asset.room or ''}".strip(),
         "custodian_name": asset.custodian,
         "department_name": asset.department.name if asset.department else None,
+        "category": asset.category,
+        "legacy_asset_tag": asset.legacy_asset_tag,
+        "fund_source": asset.fund_source,
+        "condition": asset.condition,
+        "building": asset.building,
+        "room": asset.room,
+        "custodian": asset.custodian,
+        "serial_number": asset.serial_number,
+        "purchase_date": asset.purchase_date,
+        "warranty_expiry": asset.warranty_expiry,
     }
 
 

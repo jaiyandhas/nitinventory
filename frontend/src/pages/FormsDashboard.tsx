@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, Link } from 'react-router-dom';
+import { formatCurrency } from '../utils/format';
 import { 
   FileText, Search, Printer, File, CheckCircle, 
   Layers, ChevronRight, HelpCircle, Eye, EyeOff, Lock, Unlock, AlertCircle
@@ -111,10 +112,7 @@ export const FormsDashboardPage: React.FC = () => {
     return icr.includes(searchLower) || idStr.includes(searchLower) || initiator.includes(searchLower) || dept.includes(searchLower);
   });
 
-  const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+
 
   const handlePrint = () => {
     window.print();

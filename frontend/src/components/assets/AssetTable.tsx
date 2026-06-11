@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { QrCode, IndianRupee } from 'lucide-react';
 import { Asset } from '../../types';
+import { formatIndianNumber } from '../../utils/format';
 
 interface AssetTableProps {
   filteredAssets: Asset[];
@@ -49,7 +50,7 @@ export const AssetTable: React.FC<AssetTableProps> = ({ filteredAssets, conditio
               <td className="px-5 py-3 text-slate-600">
                 {asset.unit_cost !== null && asset.unit_cost !== undefined ? (
                   <span className="flex items-center text-xs font-semibold">
-                    <IndianRupee size={12} /> {asset.unit_cost.toLocaleString('en-IN')}
+                    <IndianRupee size={12} /> {formatIndianNumber(asset.unit_cost)}
                   </span>
                 ) : '—'}
               </td>

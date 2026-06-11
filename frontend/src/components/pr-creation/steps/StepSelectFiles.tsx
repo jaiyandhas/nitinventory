@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import type { BudgetFile, ProcurementMethod } from '../../../types';
 import type { PRWizardSelection } from '../../../types/prCreation';
+import { Link } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 interface Props {
   budgetFiles: BudgetFile[];
@@ -16,6 +19,8 @@ export const StepSelectFiles: React.FC<Props> = ({
   onChange,
 }) => {
   const [filterTexts, setFilterTexts] = useState<Record<number, string>>({});
+  const { isRole } = useAuth();
+  const isHod = isRole('hod');
 
   useEffect(() => {
     const count = selection.fileCount;
@@ -150,6 +155,17 @@ export const StepSelectFiles: React.FC<Props> = ({
         <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
           No budget files are available for your department in the active financial year.
         </p>
+      )}
+
+      {isHod && (
+        <div className="flex justify-end pt-2">
+          <Link
+            to="/budget/create?redirect=/pr/create"
+            className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-2 rounded-lg transition-all shadow-xs hover:shadow-sm"
+          >
+            <Plus size={14} /> Create/Request New Budget File
+          </Link>
+        </div>
       )}
     </div>
   );

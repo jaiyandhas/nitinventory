@@ -291,7 +291,10 @@ export function usePRWizard() {
     [items, selection.selectedFileIds]
   );
 
-  const validateCommon = useCallback((totalCost: number = 0, formSchema?: any, procurementName?: string): string | null => {
+  const validateCommon = useCallback((totalCost: number = 0, formSchema?: any, procurementName?: string, isHod?: boolean): string | null => {
+    if (isHod && !common.initiator_id) {
+      return 'Please select a Purchase Initiator';
+    }
     const isPac = procurementName && (procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac'));
     if (isPac) {
       if (!common.dept_pac_file) return 'Department PAC (PDF) is required for Proprietary Purchase';

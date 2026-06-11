@@ -5,6 +5,7 @@ import { inventoryApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, CheckCircle, AlertTriangle, FileText, Package, Upload, Clock } from 'lucide-react';
+import { formatCurrency } from '../utils/format';
 
 export const DeliveryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -218,7 +219,7 @@ export const DeliveryDetailPage: React.FC = () => {
               {delivery.payments.map((p: any) => (
                 <div key={p.id} className="flex justify-between items-center p-3 bg-slate-50 rounded border border-slate-100">
                   <div>
-                    <p className="text-sm font-semibold">₹{p.amount.toLocaleString()}</p>
+                    <p className="text-sm font-semibold">{formatCurrency(p.amount)}</p>
                     <p className="text-xs text-slate-500">{p.invoice_number}</p>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded font-bold uppercase tracking-wider ${
@@ -317,7 +318,7 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm font-medium">₹{item.unit_price.toLocaleString()}</span>
+          <span className="text-sm font-medium">{formatCurrency(item.unit_price)}</span>
           <button className="text-blue-600 hover:underline text-sm font-medium">{isExpanded ? 'Hide Details' : 'Verify'}</button>
         </div>
       </div>

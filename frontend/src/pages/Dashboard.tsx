@@ -1,10 +1,11 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, CheckCircle, Clock, XCircle, TrendingUp, Package, AlertTriangle, Wallet, Layers } from 'lucide-react';
+import { FileText, CheckCircle, Clock, XCircle, TrendingUp, Package, AlertTriangle, Wallet, Layers, Plus } from 'lucide-react';
 import { prApi, budgetApi, assetsApi, inventoryApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PR_STATUS_COLORS, PR_STATUS_LABELS, PRStatus, PurchaseRequest } from '../types';
 import { Link } from 'react-router-dom';
+import { formatCurrency } from '../utils/format';
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string | number; color: string }> = ({ icon, label, value, color }) => (
   <div className="card p-5 border-l-4" style={{ borderLeftColor: color }}>
@@ -18,6 +19,7 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string |
 
 export const DashboardPage: React.FC = () => {
   const { user, isRole } = useAuth();
+  const isStoresUser = isRole('verifier_da', 'verifier_sp');
 
   const { data: prsData } = useQuery({
     queryKey: ['prs', 'dashboard'],
@@ -99,15 +101,6 @@ export const DashboardPage: React.FC = () => {
     return false;
   });
 
-  const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const formatRupee = (n: number) => {
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
   const safeBudget = {
     total: budget?.total || 0,
     available: budget?.available || 0,
@@ -125,15 +118,35 @@ export const DashboardPage: React.FC = () => {
         </p>
       </div>
 
+      {/* Quick Actions (for Faculty) */}
+      {isRole('faculty') && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+          <div className="space-y-1 text-center sm:text-left">
+            <h4 className="text-sm font-bold text-[#1a3a6b] uppercase tracking-wide">Initiate Procurement Request</h4>
+            <p className="text-xs text-slate-600 font-medium">
+              Create and submit a new purchase request using allocated budget files.
+            </p>
+          </div>
+          <Link
+            to="/pr/create"
+            className="btn-primary py-2 px-5 text-xs font-semibold rounded shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 shrink-0 animate-pulse"
+          >
+            <Plus size={15} /> Start New Request
+          </Link>
+        </div>
+      )}
+
       {/* Stat cards */}
       {user?.designation !== 'Dean P&D (Budget)' ? (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
-            <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
-            <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
-            <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
-          </div>
+          {!isStoresUser && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard icon={<FileText size={20} />} label="Active PRs" value={activePrs.length} color="#3b82f6" />
+              <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
+              <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
+              <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
+            </div>
+          )}
 
           {/* Open discrepancies alert */}
           {discrepancies.filter((d: { status: string }) => d.status === 'open').length > 0 && (
@@ -209,49 +222,51 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Recent PRs table */}
-          <div className="card">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Requests</h3>
-              <Link to="/pr" className="text-xs font-semibold text-[#1a3a6b] hover:underline">View All</Link>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">
-                    <th className="text-left px-5 py-3 font-semibold">ICR / ID</th>
-                    <th className="text-left px-5 py-3 font-semibold">Initiator</th>
-                    <th className="text-left px-5 py-3 font-semibold">Amount</th>
-                    <th className="text-left px-5 py-3 font-semibold">Status</th>
-                    <th className="text-left px-5 py-3 font-semibold">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {prs.slice(0, 8).map((pr: PurchaseRequest) => (
-                    <tr key={pr.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3">
-                        <Link to={`/pr/${pr.id}`} className="text-[#1a3a6b] hover:underline font-bold">
-                          {pr.icr_number || `#${pr.id}`}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-3 text-slate-700">{pr.initiator?.name || '—'}</td>
-                      <td className="px-5 py-3 text-slate-700 font-medium">
-                        {formatCurrency(pr.amount)}
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className="status-badge border-slate-300 bg-slate-100 text-slate-700">
-                          {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-xs text-slate-500 font-medium">{new Date(pr.created_at).toLocaleDateString()}</td>
+          {!isStoresUser && (
+            <div className="card">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Recent Purchase Requests</h3>
+                <Link to="/pr" className="text-xs font-semibold text-[#1a3a6b] hover:underline">View All</Link>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">
+                      <th className="text-left px-5 py-3 font-semibold">ICR / ID</th>
+                      <th className="text-left px-5 py-3 font-semibold">Initiator</th>
+                      <th className="text-left px-5 py-3 font-semibold">Amount</th>
+                      <th className="text-left px-5 py-3 font-semibold">Status</th>
+                      <th className="text-left px-5 py-3 font-semibold">Date</th>
                     </tr>
-                  ))}
-                  {prs.length === 0 && (
-                    <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase requests yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {prs.slice(0, 8).map((pr: PurchaseRequest) => (
+                      <tr key={pr.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3">
+                          <Link to={`/pr/${pr.id}`} className="text-[#1a3a6b] hover:underline font-bold">
+                            {pr.icr_number || `#${pr.id}`}
+                          </Link>
+                        </td>
+                        <td className="px-5 py-3 text-slate-700">{pr.initiator?.name || '—'}</td>
+                        <td className="px-5 py-3 text-slate-700 font-medium">
+                          {formatCurrency(pr.amount)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="status-badge border-slate-300 bg-slate-100 text-slate-700">
+                            {PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-slate-500 font-medium">{new Date(pr.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                    {prs.length === 0 && (
+                      <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No purchase requests yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </>
       ) : (
         /* Dean Budget Portal Analytics & Operations Dashboard */

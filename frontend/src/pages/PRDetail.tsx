@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText
+  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText, Clock
 } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
+import { formatCurrency } from '../utils/format';
 import { prApi, budgetApi, adminApi, assetsApi } from '../services/api';
 import { PurchaseRequest } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -101,6 +102,20 @@ export const PRDetailPage: React.FC = () => {
       toast.error(err.response?.data?.detail || 'Failed to force-advance purchase request');
     }
   });
+
+  // Budget File Allocation state & mutation
+  const [budgetAllocRemarks, setBudgetAllocRemarks] = useState('');
+  const allocateBudgetFileMutation = useMutation({
+    mutationFn: () => prApi.allocateBudgetFile(Number(id), { remarks: budgetAllocRemarks }),
+    onSuccess: () => {
+      toast.success('Budget file number allocated — PR has resumed.');
+      setBudgetAllocRemarks('');
+      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to allocate budget file number');
+    },
+  });
   const { data: pr, refetch, isError, error } = useQuery<PurchaseRequest>({
     queryKey: ['pr', id],
     queryFn: () => prApi.get(Number(id)).then(r => r.data),
@@ -192,12 +207,9 @@ export const PRDetailPage: React.FC = () => {
   const activeReferralForUser = pr.referrals?.find((ref: any) => ref.referred_to?.id === user?.id && ref.status === 'pending');
   const anyPendingReferral = pr.referrals?.find((ref: any) => ref.status === 'pending');
 
-  const isActionable = (canActOn || !!activeReferralForUser || !!anyPendingReferral) && !['po_issued', 'rejected', 'cancelled', 'completed'].includes(pr.current_status);
+  const isActionable = (canActOn || !!activeReferralForUser || !!anyPendingReferral) && !['po_issued', 'rejected', 'cancelled', 'completed', 'budget_file_allocation'].includes(pr.current_status);
 
-  const formatCurrency = (n?: number) => {
-    if (n === undefined || n === null || isNaN(n)) return '₹0.00';
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+  // Filter assets belonging to this PR's deliveries
 
   // Filter assets belonging to this PR's deliveries
   const prAssets = allAssets.filter((asset: any) => {
@@ -302,6 +314,9 @@ export const PRDetailPage: React.FC = () => {
                     if (pr.current_status === 'rejected' || pr.current_status === 'cancelled') {
                       circleBg = "bg-red-100 border-red-300 text-red-700";
                       borderCol = "border-red-300";
+                    } else if (pr.current_status === 'budget_file_allocation') {
+                      circleBg = "bg-amber-100 border-amber-400 text-amber-800 ring-2 ring-amber-400 ring-offset-2 animate-pulse";
+                      borderCol = "border-amber-400";
                     } else {
                       circleBg = "bg-blue-100 border-blue-500 text-blue-800 ring-2 ring-blue-400 ring-offset-2 animate-pulse";
                       borderCol = "border-blue-400";
@@ -332,6 +347,95 @@ export const PRDetailPage: React.FC = () => {
                 })}
               </div>
             </div>
+
+            {/* ── Budget File Allocation Banner ─────────────────────────────────── */}
+            {pr.current_status === 'budget_file_allocation' && (
+              <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-5 py-4 bg-amber-100/60 border-b border-amber-200">
+                  <Clock size={18} className="text-amber-600 shrink-0" />
+                  <div>
+                    <h3 className="text-sm font-bold text-amber-900 tracking-wide">Awaiting Budget File Allocation</h3>
+                    <p className="text-xs text-amber-700 font-medium mt-0.5">
+                      This request was approved administratively but is paused until the Dean Budget/Finance section assigns a permanent budget file number.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  {/* Temp file number details from linked items */}
+                  {pr.items && pr.items.some((item: any) => item.budget_file?.file_no?.toUpperCase().startsWith('TEMP')) && (
+                    <div className="mb-4 space-y-2.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Temporary Budget File References</span>
+                      {pr.items
+                        .filter((item: any) => item.budget_file?.file_no?.toUpperCase().startsWith('TEMP'))
+                        .map((item: any, i: number) => {
+                          const hasEditPermission = ['dean_approver', 'admin'].includes(user?.role?.group_key || '');
+                          const permanentNum = item.budget_file.file_no.replace(/^TEMP\//i, 'NITT/');
+                          return (
+                            <div key={i} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs bg-white border border-amber-200/80 p-3 rounded-lg shadow-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 font-bold tracking-wide">
+                                  {item.budget_file.file_no}
+                                </span>
+                                <span className="text-slate-600 font-medium">{item.item_description}</span>
+                              </div>
+                              <div className="flex items-center gap-3 justify-between sm:justify-end">
+                                <span className="text-[10px] text-slate-400">
+                                  Will auto-roll to: <code className="font-mono bg-slate-100 px-1 py-0.5 rounded font-bold text-slate-700">{permanentNum}</code>
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      }
+                    </div>
+                  )}
+
+                  {/* Action form — only for Dean Budget/Finance or Admin */}
+                  {['dean_approver', 'admin'].includes(user?.role?.group_key || '') ? (
+                    <div className="space-y-4 pt-3 border-t border-amber-200">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Automatically assign the permanent file numbers shown above and resume the request:
+                      </p>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1" htmlFor="budget-alloc-remarks">
+                          Allocation Remarks <span className="text-slate-400 font-normal">(Optional)</span>
+                        </label>
+                        <textarea
+                          id="budget-alloc-remarks"
+                          rows={2}
+                          placeholder="Enter any remarks for the audit trail..."
+                          value={budgetAllocRemarks}
+                          onChange={(e) => setBudgetAllocRemarks(e.target.value)}
+                          className="input-field w-full text-sm resize-none"
+                        />
+                      </div>
+                      <button
+                        id="budget-alloc-submit-btn"
+                        onClick={() => {
+                          if (window.confirm('Automatically allocate permanent file numbers and resume this procurement request?')) {
+                            allocateBudgetFileMutation.mutate();
+                          }
+                        }}
+                        disabled={allocateBudgetFileMutation.isPending}
+                        className="btn-primary w-full bg-amber-600 hover:bg-amber-700 border-none text-white text-sm py-2.5 flex items-center justify-center gap-2 font-semibold shadow-sm"
+                      >
+                        {allocateBudgetFileMutation.isPending ? (
+                          <><span className="animate-spin">⏳</span> Allocating &amp; Resuming...</>
+                        ) : (
+                          <>✅ Allocate Permanent File Numbers &amp; Resume PR</>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-sm text-amber-800 font-medium">
+                      <Clock size={28} className="mx-auto mb-2 text-amber-400 opacity-70" />
+                      The Dean Budget/Finance section must assign a permanent budget file number before this request can continue to the next procurement stage.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Stage Content Panel */}
             <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm text-left space-y-6">

@@ -32,6 +32,7 @@ export interface PRItemFormState {
 
 export interface PRCommonFormState {
   nominee_id: string;
+  initiator_id?: string;
   basis_of_estimate: 'Budgetary Quote' | 'Previous Purchase' | 'Market Survey' | 'Others' | '';
   basis_of_estimate_others: string;
   quotation_file: File | null;
@@ -101,6 +102,7 @@ export function createEmptyItemState(budgetFileId: number): PRItemFormState {
 export function createEmptyCommonState(): PRCommonFormState {
   return {
     nominee_id: '',
+    initiator_id: '',
     basis_of_estimate: '',
     basis_of_estimate_others: '',
     quotation_file: null,

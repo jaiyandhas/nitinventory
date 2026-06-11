@@ -5,6 +5,7 @@ import { assetsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, Edit, Trash2, ArrowRightLeft, Shield, MapPin, User as UserIcon, Calendar, IndianRupee, Activity } from 'lucide-react';
+import { formatCurrency } from '../utils/format';
 
 export const AssetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -136,7 +137,7 @@ export const AssetDetailPage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><IndianRupee size={16} /> Unit Cost</p>
-              <p className="font-semibold">₹{(asset.unit_cost || 0).toLocaleString()}</p>
+              <p className="font-semibold">{formatCurrency(asset.unit_cost)}</p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1 flex items-center gap-1"><Shield size={16} /> Serial Number</p>

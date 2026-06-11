@@ -30,6 +30,10 @@ export const BudgetPage: React.FC = () => {
 
   const [selectedBudgetForDirector, setSelectedBudgetForDirector] = useState<any>(null);
   const [directorFacultyId, setDirectorFacultyId] = useState<number | null>(null);
+  const [selectedBudgetId, setSelectedBudgetId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'active' | 'temporary'>('active');
+  const [selectedBudgetForAllocation, setSelectedBudgetForAllocation] = useState<any>(null);
+  const [allocationRemarks, setAllocationRemarks] = useState('');
 
   // Core Queries
   const [page, setPage] = useState(1);
@@ -114,9 +118,28 @@ export const BudgetPage: React.FC = () => {
     }
   });
 
+  const assignPermanentFileNoMutation = useMutation({
+    mutationFn: ({ budgetId, fileNo, remarks }: { budgetId: number; fileNo: string; remarks?: string }) =>
+      adminApi.updateBudget(budgetId, { file_no: fileNo.replace(/^TEMP\//i, 'NITT/'), remarks }),
+    onSuccess: () => {
+      toast.success('Permanent file number assigned successfully and associated PRs resumed.');
+      setSelectedBudgetId(null);
+      setSelectedBudgetForAllocation(null);
+      setAllocationRemarks('');
+      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to assign permanent file number');
+      setSelectedBudgetId(null);
+    }
+  });
+
 
 
   const filteredBudgets = budgets;
+  const activeBudgets = budgets.filter((b: any) => !b.file_no.toUpperCase().startsWith('TEMP/'));
+  const tempBudgets = budgets.filter((b: any) => b.file_no.toUpperCase().startsWith('TEMP/'));
+  const currentTabBudgets = activeTab === 'active' ? activeBudgets : tempBudgets;
 
   const handleCsvSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,6 +250,40 @@ export const BudgetPage: React.FC = () => {
         </select>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-200 gap-6 px-1">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+            activeTab === 'active'
+              ? 'border-[#1a3a6b] text-[#1a3a6b]'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Active Budgets
+          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-medium ${
+            activeTab === 'active' ? 'bg-blue-100 text-[#1a3a6b]' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {activeBudgets.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab('temporary')}
+          className={`pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+            activeTab === 'temporary'
+              ? 'border-amber-600 text-amber-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Temporary Requests
+          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${
+            activeTab === 'temporary' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {tempBudgets.length}
+          </span>
+        </button>
+      </div>
+
       {/* Main budgets table */}
       <div className="card overflow-x-auto border border-slate-200 shadow-sm">
         <table className="data-table">
@@ -245,21 +302,29 @@ export const BudgetPage: React.FC = () => {
           <tbody>
             {loadingBudgets ? (
               <tr><td colSpan={8} className="text-center py-8">Loading budget data...</td></tr>
-            ) : filteredBudgets.length === 0 ? (
+            ) : currentTabBudgets.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
             ) : (
-              filteredBudgets.map((b: any) => {
+              currentTabBudgets.map((b: any) => {
                 const hasCommittee = b.expert1 || b.expert2 || b.director_faculty;
                 const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
                 const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
                 const isFyClosed = budgetFy ? budgetFy.is_closed : false;
                 const fyLabel = budgetFy ? budgetFy.label : '';
+                const isTemp = b.file_no.toUpperCase().startsWith('TEMP/');
                 
                 return (
                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
                     <td className="font-medium text-slate-900">
                       <div className="flex flex-col gap-1">
-                        <div className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</span>
+                          {isTemp && (
+                            <span className="px-1.5 py-0.2 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] rounded font-sans font-semibold">
+                              Temporary
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
                           {fyLabel && (
@@ -288,73 +353,106 @@ export const BudgetPage: React.FC = () => {
                     <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
                     <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
                     <td>
-                      <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-400">Exp 1:</span>
-                          <span className="font-medium text-slate-700 truncate">{b.expert1?.name || 'Not nominated'}</span>
+                      {isTemp ? (
+                        <div className="text-xs text-slate-400 italic bg-slate-50 border border-dashed border-slate-250 p-2.5 rounded-lg text-center font-medium">
+                          N/A (Pending Allocation)
                         </div>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-400">Exp 2:</span>
-                          <span className="font-medium text-slate-700 truncate">{b.expert2?.name || 'Not nominated'}</span>
+                      ) : (
+                        <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-400">Exp 1:</span>
+                            <span className="font-medium text-slate-700 truncate">{b.expert1?.name || 'Not nominated'}</span>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-400">Exp 2:</span>
+                            <span className="font-medium text-slate-700 truncate">{b.expert2?.name || 'Not nominated'}</span>
+                          </div>
+                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
+                            <span className="text-slate-400">Nominee:</span>
+                            <span className="font-medium text-slate-850 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
+                          </div>
+                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
+                            <span className="text-slate-400">Initiator:</span>
+                            <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
-                          <span className="text-slate-400">Nominee:</span>
-                          <span className="font-medium text-slate-850 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
-                          <span className="text-slate-400">Initiator:</span>
-                          <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
-                        </div>
-                      </div>
+                      )}
                     </td>
                     <td>
                       <div className="flex items-center gap-1.5">
-                        {/* Edit details button */}
-                        {isWriteAllowed && (
-                          <button
-                            onClick={() => navigate(`/budget/edit/${b.id}`)}
-                            disabled={isFyClosed}
-                            className={`p-1.5 rounded transition-colors ${
-                              isFyClosed 
-                                ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
-                                : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-                            }`}
-                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        )}
+                        {isTemp ? (
+                          <>
+                            {isWriteAllowed && (
+                              <button
+                                onClick={() => {
+                                  setSelectedBudgetForAllocation(b);
+                                  setAllocationRemarks(b.remarks || '');
+                                }}
+                                disabled={isFyClosed}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 ${
+                                  isFyClosed
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-amber-500 hover:bg-amber-600 text-white hover:shadow'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Review and Allocate File Number'}
+                              >
+                                Review &amp; Allocate
+                              </button>
+                            )}
+                            {!isWriteAllowed && (
+                              <span className="text-xs text-slate-400 font-medium">Pending Dean Allocation</span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {/* Edit details button */}
+                            {isWriteAllowed && (
+                              <button
+                                onClick={() => navigate(`/budget/edit/${b.id}`)}
+                                disabled={isFyClosed}
+                                className={`p-1.5 rounded transition-colors ${
+                                  isFyClosed 
+                                    ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
+                                    : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                            )}
 
-                        {/* HOD Assign Experts button */}
-                        {isHOD && matchesDept && (
-                          <button
-                            onClick={() => openCommitteeModal(b)}
-                            disabled={isFyClosed}
-                            className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
-                              isFyClosed
-                                ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
-                            }`}
-                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
-                          >
-                            <Users size={14} /> Nominate
-                          </button>
-                        )}
+                            {/* HOD Assign Experts button */}
+                            {isHOD && matchesDept && (
+                              <button
+                                onClick={() => openCommitteeModal(b)}
+                                disabled={isFyClosed}
+                                className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                                  isFyClosed
+                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                    : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
+                              >
+                                <Users size={14} /> Nominate
+                              </button>
+                            )}
 
-                        {/* Director Nominee button */}
-                        {isDirectorOrAdmin && (
-                          <button
-                            onClick={() => openDirectorModal(b)}
-                            disabled={isFyClosed}
-                            className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
-                              isFyClosed
-                                ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
-                            }`}
-                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
-                          >
-                            <Award size={14} /> Nominee
-                          </button>
+                            {/* Director Nominee button */}
+                            {isDirectorOrAdmin && (
+                              <button
+                                onClick={() => openDirectorModal(b)}
+                                disabled={isFyClosed}
+                                className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                                  isFyClosed
+                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                    : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
+                              >
+                                <Award size={14} /> Nominee
+                              </button>
+                            )}
+                          </>
                         )}
                         
                         {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
@@ -577,6 +675,120 @@ export const BudgetPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Review Temporary Budget Allocation Modal */}
+      {selectedBudgetForAllocation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-200 bg-amber-600 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">Review Temporary Budget Request</h2>
+                <p className="text-xs text-amber-100 mt-0.5">Verify details before assigning permanent rolling number</p>
+              </div>
+              <button 
+                onClick={() => { setSelectedBudgetForAllocation(null); setAllocationRemarks(''); }} 
+                className="text-white hover:text-amber-100 font-bold text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Temp File Reference</span>
+                  <span className="font-mono font-bold text-slate-800 uppercase tracking-wide">{selectedBudgetForAllocation.file_no}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department</span>
+                  <span className="font-semibold text-slate-700">{depts.find((d: any) => d.id === selectedBudgetForAllocation.department_id)?.name || selectedBudgetForAllocation.department_id}</span>
+                </div>
+                <div className="col-span-2 border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Item Description</span>
+                  <span className="font-medium text-slate-900">{selectedBudgetForAllocation.item_name}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Category</span>
+                  <span className="font-medium text-slate-750 capitalize">{selectedBudgetForAllocation.category}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Financial Year</span>
+                  <span className="font-semibold text-slate-700">{fys.find((f: any) => f.id === selectedBudgetForAllocation.financial_year_id)?.label || selectedBudgetForAllocation.financial_year_id}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unit Cost</span>
+                  <span className="font-mono text-slate-900">{formatCurrency(selectedBudgetForAllocation.unit_cost)}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Quantity</span>
+                  <span className="font-semibold text-slate-800">{selectedBudgetForAllocation.quantity}</span>
+                </div>
+                <div className="col-span-2 border-t border-slate-200/60 pt-2 bg-amber-50/50 -mx-4 -mb-4 p-4 rounded-b-xl border-t border-amber-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Total Cost / Allocation</span>
+                    <span className="text-lg font-bold text-amber-800 font-sans">{formatCurrency(selectedBudgetForAllocation.total_allocation ?? selectedBudgetForAllocation.total_cost)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Target Rolling Sequence</span>
+                    <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase tracking-wide">
+                      {selectedBudgetForAllocation.file_no.replace(/^TEMP\//i, 'NITT/')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedBudgetForAllocation.remarks && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                  <span className="font-semibold text-slate-700 block mb-1">HOD remarks & justification:</span>
+                  <p className="text-slate-600 italic">"{selectedBudgetForAllocation.remarks}"</p>
+                </div>
+              )}
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block" htmlFor="alloc-remarks">
+                  Allocation Remarks / Comments <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  id="alloc-remarks"
+                  rows={2}
+                  placeholder="Enter remarks or approval notes for the audit trail..."
+                  value={allocationRemarks}
+                  onChange={(e) => setAllocationRemarks(e.target.value)}
+                  className="input-field w-full text-xs resize-none bg-white font-normal text-slate-700"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => { setSelectedBudgetForAllocation(null); setAllocationRemarks(''); }}
+                className="btn-secondary text-xs px-4"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedBudgetId(selectedBudgetForAllocation.id);
+                  assignPermanentFileNoMutation.mutate({
+                    budgetId: selectedBudgetForAllocation.id,
+                    fileNo: selectedBudgetForAllocation.file_no,
+                    remarks: allocationRemarks
+                  });
+                }}
+                disabled={assignPermanentFileNoMutation.isPending}
+                className="btn-primary bg-amber-600 hover:bg-amber-700 border-none text-white text-xs px-5 flex items-center gap-1.5 shadow-sm font-semibold"
+              >
+                {assignPermanentFileNoMutation.isPending ? (
+                  <><Loader2 size={14} className="animate-spin" /> Allocating...</>
+                ) : (
+                  <>Approve &amp; Assign Permanent File Number</>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

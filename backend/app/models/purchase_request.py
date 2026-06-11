@@ -23,6 +23,7 @@ class RequestStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     COMPLETED = "completed"
     ROLLED_OVER = "rolled_over"
+    BUDGET_FILE_ALLOCATION = "budget_file_allocation"
 
 
 class PurchaseType(str, enum.Enum):

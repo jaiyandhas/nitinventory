@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save, Loader2, Plus, Check, Trash2 } from 'lucide-react';
 import { adminApi } from '../../services/api';
@@ -8,10 +8,13 @@ import { useAuth } from '../../context/AuthContext';
 
 export const BudgetFormPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const redirectUrl = searchParams.get('redirect');
   const isEdit = !!id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isHod, user } = useAuth();
+  const userGroupKey = user?.role?.group_key || '';
 
   // Form states
   const [departmentId, setDepartmentId] = useState<number>(0);
@@ -23,7 +26,21 @@ export const BudgetFormPage: React.FC = () => {
   const [quantity, setQuantity] = useState<number>(1);
   const [fileNo, setFileNo] = useState<string>('');
   const [isAutoRolling, setIsAutoRolling] = useState<boolean>(!isEdit);
+  // isTemporary: HODs always create temporary budget files; Dean/Admin can opt-in
+  const [isTemporary, setIsTemporary] = useState<boolean>(isHod());
   const [remarks, setRemarks] = useState<string>('');
+
+  const handleTemporaryToggle = (checked: boolean) => {
+    if (isHod()) return;
+    setIsTemporary(checked);
+    if (isEdit) {
+      if (checked) {
+        setFileNo(prev => prev.replace(/^NITT\//i, 'TEMP/'));
+      } else {
+        setFileNo(prev => prev.replace(/^TEMP\//i, 'NITT/'));
+      }
+    }
+  };
 
   // Modal / Inline states for adding custom categories
   const [newExpVal, setNewExpVal] = useState<string>('');
@@ -68,17 +85,22 @@ export const BudgetFormPage: React.FC = () => {
       setQuantity(budgetDetail.quantity);
       setFileNo(budgetDetail.file_no);
       setRemarks(budgetDetail.remarks || '');
+      setIsTemporary(budgetDetail.file_no.toUpperCase().startsWith('TEMP/'));
       // For existing files, default auto-rolling to false so we don't accidentally overwrite their file number
       setIsAutoRolling(false);
     }
   }, [isEdit, budgetDetail]);
 
-  // Set initial department and financial year if creating
+  // Set initial department — HODs are locked to their own department
   useEffect(() => {
-    if (!isEdit && depts.length > 0 && departmentId === 0) {
-      setDepartmentId(depts[0].id);
+    if (!isEdit && depts.length > 0) {
+      if (isHod() && user?.department_id) {
+        setDepartmentId(user.department_id);
+      } else if (departmentId === 0) {
+        setDepartmentId(depts[0].id);
+      }
     }
-  }, [isEdit, depts, departmentId]);
+  }, [isEdit, depts, departmentId, user]);
 
   useEffect(() => {
     if (!isEdit && fys.length > 0 && financialYearId === 0) {
@@ -87,13 +109,14 @@ export const BudgetFormPage: React.FC = () => {
     }
   }, [isEdit, fys, financialYearId]);
 
-  // Auto-roll file number
+  // Auto-roll file number; HOD-created files get TEMP/ prefix when isTemporary is on
   useEffect(() => {
     if (!isEdit && departmentId && expenditureCategory && financialYearId) {
       adminApi.getNextFileNumber({
         department_id: departmentId,
         source_of_fund: expenditureCategory,
         financial_year_id: financialYearId,
+        is_temporary: isTemporary,
       })
       .then(res => {
         if (res.data && res.data.file_no) {
@@ -104,7 +127,7 @@ export const BudgetFormPage: React.FC = () => {
         console.error('Error fetching auto-rolled file number:', err);
       });
     }
-  }, [isEdit, departmentId, expenditureCategory, financialYearId]);
+  }, [isEdit, departmentId, expenditureCategory, financialYearId, isTemporary]);
 
   // Mutations
   const addCategoryMutation = useMutation({
@@ -179,7 +202,11 @@ export const BudgetFormPage: React.FC = () => {
     onSuccess: () => {
       toast.success(isEdit ? 'Budget file updated successfully' : 'Budget file created successfully');
       queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
-      navigate('/budget');
+      if (redirectUrl) {
+        navigate(redirectUrl);
+      } else {
+        navigate('/budget');
+      }
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to save budget');
@@ -271,7 +298,7 @@ export const BudgetFormPage: React.FC = () => {
                 <select
                   value={departmentId}
                   onChange={(e) => setDepartmentId(Number(e.target.value))}
-                  disabled={isEdit}
+                  disabled={isEdit || isHod()}
                   required
                   className="input-field w-full disabled:bg-slate-50 disabled:text-slate-500"
                 >
@@ -282,6 +309,9 @@ export const BudgetFormPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                {isHod() && (
+                  <p className="text-[10px] text-slate-400 mt-0.5">Locked to your department</p>
+                )}
               </div>
 
               {/* Financial Year */}
@@ -500,17 +530,16 @@ export const BudgetFormPage: React.FC = () => {
               <div className="flex justify-between items-center">
                 <span className="text-sm font-semibold text-slate-800">File Number / Budget Reference</span>
               </div>
-
+ 
               <input
                 type="text"
                 placeholder="NITT/F.No.0000/CAPEX/2026-27/CSE"
                 value={fileNo}
-                onChange={(e) => setFileNo(e.target.value)}
-                disabled={true}
+                disabled
                 required
                 className="input-field w-full font-mono tracking-wider text-sm bg-slate-100 text-slate-600 border-dashed"
               />
-
+ 
               <p className="text-xs text-slate-500 flex items-center gap-1">
                 <Check size={12} className="text-emerald-500" /> Pre-computed automatically using code: <code className="font-mono bg-slate-200 px-1 rounded">NITT/F.No.0000/CAPEX/2026-27/CSE</code>
               </p>
@@ -584,6 +613,7 @@ export const BudgetFormPage: React.FC = () => {
             <h4 className="font-semibold text-slate-800 text-sm">Budget File Rules</h4>
             <p>• File numbers are standardized to prevent duplicate tracking of departmental items.</p>
             <p>• Expenditure source category must be standard (e.g. CAPEX/OPEX) or registered through Dean approval.</p>
+            <p>• HODs may create <strong className="text-amber-700">temporary</strong> budget files (prefixed <code className="font-mono bg-amber-50 text-amber-700 px-1 rounded">TEMP/</code>) when the Dean Budget/Finance section has not yet assigned a permanent file number. The PR will auto-pause until allocation is complete.</p>
             <p>• Once a budget is created, HODs or Admin can assign the Technical Committee nominations on the primary budget workspace.</p>
           </div>
         </div>

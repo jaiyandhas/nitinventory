@@ -78,6 +78,8 @@ export const prApi = {
     api.post(`/pr/${id}/clarify`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   respondClarification: (id: number, clarificationId: number, formData: FormData) =>
     api.post(`/pr/${id}/clarify/${clarificationId}/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  allocateBudgetFile: (id: number, data: { file_no?: string; remarks?: string }) =>
+    api.post(`/pr/${id}/allocate-budget-file`, data),
 };
 
 // Budget
@@ -188,7 +190,7 @@ export const adminApi = {
   addCategory: (data: { type: 'source_of_fund' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
   deleteBudgetCategory: (type: 'source_of_fund' | 'item', value: string) =>
     api.delete('/admin/budget/categories', { params: { type, value } }),
-  getNextFileNumber: (params: { department_id: number; source_of_fund: string; financial_year_id: number }) =>
+  getNextFileNumber: (params: { department_id: number; source_of_fund: string; financial_year_id: number; is_temporary?: boolean }) =>
     api.get('/admin/budget/next-file-number', { params }),
   forceAdvancePr: (prId: number, remarks: string) =>
     api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),

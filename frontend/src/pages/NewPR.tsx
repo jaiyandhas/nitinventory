@@ -12,8 +12,11 @@ import { StepCommonDetails } from '../components/pr-creation/steps/StepCommonDet
 import { StepReviewSubmit } from '../components/pr-creation/steps/StepReviewSubmit';
 import { buildPRCreateFormData } from '../utils/prPayload';
 import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const NewPRPage: React.FC = () => {
+  const { user } = useAuth();
+  const isHod = user?.role?.group_key === 'hod';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
@@ -22,6 +25,12 @@ export const NewPRPage: React.FC = () => {
   const { data: budgetFiles = [] } = useQuery({
     queryKey: ['budgetFiles'],
     queryFn: () => budgetApi.files().then((r) => r.data),
+  });
+
+  const { data: departmentFaculty = [] } = useQuery({
+    queryKey: ['departmentFaculty'],
+    queryFn: () => budgetApi.departmentFaculty().then((r) => r.data),
+    enabled: isHod,
   });
 
   const { data: procurementMethods = [] } = useQuery({
@@ -64,7 +73,7 @@ export const NewPRPage: React.FC = () => {
       }
     }
     if (wizard.stepId === 'common') {
-      const err = wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name);
+      const err = wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name, isHod);
       if (err) {
         toast.error(err);
         // If the error is about a procurement-specific field, scroll the user to that section
@@ -80,7 +89,7 @@ export const NewPRPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
+    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name, isHod) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
     if (err) {
       toast.error(err);
       return;
@@ -183,6 +192,8 @@ export const NewPRPage: React.FC = () => {
             formSchema={procurementMethod?.form_schema}
             totalCost={totalCost}
             onUpdate={wizard.updateCommon}
+            isHod={isHod}
+            departmentFaculty={departmentFaculty}
           />
         )}
 

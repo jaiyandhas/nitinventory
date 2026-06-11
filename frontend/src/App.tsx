@@ -61,8 +61,8 @@ const App: React.FC = () => {
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 
         <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver']}><BudgetPage /></ProtectedRoute>} />
-        <Route path="/budget/create" element={<ProtectedRoute roles={['admin', 'dean_approver']}><BudgetFormPage /></ProtectedRoute>} />
-        <Route path="/budget/edit/:id" element={<ProtectedRoute roles={['admin', 'dean_approver']}><BudgetFormPage /></ProtectedRoute>} />
+        <Route path="/budget/create" element={<ProtectedRoute roles={['admin', 'dean_approver', 'hod']}><BudgetFormPage /></ProtectedRoute>} />
+        <Route path="/budget/edit/:id" element={<ProtectedRoute roles={['admin', 'dean_approver', 'hod']}><BudgetFormPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute roles={['admin', 'apex_approver']}><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UsersPage /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute roles={['admin']}><SettingsPage /></ProtectedRoute>} />
