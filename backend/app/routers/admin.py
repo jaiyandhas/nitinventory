@@ -755,6 +755,8 @@ async def list_budget(
             "expert2": {"id": b.expert2.id, "name": b.expert2.name, "email": b.expert2.email} if b.expert2 else None,
             "director_faculty": {"id": b.director_faculty.id, "name": b.director_faculty.name, "email": b.director_faculty.email} if b.director_faculty else None,
             "allocated_initiator": {"id": b.allocated_initiator.id, "name": b.allocated_initiator.name, "email": b.allocated_initiator.email} if b.allocated_initiator else None,
+            "attachment_path": b.attachment_path,
+            "attachment_url": f"/static/uploads/{b.attachment_path}" if b.attachment_path else None,
         }
         for b in entries
     ]
@@ -1117,45 +1119,86 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
 
 
 @router.post("/budget")
-async def create_budget(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user), _=None):
-    if _ is not None:
-        user = _
+async def create_budget(
+    department_id: int = Form(...),
+    financial_year_id: int = Form(...),
+    source_of_fund: str = Form(...),
+    item_name: str = Form(...),
+    category: str = Form(...),
+    unit_cost: float = Form(...),
+    quantity: int = Form(...),
+    file_no: str = Form(...),
+    remarks: Optional[str] = Form(None),
+    course_code: str = Form("N/A"),
+    attachment: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create a budget file. Requires a supporting document attachment (PDF/image)."""
     await db.refresh(user, ["role"])
     group_key = user.role.group_key if user.role else None
-    
+
     if group_key not in ("dean_approver", "admin", "hod"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-        
-    dept_id = int(body["department_id"])
-    if group_key == "hod" and user.department_id != dept_id:
+
+    if group_key == "hod" and user.department_id != department_id:
         raise HTTPException(status_code=403, detail="HOD can only create budget files for their own department")
 
-    file_no = body.get("file_no", "").upper()
-    if group_key == "hod" and not file_no.startswith("TEMP/"):
+    file_no_upper = file_no.upper()
+    if group_key == "hod" and not file_no_upper.startswith("TEMP/"):
         raise HTTPException(status_code=403, detail="HOD can only create temporary budget files (starting with TEMP/)")
 
-    fy_id = int(body["financial_year_id"])
-    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == fy_id))
+    fy_res = await db.execute(select(FinancialYear).where(FinancialYear.id == financial_year_id))
     fy = fy_res.scalar_one_or_none()
     if not fy:
         raise HTTPException(status_code=400, detail="Financial Year not found")
     if fy.is_closed:
-        raise HTTPException(status_code=400, detail="The selected financial year is closed. Budgets in closed financial years cannot be modified.")
+        raise HTTPException(status_code=400, detail="The selected financial year is closed.")
+
+    # Validate and save the attachment
+    import os, uuid as _uuid
+    from app.core.config import settings as _settings
+
+    ext = os.path.splitext(attachment.filename or "")[1].lower()
+    if ext not in {".pdf", ".png", ".jpg", ".jpeg"}:
+        raise HTTPException(status_code=400, detail="Attachment must be PDF, PNG, JPG, or JPEG.")
+
+    content = await attachment.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Attachment size must be under 10 MB.")
+
+    # Magic bytes validation
+    header = content[:4]
+    if ext == ".pdf" and not header.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Invalid PDF file.")
+    elif ext == ".png" and not header.startswith(b"\x89PNG"):
+        raise HTTPException(status_code=400, detail="Invalid PNG file.")
+    elif ext in (".jpg", ".jpeg") and not header.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(status_code=400, detail="Invalid JPEG file.")
+
+    rel_folder = os.path.join("budget_attachments")
+    abs_folder = os.path.join(_settings.STORAGE_PATH, rel_folder)
+    os.makedirs(abs_folder, exist_ok=True)
+    filename = f"{_uuid.uuid4().hex}{ext}"
+    rel_path = os.path.join(rel_folder, filename)
+    abs_path = os.path.join(_settings.STORAGE_PATH, rel_path)
+    with open(abs_path, "wb") as fh:
+        fh.write(content)
 
     b = BudgetMaster(
-        department_id=dept_id,
-        financial_year_id=fy_id,
-        source_of_fund=body.get("source_of_fund") or body.get("expenditure_category"),
-        item_name=body["item_name"],
-        category=body["category"],
-        course_code=body.get("course_code", "N/A"),
-        unit_cost=float(body["unit_cost"]),
-        quantity=int(body["quantity"]),
-        total_cost=float(body["unit_cost"]) * int(body["quantity"]),
-        file_no=body["file_no"].upper(),
-        remarks=body.get("remarks"),
+        department_id=department_id,
+        financial_year_id=financial_year_id,
+        source_of_fund=source_of_fund,
+        item_name=item_name,
+        category=category,
+        course_code=course_code,
+        unit_cost=unit_cost,
+        quantity=quantity,
+        total_cost=unit_cost * quantity,
+        file_no=file_no_upper,
+        remarks=remarks,
         is_revision=False,
-        allocated_initiator_id=body.get("allocated_initiator_id")
+        attachment_path=rel_path,
     )
     db.add(b)
     await db.commit()

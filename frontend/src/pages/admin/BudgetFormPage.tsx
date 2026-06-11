@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Save, Loader2, Plus, Check, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, Check, Trash2, Paperclip, FileText, X } from 'lucide-react';
 import { adminApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +29,8 @@ export const BudgetFormPage: React.FC = () => {
   // isTemporary: HODs always create temporary budget files; Dean/Admin can opt-in
   const [isTemporary, setIsTemporary] = useState<boolean>(isHod());
   const [remarks, setRemarks] = useState<string>('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const attachmentInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleTemporaryToggle = (checked: boolean) => {
     if (isHod()) return;
@@ -237,18 +239,22 @@ export const BudgetFormPage: React.FC = () => {
       toast.error('Please fill in all required fields');
       return;
     }
-    const payload = {
-      department_id: departmentId,
-      financial_year_id: financialYearId,
-      source_of_fund: expenditureCategory,
-      category: category,
-      item_name: itemName,
-      unit_cost: unitCost,
-      quantity: quantity,
-      file_no: fileNo,
-      remarks: remarks,
-    };
-    saveMutation.mutate(payload);
+    if (!isEdit && !attachmentFile) {
+      toast.error('A supporting document attachment is required');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('department_id', String(departmentId));
+    formData.append('financial_year_id', String(financialYearId));
+    formData.append('source_of_fund', expenditureCategory);
+    formData.append('category', category);
+    formData.append('item_name', itemName);
+    formData.append('unit_cost', String(unitCost));
+    formData.append('quantity', String(quantity));
+    formData.append('file_no', fileNo);
+    if (remarks) formData.append('remarks', remarks);
+    if (attachmentFile) formData.append('attachment', attachmentFile);
+    saveMutation.mutate(formData as any);
   };
 
   const totalCost = unitCost * quantity;
@@ -559,6 +565,56 @@ export const BudgetFormPage: React.FC = () => {
                 className="input-field w-full text-sm resize-none bg-white"
               />
             </div>
+
+            {/* Supporting Document Attachment */}
+            {!isEdit && (
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-800 flex items-center gap-1.5" htmlFor="budgetAttachment">
+                  <Paperclip size={14} className="text-slate-500" />
+                  Supporting Document <span className="text-rose-500">*</span>
+                  <span className="text-xs text-slate-400 font-normal ml-1">(PDF, PNG, JPG · max 10 MB)</span>
+                </label>
+                {!attachmentFile ? (
+                  <label
+                    htmlFor="budgetAttachment"
+                    className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer bg-slate-50 hover:bg-blue-50 hover:border-[#1a3a6b] transition-all group"
+                  >
+                    <div className="flex flex-col items-center gap-2 text-slate-400 group-hover:text-[#1a3a6b]">
+                      <Paperclip size={22} />
+                      <span className="text-sm font-medium">Click to upload or drag & drop</span>
+                      <span className="text-xs">PDF, PNG, JPG or JPEG</span>
+                    </div>
+                    <input
+                      id="budgetAttachment"
+                      ref={attachmentInputRef}
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      className="hidden"
+                      onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                ) : (
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <FileText size={20} className="text-emerald-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-emerald-800 truncate">{attachmentFile.name}</p>
+                      <p className="text-xs text-emerald-600">{(attachmentFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachmentFile(null);
+                        if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+                      }}
+                      className="p-1 rounded-full hover:bg-emerald-100 text-emerald-700 hover:text-rose-600 transition-colors"
+                      title="Remove file"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <button

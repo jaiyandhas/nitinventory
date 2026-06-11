@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock } from 'lucide-react';
+import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatFileNo } from '../../utils/format';
@@ -834,6 +834,24 @@ export const BudgetPage: React.FC = () => {
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
                   <span className="font-semibold text-slate-700 block mb-1">HOD remarks & justification:</span>
                   <p className="text-slate-600 italic">"{selectedBudgetForAllocation.remarks}"</p>
+                </div>
+              )}
+
+              {selectedBudgetForAllocation.attachment_url && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+                  <Paperclip size={14} className="text-blue-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="font-semibold text-blue-800 block">Supporting Document</span>
+                    <span className="text-blue-600 text-[11px]">Attached by HOD at the time of request</span>
+                  </div>
+                  <a
+                    href={selectedBudgetForAllocation.attachment_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-[11px] flex items-center gap-1 transition-colors"
+                  >
+                    View Document
+                  </a>
                 </div>
               )}
 
