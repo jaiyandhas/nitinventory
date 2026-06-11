@@ -657,6 +657,27 @@ async def seed():
             )
             await db.flush()
 
+        # Seed 1 temporary budget file if none exists
+        temp_check = await db.execute(select(BudgetMaster).where(BudgetMaster.file_no.ilike("TEMP/%")).limit(1))
+        if not temp_check.scalar_one_or_none():
+            db.add(BudgetMaster(
+                department_id=cse.id,
+                financial_year_id=fy.id,
+                source_of_fund="CAPEX",
+                item_name="Smart Classroom Projector (TEMP)",
+                category="equipment",
+                course_code="CSE-TEMP-1",
+                unit_cost=150000.0,
+                quantity=1,
+                total_allocation=150000.0,
+                file_no="TEMP/F.No.0001/CAPEX/2026-27/CSE",
+                is_revision=False,
+                committed_amount=0.0,
+                utilized_amount=0.0,
+            ))
+            await db.flush()
+            print("  Seeded 1 temporary budget file")
+
         # Reseed 8 representative purchase requests at various stages of completion.
         # Default behavior is to preserve existing PRs (prevents "PR disappearance" during routine seeding).
         from app.models.purchase_request import PurchaseRequest

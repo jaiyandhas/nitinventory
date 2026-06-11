@@ -501,7 +501,7 @@ async def create_pr(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles("faculty", "hod")),
+    user: User = Depends(require_roles("faculty")),
 ):
     """Create a purchase request (JSON or multipart with `payload` + files)."""
     content_type = request.headers.get("content-type", "")

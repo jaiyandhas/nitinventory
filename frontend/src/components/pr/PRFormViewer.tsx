@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { FileText, CheckCircle, Clock } from 'lucide-react';
 import { PurchaseRequest, PRHistory } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { formatFileNo } from '../../utils/format';
 
 interface PRFormViewerProps {
   pr: PurchaseRequest;
@@ -18,6 +20,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
   hideHeaderControls = false,
 }) => {
   const [internalSelectedModule, setInternalSelectedModule] = useState<string>('indent');
+  const { user } = useAuth();
 
   const selectedModule = propSelectedModule !== undefined ? propSelectedModule : internalSelectedModule;
   const setSelectedModule = onModuleChange !== undefined ? onModuleChange : setInternalSelectedModule;
@@ -137,7 +140,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
     );
   };
 
-  const fileNo = pr.budget_file?.file_no || "-";
+  const fileNo = formatFileNo(pr.budget_file?.file_no, user?.role?.group_key);
   const deptName = pr.initiator?.email?.includes('cse') ? 'Computer Science & Engineering' : 'Main Office';
   const indentName = pr.items?.[0]?.item_description || '-';
   const fundSource = pr.items?.[0]?.requirement_type || 'OH-35';

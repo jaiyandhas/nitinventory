@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BudgetFile, ProcurementMethod } from '../../../types';
-import { formatCurrency } from '../../../utils/format';
+import { formatCurrency, formatFileNo } from '../../../utils/format';
+import { useAuth } from '../../../context/AuthContext';
 
 interface Props {
   selectedFiles: BudgetFile[];
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export const StepReviewSelection: React.FC<Props> = ({ selectedFiles, procurementMethod }) => {
+  const { user } = useAuth();
   const grandTotal = selectedFiles.reduce((s, f) => s + (f.total_allocation ?? f.total_cost), 0);
 
   return (
@@ -29,7 +31,7 @@ export const StepReviewSelection: React.FC<Props> = ({ selectedFiles, procuremen
           <tbody>
             {selectedFiles.map((f) => (
               <tr key={f.id} className="border-t border-slate-200">
-                <td className="px-3 py-2 font-mono">{f.file_no}</td>
+                <td className="px-3 py-2 font-mono">{formatFileNo(f.file_no, user?.role?.group_key)}</td>
                 <td className="px-3 py-2">{f.item_name}</td>
                 <td className="px-3 py-2 text-right">{f.quantity}</td>
                 <td className="px-3 py-2 text-right font-medium">{formatCurrency(f.total_allocation ?? f.total_cost)}</td>

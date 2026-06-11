@@ -136,6 +136,7 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
+
       {/* Stat cards */}
       {user?.designation !== 'Dean P&D (Budget)' ? (
         <>

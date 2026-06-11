@@ -4,6 +4,7 @@ import type { PRWizardSelection } from '../../../types/prCreation';
 import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
+import { formatFileNo } from '../../../utils/format';
 
 interface Props {
   budgetFiles: BudgetFile[];
@@ -19,7 +20,7 @@ export const StepSelectFiles: React.FC<Props> = ({
   onChange,
 }) => {
   const [filterTexts, setFilterTexts] = useState<Record<number, string>>({});
-  const { isRole } = useAuth();
+  const { isRole, user } = useAuth();
   const isHod = isRole('hod');
 
   useEffect(() => {
@@ -91,7 +92,7 @@ export const StepSelectFiles: React.FC<Props> = ({
             const isExhausted = (f.available_balance ?? f.available_amount) < f.unit_cost;
             return (
               <option key={f.id} value={f.id} disabled={isExhausted}>
-                {f.file_no} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}
+                {formatFileNo(f.file_no, user?.role?.group_key)} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}
               </option>
             );
           })}

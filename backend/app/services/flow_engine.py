@@ -614,13 +614,6 @@ class FlowEngineService:
                     pr.fs_approved_at = datetime.utcnow()
 
                 is_budget_file_number_required = False
-                if current_phase.phase_name == "Administrative Approval":
-                    await self.db.refresh(pr, ["items"])
-                    for item in pr.items:
-                        await self.db.refresh(item, ["budget_file"])
-                        if item.budget_file and item.budget_file.file_no.upper().startswith("TEMP"):
-                            is_budget_file_number_required = True
-                            break
 
                 next_phase = await self._get_next_valid_phase(pr, current_phase)
                 if next_phase:

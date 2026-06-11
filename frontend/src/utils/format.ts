@@ -22,3 +22,13 @@ export const formatCurrency = (amount?: number | null) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '₹0.00';
   return '₹' + formatIndianNumber(amount);
 };
+
+export const formatFileNo = (fileNo?: string | null, userRole?: string | null): string => {
+  if (!fileNo) return '-';
+  const isTemp = fileNo.toUpperCase().startsWith('TEMP');
+  const isHodOrFaculty = userRole === 'hod' || userRole === 'faculty';
+  if (isTemp && isHodOrFaculty) {
+    return 'Approved';
+  }
+  return fileNo;
+};

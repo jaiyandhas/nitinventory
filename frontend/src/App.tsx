@@ -56,7 +56,7 @@ const App: React.FC = () => {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/pr" element={<ProtectedRoute prRestricted><PRListPage /></ProtectedRoute>} />
         <Route path="/forms" element={<ProtectedRoute><FormsDashboardPage /></ProtectedRoute>} />
-        <Route path="/pr/create" element={<ProtectedRoute roles={['faculty', 'hod']}><NewPRPage /></ProtectedRoute>} />
+        <Route path="/pr/create" element={<ProtectedRoute roles={['faculty']}><NewPRPage /></ProtectedRoute>} />
         <Route path="/pr/:id" element={<ProtectedRoute prRestricted><PRDetailPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 

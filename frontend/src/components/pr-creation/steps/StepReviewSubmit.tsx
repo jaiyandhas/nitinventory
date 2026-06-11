@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import type { BudgetFile } from '../../../types';
 import type { PRCommonFormState, PRItemFormState } from '../../../types/prCreation';
 import { PR_TERMS } from '../../../config/prCreationQuestions';
-import { formatCurrency } from '../../../utils/format';
+import { formatCurrency, formatFileNo } from '../../../utils/format';
+import { useAuth } from '../../../context/AuthContext';
 
 interface Props {
   files: BudgetFile[];
@@ -27,6 +28,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
   onCancel,
   loading,
 }) => {
+  const { user } = useAuth();
   const [confirmText, setConfirmText] = useState('');
   const canSubmit = confirmText.trim().toUpperCase() === 'CONFIRM' && common.termsAccepted.every(Boolean);
   const isPac = procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac');
@@ -64,7 +66,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
             const totalWithGst = estTotal + gstAmt;
             return (
               <li key={f.id}>
-                <strong>{f.file_no}</strong> — {f.item_name}{' '}
+                <strong>{formatFileNo(f.file_no, user?.role?.group_key)}</strong> — {f.item_name}{' '}
                 <span className="text-slate-600 font-medium">
                   (Qty: {qty} × {formatCurrency(f.unit_cost)} = {formatCurrency(estTotal)} + GST {gstPercent}% [{formatCurrency(gstAmt)}] = {formatCurrency(totalWithGst)})
                 </span>

@@ -30,7 +30,7 @@ export const PRListPage: React.FC = () => {
           <h1 className="page-header">Purchase Requests</h1>
           <p className="page-subtitle">Showing {prs.length} request(s) of {total} total</p>
         </div>
-        {isRole('faculty', 'hod') && (
+        {isRole('faculty') && (
           <Link to="/pr/create" className="btn-primary flex items-center gap-2">
             <Plus size={16} /> New PR
           </Link>

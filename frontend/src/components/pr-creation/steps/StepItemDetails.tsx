@@ -3,7 +3,8 @@ import type { BudgetFile } from '../../../types';
 import type { PRItemFormState } from '../../../types/prCreation';
 import { REQUIREMENT_TYPES, isGemProcurement } from '../../../config/prCreationQuestions';
 import { YesNoSelect } from '../YesNoSelect';
-import { formatCurrency } from '../../../utils/format';
+import { formatCurrency, formatFileNo } from '../../../utils/format';
+import { useAuth } from '../../../context/AuthContext';
 
 interface Props {
   files: BudgetFile[];
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName, onUpdate }) => {
+  const { user } = useAuth();
   const isGem = isGemProcurement(procurementName);
 
   return (
@@ -24,7 +26,7 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
         return (
           <section key={fid} className="card p-6 space-y-5">
             <h3 className="text-lg font-bold text-[#1a3a6b] border-b border-slate-200 pb-2">
-              {index + 1}) {file.file_no} — {file.item_name}
+              {index + 1}) {formatFileNo(file.file_no, user?.role?.group_key)} — {file.item_name}
               <span className="ml-2 text-sm font-normal text-slate-500">({formatCurrency(file.total_allocation ?? file.total_cost)})</span>
             </h3>
 

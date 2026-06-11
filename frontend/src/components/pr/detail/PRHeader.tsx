@@ -5,6 +5,7 @@ import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { budgetApi } from '../../../services/api';
 import toast from 'react-hot-toast';
+import { formatFileNo } from '../../../utils/format';
 import { CancelPOModal } from '../actions/CancelPOModal';
 
 interface PRHeaderProps {
@@ -539,7 +540,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Configure Purchase Committee</h2>
-                <p className="text-xs text-blue-200 mt-1">Budget File: {pr.budget_file.file_no}</p>
+                <p className="text-xs text-blue-200 mt-1">Budget File: {formatFileNo(pr.budget_file.file_no, user?.role?.group_key)}</p>
               </div>
               <button 
                 type="button"

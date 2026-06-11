@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatFileNo } from '../../utils/format';
 import { toast } from 'react-hot-toast';
 
 export const BudgetPage: React.FC = () => {
@@ -31,19 +31,18 @@ export const BudgetPage: React.FC = () => {
   const [selectedBudgetForDirector, setSelectedBudgetForDirector] = useState<any>(null);
   const [directorFacultyId, setDirectorFacultyId] = useState<number | null>(null);
   const [selectedBudgetId, setSelectedBudgetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'active' | 'temporary'>('active');
   const [selectedBudgetForAllocation, setSelectedBudgetForAllocation] = useState<any>(null);
   const [allocationRemarks, setAllocationRemarks] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'review' | 'allocate'>('active');
 
   // Core Queries
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
-
   const { data: budgetsData, isLoading: loadingBudgets } = useQuery({ 
-    queryKey: ['admin_budgets', page, limit, searchTerm, deptFilter, fyFilter], 
+    queryKey: ['admin_budgets', searchTerm, deptFilter, fyFilter], 
     queryFn: () => adminApi.budget({ 
-      skip: (page - 1) * limit, 
-      limit,
+      skip: 0, 
+      limit: 1000,
       search: searchTerm || undefined,
       department_id: deptFilter !== 'all' ? parseInt(deptFilter) : undefined,
       financial_year_id: fyFilter !== 'all' ? parseInt(fyFilter) : undefined
@@ -51,8 +50,6 @@ export const BudgetPage: React.FC = () => {
   });
 
   const budgets = budgetsData?.items || [];
-  const total = budgetsData?.total || 0;
-  const totalPages = Math.ceil(total / limit) || 1;
   
   const { data: depts = [] } = useQuery({ 
     queryKey: ['admin_departments'], 
@@ -136,10 +133,15 @@ export const BudgetPage: React.FC = () => {
 
 
 
-  const filteredBudgets = budgets;
   const activeBudgets = budgets.filter((b: any) => !b.file_no.toUpperCase().startsWith('TEMP/'));
   const tempBudgets = budgets.filter((b: any) => b.file_no.toUpperCase().startsWith('TEMP/'));
   const currentTabBudgets = activeTab === 'active' ? activeBudgets : tempBudgets;
+  const total = currentTabBudgets.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const displayBudgets = currentTabBudgets.slice((page - 1) * limit, page * limit);
+
+  // For the Allocate tab: same temp budgets, just renders action buttons
+  // For the Review tab: same temp budgets, renders read-only detail view
 
   const handleCsvSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,23 +207,25 @@ export const BudgetPage: React.FC = () => {
           </p>
         </div>
         
-        {isWriteAllowed && (
+        {(isWriteAllowed || isHOD) && (
           <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setUploadResult(null);
-                setCsvFile(null);
-                setIsCsvModalOpen(true);
-              }}
-              className="btn-secondary flex items-center gap-2 border-slate-300 px-4 py-2 hover:bg-slate-100 transition-all font-semibold"
-            >
-              <Upload size={16} /> Bulk Upload CSV
-            </button>
+            {isWriteAllowed && (
+              <button
+                onClick={() => {
+                  setUploadResult(null);
+                  setCsvFile(null);
+                  setIsCsvModalOpen(true);
+                }}
+                className="btn-secondary flex items-center gap-2 border-slate-300 px-4 py-2 hover:bg-slate-100 transition-all font-semibold"
+              >
+                <Upload size={16} /> Bulk Upload CSV
+              </button>
+            )}
             <button 
               onClick={() => navigate('/budget/create')} 
               className="btn-primary flex items-center gap-2 px-4 py-2 font-semibold"
             >
-              <Plus size={16} /> Add Budget File
+              <Plus size={16} /> {isHOD ? 'Request Budget File' : 'Add Budget File'}
             </button>
           </div>
         )}
@@ -251,10 +255,10 @@ export const BudgetPage: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-200 gap-6 px-1">
+      <div className="flex border-b border-slate-200 gap-0 px-1">
         <button
-          onClick={() => setActiveTab('active')}
-          className={`pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+          onClick={() => { setActiveTab('active'); setPage(1); }}
+          className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
             activeTab === 'active'
               ? 'border-[#1a3a6b] text-[#1a3a6b]'
               : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -268,96 +272,103 @@ export const BudgetPage: React.FC = () => {
           </span>
         </button>
         <button
-          onClick={() => setActiveTab('temporary')}
-          className={`pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
-            activeTab === 'temporary'
-              ? 'border-amber-600 text-amber-700'
+          onClick={() => { setActiveTab('review'); setPage(1); }}
+          className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+            activeTab === 'review'
+              ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          Temporary Requests
+          Review Requests
           <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${
-            activeTab === 'temporary' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+            activeTab === 'review' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
           }`}>
             {tempBudgets.length}
           </span>
         </button>
+        {isWriteAllowed && (
+          <button
+            onClick={() => { setActiveTab('allocate'); setPage(1); }}
+            className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+              activeTab === 'allocate'
+                ? 'border-emerald-600 text-emerald-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Allocate
+            {tempBudgets.length > 0 && (
+              <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${
+                activeTab === 'allocate' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {tempBudgets.length}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
-      {/* Main budgets table */}
-      <div className="card overflow-x-auto border border-slate-200 shadow-sm">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>File No / ID</th>
-              <th>Dept</th>
-              <th>Item Name</th>
-              <th>Total Allocation</th>
-              <th>Locked Fund</th>
-              <th>Available Balance</th>
-              <th>Technical Committee</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loadingBudgets ? (
-              <tr><td colSpan={8} className="text-center py-8">Loading budget data...</td></tr>
-            ) : currentTabBudgets.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-8 text-slate-500">No budget records found.</td></tr>
-            ) : (
-              currentTabBudgets.map((b: any) => {
-                const hasCommittee = b.expert1 || b.expert2 || b.director_faculty;
-                const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
-                const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
-                const isFyClosed = budgetFy ? budgetFy.is_closed : false;
-                const fyLabel = budgetFy ? budgetFy.label : '';
-                const isTemp = b.file_no.toUpperCase().startsWith('TEMP/');
-                
-                return (
-                   <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
-                    <td className="font-medium text-slate-900">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-xs font-semibold uppercase tracking-wider">{b.file_no}</span>
-                          {isTemp && (
-                            <span className="px-1.5 py-0.2 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] rounded font-sans font-semibold">
-                              Temporary
-                            </span>
-                          )}
+      {/* Active Budgets Table */}
+      {activeTab === 'active' && (
+        <div className="card overflow-x-auto border border-slate-200 shadow-sm">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>File No / ID</th>
+                <th>Dept</th>
+                <th>Item Name</th>
+                <th>Total Allocation</th>
+                <th>Locked Fund</th>
+                <th>Available Balance</th>
+                <th>Technical Committee</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingBudgets ? (
+                <tr><td colSpan={8} className="text-center py-8">Loading budget data...</td></tr>
+              ) : displayBudgets.length === 0 ? (
+                <tr><td colSpan={8} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
+              ) : (
+                displayBudgets.map((b: any) => {
+                  const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
+                  const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
+                  const isFyClosed = budgetFy ? budgetFy.is_closed : false;
+                  const fyLabel = budgetFy ? budgetFy.label : '';
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
+                      <td className="font-medium text-slate-900">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-semibold uppercase tracking-wider">{formatFileNo(b.file_no, user?.role?.group_key)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
+                            {fyLabel && (
+                              <span className="px-1.5 py-0.2 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] rounded font-sans font-medium">
+                                {fyLabel}
+                              </span>
+                            )}
+                            {isFyClosed && (
+                              <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5" title="Financial Year is closed (Read-Only)">
+                                <Lock size={10} /> Locked
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
-                          {fyLabel && (
-                            <span className="px-1.5 py-0.2 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] rounded font-sans font-medium">
-                              {fyLabel}
-                            </span>
-                          )}
-                          {isFyClosed && (
-                            <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5" title="Financial Year is closed (Read-Only)">
-                              <Lock size={10} /> Locked
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
-                    <td className="max-w-[200px]" title={b.item_name}>
-                      <div className="font-medium text-slate-800">{b.item_name}</div>
-                      {b.remarks && (
-                        <div className="text-[11px] text-slate-500 italic mt-0.5 max-w-[190px] truncate" title={b.remarks}>
-                          Remarks: {b.remarks}
-                        </div>
-                      )}
-                    </td>
-                    <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
-                    <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
-                    <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
-                    <td>
-                      {isTemp ? (
-                        <div className="text-xs text-slate-400 italic bg-slate-50 border border-dashed border-slate-250 p-2.5 rounded-lg text-center font-medium">
-                          N/A (Pending Allocation)
-                        </div>
-                      ) : (
+                      </td>
+                      <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="max-w-[200px]" title={b.item_name}>
+                        <div className="font-medium text-slate-800">{b.item_name}</div>
+                        {b.remarks && (
+                          <div className="text-[11px] text-slate-500 italic mt-0.5 max-w-[190px] truncate" title={b.remarks}>
+                            Remarks: {b.remarks}
+                          </div>
+                        )}
+                      </td>
+                      <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
+                      <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
+                      <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
+                      <td>
                         <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
                           <div className="flex justify-between gap-2">
                             <span className="text-slate-400">Exp 1:</span>
@@ -376,100 +387,179 @@ export const BudgetPage: React.FC = () => {
                             <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
                           </div>
                         </div>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          {(isWriteAllowed || (isHOD && matchesDept)) && (
+                            <button
+                              onClick={() => navigate(`/budget/edit/${b.id}`)}
+                              disabled={isFyClosed}
+                              className={`p-1.5 rounded transition-colors ${
+                                isFyClosed 
+                                  ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
+                                  : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          {isHOD && matchesDept && (
+                            <button
+                              onClick={() => openCommitteeModal(b)}
+                              disabled={isFyClosed}
+                              className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                                isFyClosed
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                  : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
+                            >
+                              <Users size={14} /> Nominate
+                            </button>
+                          )}
+                          {isDirectorOrAdmin && (
+                            <button
+                              onClick={() => openDirectorModal(b)}
+                              disabled={isFyClosed}
+                              className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                                isFyClosed
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                  : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
+                            >
+                              <Award size={14} /> Nominee
+                            </button>
+                          )}
+                          {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
+                            <span className="text-xs text-slate-400 italic">No Actions</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Review Requests Tab */}
+      {(activeTab === 'review' || activeTab === 'allocate') && (
+        <div className="card overflow-x-auto border border-slate-200 shadow-sm">
+          {activeTab === 'review' && (
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+              <AlertCircle size={15} className="text-amber-600" />
+              <p className="text-xs text-amber-700 font-medium">
+                These are HOD-submitted temporary budget requests awaiting Dean review. File reference numbers are internal and not visible to HOD/Faculty.
+              </p>
+            </div>
+          )}
+          {activeTab === 'allocate' && isWriteAllowed && (
+            <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
+              <CheckCircle size={15} className="text-emerald-600" />
+              <p className="text-xs text-emerald-700 font-medium">
+                Review the request details and assign a permanent file number to approve the budget allocation.
+              </p>
+            </div>
+          )}
+          <table className="data-table">
+            <thead>
+              <tr>
+                {isWriteAllowed && <th>Internal Ref No</th>}
+                <th>Dept</th>
+                <th>Item Description</th>
+                <th>Category</th>
+                <th>Financial Year</th>
+                <th>Unit Cost</th>
+                <th>Qty</th>
+                <th>Total Cost</th>
+                {activeTab === 'review' && <th>HOD Remarks</th>}
+                {activeTab === 'allocate' && isWriteAllowed && <th>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loadingBudgets ? (
+                <tr><td colSpan={9} className="text-center py-8">Loading...</td></tr>
+              ) : tempBudgets.length === 0 ? (
+                <tr><td colSpan={9} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
+              ) : (
+                tempBudgets.map((b: any) => {
+                  const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
+                  const isFyClosed = budgetFy ? budgetFy.is_closed : false;
+                  const fyLabel = budgetFy ? budgetFy.label : '—';
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
+                      {isWriteAllowed && (
+                        <td className="font-medium text-slate-900">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-mono text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded w-fit">
+                              {b.file_no}
+                            </span>
+                            <span className="text-[10px] text-slate-400">ID: {b.id}</span>
+                            {isFyClosed && (
+                              <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5 w-fit">
+                                <Lock size={9} /> Locked
+                              </span>
+                            )}
+                          </div>
+                        </td>
                       )}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        {isTemp ? (
-                          <>
-                            {isWriteAllowed && (
-                              <button
-                                onClick={() => {
-                                  setSelectedBudgetForAllocation(b);
-                                  setAllocationRemarks(b.remarks || '');
-                                }}
-                                disabled={isFyClosed}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 ${
-                                  isFyClosed
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-amber-500 hover:bg-amber-600 text-white hover:shadow'
-                                }`}
-                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Review and Allocate File Number'}
-                              >
-                                Review &amp; Allocate
-                              </button>
-                            )}
-                            {!isWriteAllowed && (
-                              <span className="text-xs text-slate-400 font-medium">Pending Dean Allocation</span>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {/* Edit details button */}
-                            {isWriteAllowed && (
-                              <button
-                                onClick={() => navigate(`/budget/edit/${b.id}`)}
-                                disabled={isFyClosed}
-                                className={`p-1.5 rounded transition-colors ${
-                                  isFyClosed 
-                                    ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
-                                    : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-                                }`}
-                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                            )}
+                      <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="max-w-[180px]">
+                        <div className="font-medium text-slate-800 text-sm">{b.item_name}</div>
+                      </td>
+                      <td>
+                        <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium rounded capitalize">{b.category || '—'}</span>
+                      </td>
+                      <td>
+                        <span className="px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium rounded">{fyLabel}</span>
+                      </td>
+                      <td className="text-slate-700 font-mono text-xs">{formatCurrency(b.unit_cost)}</td>
+                      <td className="text-slate-700 font-semibold text-sm text-center">{b.quantity}</td>
+                      <td className="font-bold text-slate-900">{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
+                      {activeTab === 'review' && (
+                        <td className="max-w-[180px]">
+                          {b.remarks ? (
+                            <p className="text-xs text-slate-600 italic">{b.remarks}</p>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      {activeTab === 'allocate' && isWriteAllowed && (
+                        <td>
+                          <button
+                            onClick={() => {
+                              setSelectedBudgetForAllocation(b);
+                              setAllocationRemarks(b.remarks || '');
+                            }}
+                            disabled={isFyClosed}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 ${
+                              isFyClosed
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow'
+                            }`}
+                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Assign Permanent File Number'}
+                          >
+                            {isFyClosed ? <Lock size={12} /> : <CheckCircle size={12} />}
+                            Allocate
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-                            {/* HOD Assign Experts button */}
-                            {isHOD && matchesDept && (
-                              <button
-                                onClick={() => openCommitteeModal(b)}
-                                disabled={isFyClosed}
-                                className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
-                                  isFyClosed
-                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                    : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
-                                }`}
-                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
-                              >
-                                <Users size={14} /> Nominate
-                              </button>
-                            )}
-
-                            {/* Director Nominee button */}
-                            {isDirectorOrAdmin && (
-                              <button
-                                onClick={() => openDirectorModal(b)}
-                                disabled={isFyClosed}
-                                className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
-                                  isFyClosed
-                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                    : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
-                                }`}
-                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
-                              >
-                                <Award size={14} /> Nominee
-                              </button>
-                            )}
-                          </>
-                        )}
-                        
-                        {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
-                          <span className="text-xs text-slate-400 italic">No Actions</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination Controls */}
-      {total > 0 && (
+      {/* Pagination Controls - only for Active Budgets tab */}
+      {activeTab === 'active' && total > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg shadow-sm">
           <div className="flex flex-col sm:flex-row items-center gap-4 justify-between w-full sm:w-auto">
             <p className="text-sm text-slate-700">

@@ -649,6 +649,7 @@ async def list_budget(
     search: Optional[str] = None,
     department_id: Optional[int] = None,
     financial_year_id: Optional[int] = None,
+    is_temporary: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     _=BudgetViewDep
@@ -658,6 +659,13 @@ async def list_budget(
     group_key = user.role.group_key if user.role else None
     filters = []
     
+    is_temp = is_temporary if isinstance(is_temporary, bool) else None
+    if is_temp is not None:
+        if is_temp:
+            filters.append(BudgetMaster.file_no.ilike("TEMP/%"))
+        else:
+            filters.append(~BudgetMaster.file_no.ilike("TEMP/%"))
+            
     if financial_year_id is not None:
         filters.append(BudgetMaster.financial_year_id == financial_year_id)
         
@@ -999,7 +1007,9 @@ async def get_next_file_number(
     if not fy:
         raise HTTPException(status_code=404, detail="Financial Year not found")
 
-    if is_temporary:
+    is_temp = is_temporary if isinstance(is_temporary, bool) else False
+
+    if is_temp:
         stmt = select(func.count(BudgetMaster.id)).where(
             and_(
                 BudgetMaster.department_id == department_id,
@@ -1028,7 +1038,7 @@ async def get_next_file_number(
     source_code = fund.upper()
     fy_label = fy.label.upper()
 
-    if is_temporary:
+    if is_temp:
         file_no = f"TEMP/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
     else:
         file_no = f"NITT/F.No.{next_num:04d}/{source_code}/{fy_label}/{dept_code}"
