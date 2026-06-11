@@ -92,6 +92,7 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "project_code": b.project_code,
             "principal_investigator": b.principal_investigator,
             "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
+            "source_of_fund": b.source_of_fund,
         }
         for b in entries
     ]

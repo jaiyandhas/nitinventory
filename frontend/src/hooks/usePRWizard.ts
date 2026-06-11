@@ -233,6 +233,17 @@ export function usePRWizard() {
       if (new Set(selectedFileIds).size !== selectedFileIds.length) return 'Each file can only be selected once';
       const validIds = new Set(budgetFiles.map((f) => f.id));
       if (selectedFileIds.some((id) => !validIds.has(id))) return 'Invalid budget file selection';
+
+      // Check if all selected budget files have the same source of fund
+      const selectedFiles = selectedFileIds.map(id => budgetFiles.find(f => f.id === id)).filter((f): f is BudgetFile => !!f);
+      if (selectedFiles.length > 1) {
+        const firstSource = selectedFiles[0].source_of_fund;
+        const mismatch = selectedFiles.find(f => f.source_of_fund !== firstSource);
+        if (mismatch) {
+          return `All selected budget files must have the same source of fund (e.g. ${firstSource}). Mixing different sources (like ${firstSource} and ${mismatch.source_of_fund}) is not allowed.`;
+        }
+      }
+
       if (!procurementMethodId) return 'Select a mode of procurement';
       if (!procurementMethods.some((m) => m.id === procurementMethodId)) return 'Invalid procurement method';
       return null;

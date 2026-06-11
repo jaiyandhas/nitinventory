@@ -55,6 +55,7 @@ export interface BudgetFile {
   available_balance?: number;
   unit_cost: number;
   quantity: number;
+  source_of_fund?: string;
 }
 
 export interface BudgetOverview {

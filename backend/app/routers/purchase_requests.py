@@ -268,6 +268,14 @@ async def _persist_pr(
             )
         total_amount += item_est_total
 
+    if len(budget_by_id) > 1:
+        sources_of_fund = {bm.source_of_fund for bm in budget_by_id.values()}
+        if len(sources_of_fund) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="All selected budget files must have the same source of fund."
+            )
+
     from sqlalchemy import case
 
     item_req_type = None
