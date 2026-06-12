@@ -892,7 +892,7 @@ export const PRDetailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {selectedStageKey === activeStageKey && isActionable ? (
+                  {(selectedStageKey === activeStageKey && isActionable) || (selectedStageKey === 'delivery' && (pr.current_status === 'po_issued' || pr.current_status === 'completed')) ? (
                     <PRActionPanel pr={pr} user={user} refetch={refetch} faculties={faculties} />
                   ) : null}
                 </div>

@@ -4,6 +4,7 @@ import { prApi } from '../../../services/api';
 import { PurchaseRequest } from '../../../types';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../../../utils/format';
+import { Link } from 'react-router-dom';
 
 interface GRNActionProps {
   pr: PurchaseRequest;
@@ -283,6 +284,85 @@ export const GRNAction: React.FC<GRNActionProps> = ({
   };
 
   if (!verifiedDelivery) {
+    const activeDelivery = pr.deliveries?.find((d: any) => d.status !== 'verified' && d.status !== 'completed');
+    
+    if (activeDelivery) {
+      const deliveryLink = `/inventory/deliveries/${activeDelivery.id}`;
+      
+      let title = "Awaiting Delivery & Verification";
+      let description = "Awaiting physical delivery of goods and GRN verification from the Department HOD and Central Stores.";
+      let buttonText = "";
+      let showButton = false;
+
+      if (activeDelivery.status === 'pending') {
+        if (user?.id === pr.initiator_id || user?.role?.group_key === 'admin') {
+          title = "Action Required: Confirm Delivery Receipt";
+          description = "The Purchase Order has been generated. As the Purchase Initiator, please confirm physical receipt of goods by uploading the vendor's invoice PDF and delivery challan PDF.";
+          buttonText = "Confirm Receipt & Upload Docs";
+          showButton = true;
+        } else {
+          title = "Awaiting Initiator Confirmation";
+          description = "The Purchase Order has been issued. Awaiting the Purchase Initiator to confirm receipt and upload invoice/challan documents.";
+        }
+      } else if (activeDelivery.status === 'initiator_confirmed') {
+        if ((user?.role?.group_key === 'hod' && user?.department_id === pr.initiator?.department?.id) || user?.role?.group_key === 'admin') {
+          title = "Action Required: Log Department Receipt";
+          description = "The initiator has confirmed delivery. As the HOD, please log the department verification, stock entries, and physical condition of the received goods.";
+          buttonText = "Log Department Receipt";
+          showButton = true;
+        } else {
+          title = "Awaiting HOD Verification";
+          description = "The initiator has confirmed delivery. Awaiting the department HOD to inspect the items and log the department receipt.";
+        }
+      } else if (activeDelivery.status === 'dept_logged') {
+        if (user?.role?.group_key === 'verifier_sp' || user?.role?.group_key === 'admin') {
+          title = "Action Required: Log Central Stores Receipt";
+          description = "The department has logged the receipt. As the Stores Superintendent/Representative, please perform central inspection and log the stores receipt.";
+          buttonText = "Log Stores Receipt";
+          showButton = true;
+        } else {
+          title = "Awaiting Central Stores Verification";
+          description = "The department HOD has verified the receipt. Awaiting Central Stores to verify and log the stores receipt.";
+        }
+      } else if (activeDelivery.status === 'stores_logged') {
+        if (user?.role?.group_key === 'apex_approver' || user?.role?.group_key === 'admin') {
+          title = "Action Required: Approve Stores Verification";
+          description = "Stores has logged the receipt. As the Apex Authority, please approve the stores verification to generate assets and unlock payment.";
+          buttonText = "Approve Stores Verification";
+          showButton = true;
+        } else {
+          title = "Awaiting Apex Approval";
+          description = "Stores has logged the receipt. Awaiting Apex Authority (Director/Registrar) approval of stores verification.";
+        }
+      } else if (activeDelivery.status === 'discrepancy') {
+        title = "Quantity Discrepancy Found";
+        description = "A quantity mismatch was found between department and stores verification, blocking asset generation and payment. Click below to inspect details.";
+        buttonText = "Inspect Discrepancy";
+        showButton = true;
+      }
+
+      return (
+        <div className="card p-6 bg-slate-50 border-slate-200 text-left space-y-4">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+            <Clock size={16} className="text-slate-500 animate-pulse" /> {title}
+          </h3>
+          <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+            {description}
+          </p>
+          {showButton && (
+            <div className="pt-2">
+              <Link
+                to={deliveryLink}
+                className="btn-primary inline-flex items-center gap-2 py-2 px-6 font-semibold shadow-md bg-[#1a3a6b] hover:bg-[#10274c] text-white border-none text-xs rounded"
+              >
+                {buttonText} &rarr;
+              </Link>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="card p-6 bg-slate-50 border-slate-200 text-left space-y-2">
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">

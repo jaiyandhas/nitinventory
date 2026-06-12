@@ -215,32 +215,34 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     );
   }
 
-  if (pr.current_status === 'po_issued') {
+  if (pr.current_status === 'po_issued' || pr.current_status === 'completed') {
     const verifiedDelivery = pr.deliveries?.find((d: any) => d.status === 'verified');
     return (
       <div className="space-y-6 animate-fadeIn">
-        <div className="card p-6 bg-green-50 border-green-200 space-y-4 text-left">
-          <h3 className="text-sm font-bold text-green-800 uppercase tracking-wide border-b border-green-100 pb-2 flex items-center gap-2">
-            <CheckCircle2 size={18} /> Purchase Order Issued
-          </h3>
-          <p className="text-xs text-green-700 font-semibold">
-            The purchase order has been successfully issued. Funds have been deducted from the department budget.
-          </p>
-          {isAuthorizedToCancel && !verifiedDelivery && (
-            <div className="pt-2">
-              <button
-                onClick={() => {
-                  setCancelType('po');
-                  setShowCancelModal(true);
-                }}
-                disabled={actionLoading}
-                className="btn-danger py-2 px-6 font-semibold shadow-md flex items-center gap-2"
-              >
-                <XCircle size={16} /> Cancel Purchase Order (PO)
-              </button>
-            </div>
-          )}
-        </div>
+        {pr.current_status === 'po_issued' && (
+          <div className="card p-6 bg-green-50 border-green-200 space-y-4 text-left">
+            <h3 className="text-sm font-bold text-green-800 uppercase tracking-wide border-b border-green-100 pb-2 flex items-center gap-2">
+              <CheckCircle2 size={18} /> Purchase Order Issued
+            </h3>
+            <p className="text-xs text-green-700 font-semibold">
+              The purchase order has been successfully issued. Funds have been deducted from the department budget.
+            </p>
+            {isAuthorizedToCancel && !verifiedDelivery && (
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    setCancelType('po');
+                    setShowCancelModal(true);
+                  }}
+                  disabled={actionLoading}
+                  className="btn-danger py-2 px-6 font-semibold shadow-md flex items-center gap-2"
+                >
+                  <XCircle size={16} /> Cancel Purchase Order (PO)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <GRNAction
           pr={pr}
           user={user}
