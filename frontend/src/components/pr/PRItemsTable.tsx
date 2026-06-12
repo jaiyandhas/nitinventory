@@ -16,7 +16,7 @@ const getDocLabel = (docKey: string): string => {
   let label = docKey;
   label = label.replace(/_/g, ' ');
   label = label.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  label = label.replace(/Tech Specs/i, 'Technical Specifications');
+  label = label.replace(/Tech Specs?/i, 'Technical Specifications');
   label = label.replace(/Gem Nac/i, 'GeM Non-Availability Certificate');
   
   return label;

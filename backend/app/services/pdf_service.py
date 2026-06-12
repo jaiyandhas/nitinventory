@@ -417,7 +417,11 @@ class PDFService:
                 "delivery_period": item.delivery_period,
                 "tech_specs_text": item.tech_specs_text,
                 "budget_file_id": item.budget_file_id,
-                "budget_file": item.budget_file
+                "budget_file": item.budget_file,
+                "requirement_type": item.requirement_type,
+                "installation_required": item.installation_required,
+                "site_readiness": item.site_readiness,
+                "site_readiness_remarks": item.site_readiness_remarks
             })
         grand_total_words = number_to_words_inr(calculated_grand_total)
 

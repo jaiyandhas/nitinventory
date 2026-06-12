@@ -140,9 +140,17 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
     );
   };
 
-  const fileNo = formatFileNo(pr.budget_file?.file_no, user?.role?.group_key);
+  const uniqueFileNos = Array.from(new Set(
+    (pr.items || [])
+      .map((item: any) => item.budget_file?.file_no)
+      .filter(Boolean)
+  )) as string[];
+
+  const fileNo = uniqueFileNos.length > 0 
+    ? uniqueFileNos.map(fn => formatFileNo(fn, user?.role?.group_key)).join(', ')
+    : formatFileNo(pr.budget_file?.file_no, user?.role?.group_key);
   const deptName = pr.initiator?.email?.includes('cse') ? 'Computer Science & Engineering' : 'Main Office';
-  const indentName = pr.items?.[0]?.item_description || '-';
+  const indentName = (pr.items || []).map((item: any) => item.item_description).join(', ') || '-';
   const selected_fund = pr.form_data?.source_of_fund;
   const project_code = pr.form_data?.source_of_fund_project_code;
   const others_detail = pr.form_data?.source_of_fund_others;
@@ -297,48 +305,55 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">ANNEXURE – SPECIFICATIONS FINALIZED BY TSC</p>
             </div>
 
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <table className="min-w-full text-xs text-slate-700">
-                <tbody>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold w-1/3 bg-slate-50">1) Name of the equipment / goods</td>
-                    <td className="px-4 py-2 font-medium">{pr.items?.[0]?.item_description || '-'}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">2) Specifications</td>
-                    <td className="px-4 py-2 font-mono whitespace-pre-wrap">{pr.items?.[0]?.tech_specs_text || 'Generic Specifications Finalized'}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">3) Pre-Dispatch Inspection Required?</td>
-                    <td className="px-4 py-2">No</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">4) Pre-bid meeting required?</td>
-                    <td className="px-4 py-2">No</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">5) Installation required?</td>
-                    <td className="px-4 py-2">{pr.items?.[0]?.installation_required ? 'Yes' : 'No'}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">6) Training required?</td>
-                    <td className="px-4 py-2">{pr.is_training_required ? 'Yes' : 'No'}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">7) Warranty required</td>
-                    <td className="px-4 py-2">{pr.items?.[0]?.warranty || 12} Months</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">8) Delivery Period</td>
-                    <td className="px-4 py-2">{pr.items?.[0]?.delivery_period || 8} Weeks</td>
-                  </tr>
-                  <tr className="border-b border-slate-100">
-                    <td className="px-4 py-2 font-bold bg-slate-50">9) Delivery Location</td>
-                    <td className="px-4 py-2">{pr.delivery_location || 'Department Lab, NIT Tiruchirappalli'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {(pr.items || []).map((item, index) => (
+              <div key={item.id || index} className="space-y-2">
+                <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-md border border-slate-200">
+                  Item {index + 1}: {item.item_description}
+                </div>
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="min-w-full text-xs text-slate-700">
+                    <tbody>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold w-1/3 bg-slate-50">1) Name of the equipment / goods</td>
+                        <td className="px-4 py-2 font-medium">{item.item_description || '-'}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">2) Specifications</td>
+                        <td className="px-4 py-2 font-mono whitespace-pre-wrap">{item.tech_specs_text || 'Generic Specifications Finalized'}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">3) Pre-Dispatch Inspection Required?</td>
+                        <td className="px-4 py-2">No</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">4) Pre-bid meeting required?</td>
+                        <td className="px-4 py-2">No</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">5) Installation required?</td>
+                        <td className="px-4 py-2">{item.installation_required ? 'Yes' : 'No'}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">6) Training required?</td>
+                        <td className="px-4 py-2">{pr.is_training_required ? 'Yes' : 'No'}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">7) Warranty required</td>
+                        <td className="px-4 py-2">{item.warranty || 12} Months</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">8) Delivery Period</td>
+                        <td className="px-4 py-2">{item.delivery_period || 8} Weeks</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-4 py-2 font-bold bg-slate-50">9) Delivery Location</td>
+                        <td className="px-4 py-2">{pr.delivery_location || 'Department Lab, NIT Tiruchirappalli'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-100">
               {renderSignatureBlock('HoD, Chairperson', hodSig, pr.hod?.name)}

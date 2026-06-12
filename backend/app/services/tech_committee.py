@@ -14,11 +14,13 @@ async def _load_budget_file(db: AsyncSession, pr: PurchaseRequest) -> Optional[B
     await db.refresh(pr, ["items"])
     if not pr.items:
         return None
-    budget_file_id = pr.items[0].budget_file_id
-    if not budget_file_id:
-        return None
-    result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
-    return result.scalar_one_or_none()
+    for item in pr.items:
+        if item.budget_file_id:
+            result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == item.budget_file_id))
+            bm = result.scalar_one_or_none()
+            if bm:
+                return bm
+    return None
 
 
 async def resolve_tech_committee_ids(

@@ -109,8 +109,9 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   }, [pr.budget_file]);
 
   const assignCommitteeMutation = useMutation({
-    mutationFn: ({ budgetId, expert1_id, expert2_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null }) =>
-      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id }),
+    mutationFn: async ({ budgetIds, expert1_id, expert2_id }: { budgetIds: number[]; expert1_id: number | null; expert2_id: number | null }) => {
+      await Promise.all(budgetIds.map(id => budgetApi.assignCommittee(id, { expert1_id, expert2_id })));
+    },
     onSuccess: () => {
       toast.success('Technical committee experts updated successfully');
       setShowNominationModal(false);
@@ -126,8 +127,9 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
   });
 
   const assignDirectorCommitteeMutation = useMutation({
-    mutationFn: ({ budgetId, director_faculty_id }: { budgetId: number; director_faculty_id: number | null }) =>
-      budgetApi.assignDirectorCommittee(budgetId, { director_faculty_id }),
+    mutationFn: async ({ budgetIds, director_faculty_id }: { budgetIds: number[]; director_faculty_id: number | null }) => {
+      await Promise.all(budgetIds.map(id => budgetApi.assignDirectorCommittee(id, { director_faculty_id })));
+    },
     onSuccess: () => {
       toast.success('Director nominee updated successfully');
       setShowNominationModal(false);
@@ -144,7 +146,8 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
 
   const handleNominateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pr.budget_file) return;
+    const budgetIds = Array.from(new Set((pr.items || []).map((i: any) => i.budget_file_id).filter(Boolean))) as number[];
+    if (budgetIds.length === 0) return;
 
     if (isHOD) {
       if (!expert1Id || !expert2Id) {
@@ -156,7 +159,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
         return;
       }
       assignCommitteeMutation.mutate({
-        budgetId: pr.budget_file.id,
+        budgetIds,
         expert1_id: Number(expert1Id),
         expert2_id: Number(expert2Id)
       });
@@ -166,7 +169,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
         return;
       }
       assignDirectorCommitteeMutation.mutate({
-        budgetId: pr.budget_file.id,
+        budgetIds,
         director_faculty_id: Number(directorFacultyId)
       });
     }

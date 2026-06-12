@@ -186,9 +186,40 @@
     </div>
     {% endif %}
 
-    <!-- ============================================== -->
-    <!-- FORM 1: PURCHASE INDENT                        -->
-    <!-- ============================================== -->
+    <!-- Resolve experts across all items' budgets -->
+    {% set expert1_ns = namespace(name='') %}
+    {% if pr.faculty1 %}
+        {% set expert1_ns.name = pr.faculty1.name %}
+    {% else %}
+        {% for item in pr.items %}
+            {% if item.budget_file and item.budget_file.expert1 and not expert1_ns.name %}
+                {% set expert1_ns.name = item.budget_file.expert1.name %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% set expert2_ns = namespace(name='') %}
+    {% if pr.faculty2 %}
+        {% set expert2_ns.name = pr.faculty2.name %}
+    {% else %}
+        {% for item in pr.items %}
+            {% if item.budget_file and item.budget_file.expert2 and not expert2_ns.name %}
+                {% set expert2_ns.name = item.budget_file.expert2.name %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% set expert3_ns = namespace(name='') %}
+    {% if pr.faculty3 %}
+        {% set expert3_ns.name = pr.faculty3.name %}
+    {% else %}
+        {% for item in pr.items %}
+            {% if item.budget_file and item.budget_file.director_faculty and not expert3_ns.name %}
+                {% set expert3_ns.name = item.budget_file.director_faculty.name %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
     {% if module == 'indent' or module == 'office_document' or module == 'everything_dossier' or not module or module == none %}
     {% set first_item = pr.items[0] if pr.items else none %}
     {% set first_item_details = items_details[0] if items_details else none %}
@@ -277,29 +308,33 @@
     </table>
 
     <div style="margin-top: 15px; font-size: 10pt; line-height: 1.6;">
-        <div><strong>i. Category of the item:</strong> {{ pr.form_data.get('item_category', '-') }} ({{ first_item.requirement_type|upper if first_item else '-' }})</div>
         <div>
-            <strong>ii. Availability of the item in the department:</strong>
-            <span style="margin-left: 20px;">
-                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; text-align: center; line-height: 10px; margin-right: 5px; font-weight: bold; font-size: 8pt; vertical-align: middle;">
-                    {{ '✓' if (first_item and first_item.availability == 'Yes') else '' }}
-                </span> Yes
-            </span>
-            <span style="margin-left: 20px;">
-                <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; text-align: center; line-height: 10px; margin-right: 5px; font-weight: bold; font-size: 8pt; vertical-align: middle;">
-                    {{ '✓' if (not first_item or first_item.availability != 'Yes') else '' }}
-                </span> No
-            </span>
+            <strong>i. Category of the item:</strong> {{ pr.form_data.get('item_category', '-') }}
+            ({% for item in items_details %}{{ item.requirement_type|upper if item.requirement_type else '-' }}{% if not loop.last %}, {% endif %}{% endfor %})
         </div>
-        
-        {% if first_item and first_item.availability == 'Yes' %}
-        <div style="margin-left: 20px; margin-top: 4px; font-style: italic; font-size: 9.5pt; color: #444;">
-            <strong>If, Yes:</strong><br/>
-            &bull; Present Stock: {{ first_item.present_stock or '-' }}<br/>
-            &bull; Reference of previous File No: {{ first_item.previous_file_no_reference or '-' }}<br/>
-            &bull; Justification for present procurement: {{ first_item.justification_for_procurement or '-' }}
+        <div>
+            <strong>ii. Availability of the items in the department:</strong>
+            {% for item in items_details %}
+            <div style="margin-left: 20px; margin-top: 2px;">
+                <strong>Item {{ item.s_no }} ({{ item.description }}):</strong>
+                <span style="margin-left: 10px;">
+                    <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; text-align: center; line-height: 10px; margin-right: 5px; font-weight: bold; font-size: 8pt; vertical-align: middle;">
+                        {{ '✓' if item.availability == 'Yes' else '' }}
+                    </span> Yes
+                </span>
+                <span style="margin-left: 10px;">
+                    <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #333; text-align: center; line-height: 10px; margin-right: 5px; font-weight: bold; font-size: 8pt; vertical-align: middle;">
+                        {{ '✓' if item.availability != 'Yes' else '' }}
+                    </span> No
+                </span>
+                {% if item.availability == 'Yes' %}
+                <span style="margin-left: 15px; font-style: italic; font-size: 9pt; color: #444;">
+                    (Stock: {{ item.present_stock or '-' }}, Prev File: {{ item.previous_file_no_reference or '-' }}, Justification: {{ item.justification_for_procurement or '-' }})
+                </span>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        {% endif %}
         
         <div style="margin-top: 4px;">
             <strong>iii. Basis of Estimation (to be attached):</strong> {{ pr.basis_of_estimate_details or 'Budgetary Quote/previous purchase/Market survey' }}
@@ -435,7 +470,7 @@
                         {% if faculty1_sig %}
                             <img src="{{ faculty1_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
                         {% endif %}
-                        {{ first_item.budget_file.expert1.name if (first_item and first_item.budget_file and first_item.budget_file.expert1) else (pr.faculty1.name if pr.faculty1 else '') }}
+                        {{ expert1_ns.name }}
                         {% if faculty1_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty1_date_str }})</span>{% endif %}
                     </td>
                 </tr>
@@ -446,7 +481,7 @@
                         {% if faculty2_sig %}
                             <img src="{{ faculty2_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
                         {% endif %}
-                        {{ first_item.budget_file.expert2.name if (first_item and first_item.budget_file and first_item.budget_file.expert2) else (pr.faculty2.name if pr.faculty2 else '') }}
+                        {{ expert2_ns.name }}
                         {% if faculty2_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty2_date_str }})</span>{% endif %}
                     </td>
                 </tr>
@@ -457,7 +492,7 @@
                         {% if faculty3_sig %}
                             <img src="{{ faculty3_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
                         {% endif %}
-                        {{ first_item.budget_file.director_faculty.name if (first_item and first_item.budget_file and first_item.budget_file.director_faculty) else (pr.faculty3.name if pr.faculty3 else '') }}
+                        {{ expert3_ns.name }}
                         {% if faculty3_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty3_date_str }})</span>{% endif %}
                     </td>
                 </tr>
@@ -660,10 +695,6 @@
     {% endif %}
 
     {% elif module == 'specs' %}
-    {% set first_item = pr.items[0] if pr.items else none %}
-    {% set first_item_details = items_details[0] if items_details else none %}
-    {% set spec = pr.form_data.get('specs', {}).get(first_item.budget_file_id|string, {}) if (pr.form_data and first_item) else {} %}
-
     <!-- ====== NIT Official Annexure Header ====== -->
     <div style="text-align: center; margin-bottom: 4px;">
         <div style="font-size: 9pt; color: #333; margin-bottom: 2px; font-weight: bold;">
@@ -735,19 +766,24 @@
     <!-- SPECIFICATIONS heading -->
     <div style="font-size: 10pt; font-weight: bold; text-decoration: underline; margin-bottom: 8px;">SPECIFICATIONS:</div>
 
-    <!-- Specifications numbered table — exact NIT format -->
+    <!-- Specifications numbered tables for each item -->
+    {% for item in items_details %}
+    {% set spec = pr.form_data.get('specs', {}).get(item.budget_file_id|string, {}) if pr.form_data else {} %}
+    <div style="font-size: 9.5pt; font-weight: bold; background-color: #f0f4f8; border: 1px solid #c3d4e6; padding: 4px 8px; margin-top: 10px; margin-bottom: 6px; page-break-inside: avoid;">
+        Item {{ item.s_no }}: {{ item.description }}
+    </div>
     <table style="width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 14px;">
         <!-- Row 1 -->
         <tr>
             <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; width: 8%; vertical-align: middle;">1)</td>
             <td style="border: 1px solid #333; padding: 5px 7px; width: 48%; vertical-align: middle;">Name of the equipment/goods</td>
-            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: bold;">{{ spec.get('equipment_name', first_item.item_description if first_item else '') }}</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; font-weight: bold;">{{ spec.get('equipment_name', item.description) }}</td>
         </tr>
         <!-- Row 2 -->
         <tr>
             <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: top;">2)</td>
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">Specifications</td>
-            <td style="border: 1px solid #333; padding: 5px 7px; white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 8.5pt; min-height: 40px;">{{ first_item.tech_specs_text or '' if first_item else '' }}</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 8.5pt; min-height: 40px;">{{ item.tech_specs_text or '' }}</td>
         </tr>
         <!-- Row 3 -->
         <tr>
@@ -779,7 +815,7 @@
             <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: top;">5)</td>
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">Whether item requires any installation &amp; commissioning?</td>
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: top;">
-                {% if first_item_details and first_item_details.get('installation_required', false) %}Yes{% else %}No{% endif %}
+                {% if item.installation_required %}Yes{% else %}No{% endif %}
                 <span style="color: #555; font-size: 8pt;">(Yes/No)</span>
             </td>
         </tr>
@@ -794,7 +830,7 @@
             <td style="border: 1px solid #333; padding: 5px 7px; text-align: center; vertical-align: middle;">(b)</td>
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">If installation &amp; commissioning are required, confirm whether the site is ready.</td>
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
-                {% if first_item_details and first_item_details.get('site_readiness') %}Yes{% else %}No{% endif %}
+                {% if item.site_readiness %}Yes{% else %}No{% endif %}
             </td>
         </tr>
         <!-- Row 6 -->
@@ -819,7 +855,7 @@
                 Warranty required<br/>
                 <em style="font-size: 8.5pt;">(mention no. of months)</em>
             </td>
-            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(first_item.warranty or 12) if first_item else '12' }} months</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(item.warranty or 12) }} months</td>
         </tr>
         <!-- Row 8 -->
         <tr>
@@ -827,7 +863,7 @@
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">
                 Delivery <em style="font-size: 8.5pt;">(in weeks)</em>
             </td>
-            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(first_item.delivery_period or 8) if first_item else '8' }} weeks</td>
+            <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle;">{{ "%d"|format(item.delivery_period or 8) }} weeks</td>
         </tr>
         <!-- Row 9 -->
         <tr>
@@ -854,6 +890,7 @@
             <td style="border: 1px solid #333; padding: 5px 7px; vertical-align: middle; font-weight: bold;">{{ "%.1f"|format(pr.emd) }}%</td>
         </tr>
     </table>
+    {% endfor %}
 
     <!-- Certification bullets — exact text from official document -->
     <div style="margin: 14px 0 12px 0; font-size: 9pt; line-height: 1.6;">
@@ -899,7 +936,7 @@
             <tr>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">3)</td>
                 <td style="border: 1px solid #333; padding: 14px 8px;">Dept.Faculty 1/ Technical expert nominated by HoD</td>
-                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.expert1.name if (first_item and first_item.budget_file and first_item.budget_file.expert1) else (pr.faculty1.name if pr.faculty1 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ expert1_ns.name }}</td>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
                     {% if faculty1_sig %}<img src="{{ faculty1_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
@@ -907,7 +944,7 @@
             <tr>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">4)</td>
                 <td style="border: 1px solid #333; padding: 14px 8px;">Dept.Faculty 2/ Technical expert nominated by HoD</td>
-                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.expert2.name if (first_item and first_item.budget_file and first_item.budget_file.expert2) else (pr.faculty2.name if pr.faculty2 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ expert2_ns.name }}</td>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
                     {% if faculty2_sig %}<img src="{{ faculty2_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
@@ -915,7 +952,7 @@
             <tr>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">5)</td>
                 <td style="border: 1px solid #333; padding: 14px 8px;">Faculty - Nominated by the Director</td>
-                <td style="border: 1px solid #333; padding: 14px 8px;">{{ first_item.budget_file.director_faculty.name if (first_item and first_item.budget_file and first_item.budget_file.director_faculty) else (pr.faculty3.name if pr.faculty3 else '') }}</td>
+                <td style="border: 1px solid #333; padding: 14px 8px;">{{ expert3_ns.name }}</td>
                 <td style="border: 1px solid #333; padding: 14px 8px; text-align: center;">
                     {% if faculty3_sig %}<img src="{{ faculty3_sig }}" style="max-height: 28px; max-width: 100px; object-fit: contain;" />{% endif %}
                 </td>
