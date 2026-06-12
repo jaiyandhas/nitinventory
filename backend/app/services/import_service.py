@@ -323,7 +323,7 @@ class ImportService:
                 if has_unit_cost and has_qty:
                     calculated_total = unit_cost * quantity
                     if not has_total or total_cost == 0.0:
-                        total_cost = calculated_total
+                        total_cost = round(calculated_total, 2)
                     elif unit_cost == 0.0 and total_cost > 0.0:
                         unit_cost = total_cost / quantity
                 elif has_total:
@@ -394,9 +394,9 @@ class ImportService:
                         item_name=item_name,
                         category=cat,
                         course_code=course_code,
-                        unit_cost=unit_cost,
+                        unit_cost=round(unit_cost, 2),
                         quantity=quantity,
-                        total_cost=total_cost,
+                        total_cost=round(total_cost, 2),
                         file_no=file_no,
                         is_revision=False,
                     )

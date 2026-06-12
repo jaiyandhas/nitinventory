@@ -355,7 +355,7 @@ export const BudgetPage: React.FC = () => {
                 <th className="px-3 py-2 text-xs">File No / ID</th>
                 <th className="px-3 py-2 text-xs">Dept</th>
                 <th className="px-3 py-2 text-xs">Item Name</th>
-                <th className="px-3 py-2 text-xs">Funds (Total / Locked / Avail)</th>
+                <th className="px-3 py-2 text-xs">Funds (Total / Locked / Utilized / Avail)</th>
                 <th className="px-3 py-2 text-xs">Technical Committee</th>
                 <th className="px-3 py-2 text-xs">Actions</th>
               </tr>
@@ -371,12 +371,22 @@ export const BudgetPage: React.FC = () => {
                   const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
                   const isFyClosed = budgetFy ? budgetFy.is_closed : false;
                   const fyLabel = budgetFy ? budgetFy.label : '';
+                  const createdAt = b.created_at ? new Date(b.created_at) : null;
+                  const isNew = createdAt ? (Date.now() - createdAt.getTime()) < 24 * 60 * 60 * 1000 : false;
+                  const createdLabel = createdAt
+                    ? createdAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : null;
                   return (
-                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
+                    <tr key={b.id} className={`hover:bg-slate-50 border-b border-slate-100 ${isNew ? 'bg-emerald-50/30' : ''}`}>
                       <td className="px-3 py-3 font-medium text-slate-900">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono text-xs font-semibold uppercase tracking-wider">{formatFileNo(b.file_no, user?.role?.group_key)}</span>
+                            {isNew && (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-700 text-[9px] rounded-full font-bold uppercase tracking-wide">
+                                NEW
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
@@ -391,6 +401,12 @@ export const BudgetPage: React.FC = () => {
                               </span>
                             )}
                           </div>
+                          {createdLabel && (
+                            <div className="text-[9px] text-slate-400 font-normal flex items-center gap-0.5">
+                              <CalendarDays size={9} />
+                              {createdLabel}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
@@ -411,6 +427,10 @@ export const BudgetPage: React.FC = () => {
                           <div className="flex justify-between gap-1.5 text-[10px] text-amber-600 font-medium" title="Locked Funds">
                             <span className="text-slate-400">Locked:</span>
                             <span>{formatCurrency(b.committed_amount ?? b.locked_amount)}</span>
+                          </div>
+                          <div className="flex justify-between gap-1.5 text-[10px] text-indigo-600 font-medium" title="Utilized Funds">
+                            <span className="text-slate-400">Utilized:</span>
+                            <span>{formatCurrency(b.utilized_amount ?? b.deducted_amount)}</span>
                           </div>
                           <div className="flex justify-between gap-1.5 text-[11px] text-green-600 font-bold" title="Available Balance">
                             <span className="text-slate-400">Avail:</span>
@@ -517,15 +537,32 @@ export const BudgetPage: React.FC = () => {
                   const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
                   const isFyClosed = budgetFy ? budgetFy.is_closed : false;
                   const fyLabel = budgetFy ? budgetFy.label : '—';
+                  const createdAt = b.created_at ? new Date(b.created_at) : null;
+                  const isNew = createdAt ? (Date.now() - createdAt.getTime()) < 24 * 60 * 60 * 1000 : false;
+                  const createdLabel = createdAt
+                    ? createdAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : null;
                   return (
-                    <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
+                    <tr key={b.id} className={`hover:bg-slate-50 border-b border-slate-100 ${isNew ? 'bg-amber-50/20' : ''}`}>
                       {isWriteAllowed && (
                         <td className="px-3 py-3 font-medium text-slate-900">
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-mono text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded w-fit">
-                              {b.file_no}
-                            </span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="font-mono text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                {b.file_no}
+                              </span>
+                              {isNew && (
+                                <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-700 text-[9px] rounded-full font-bold uppercase tracking-wide">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-400">ID: {b.id}</span>
+                            {createdLabel && (
+                              <span className="text-[9px] text-slate-400 flex items-center gap-0.5">
+                                <CalendarDays size={9} />{createdLabel}
+                              </span>
+                            )}
                             {isFyClosed && (
                               <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5 w-fit">
                                 <Lock size={9} /> Locked

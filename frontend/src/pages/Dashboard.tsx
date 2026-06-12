@@ -101,6 +101,8 @@ export const DashboardPage: React.FC = () => {
     locked: budget?.locked || 0
   };
 
+  const showBudgetOverview = !!budget && isRole('faculty', 'hod', 'admin', 'dean_approver');
+
   return (
     <div className="space-y-6">
       {/* Welcome */}
@@ -110,6 +112,63 @@ export const DashboardPage: React.FC = () => {
           Welcome, {user?.name} | {user?.role?.name} | {user?.department?.name || 'Central Office'}
         </p>
       </div>
+
+      {/* Budget Overview Stat Cards */}
+      {showBudgetOverview && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Allocation</p>
+                <h3 className="text-lg font-extrabold text-slate-800 mt-2">{formatCurrency(safeBudget.total)}</h3>
+              </div>
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                <Wallet size={18} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Allocated Budget File Funds</p>
+          </div>
+
+          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Locked (Committed)</p>
+                <h3 className="text-lg font-extrabold text-amber-600 mt-2">{formatCurrency(safeBudget.locked)}</h3>
+              </div>
+              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                <Clock size={18} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Active Indents & Tenders</p>
+          </div>
+
+          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Utilized (Deducted)</p>
+                <h3 className="text-lg font-extrabold text-indigo-650 mt-2">{formatCurrency(safeBudget.deducted)}</h3>
+              </div>
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                <TrendingUp size={18} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">PO Issued & Completed</p>
+          </div>
+
+          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Balance</p>
+                <h3 className="text-lg font-extrabold text-emerald-600 mt-2">{formatCurrency(safeBudget.available)}</h3>
+              </div>
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                <Package size={18} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Ready for New Procurement</p>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions (for Faculty) */}
       {isRole('faculty') && (

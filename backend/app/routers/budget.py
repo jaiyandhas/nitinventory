@@ -79,11 +79,13 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
     return [
         {
             "id": b.id, "item_name": b.item_name, "category": b.category,
-            "file_no": b.file_no, 
+            "file_no": b.file_no,
             "total_cost": b.total_allocation,
             "total_allocation": b.total_allocation,
-            "available_amount": b.available_balance,
-            "available_balance": b.available_balance,
+            "committed_amount": b.committed_amount if b.committed_amount is not None else 0.0,
+            "utilized_amount": b.utilized_amount if b.utilized_amount is not None else 0.0,
+            "available_amount": b.total_allocation - (b.committed_amount or 0.0) - (b.utilized_amount or 0.0),
+            "available_balance": b.total_allocation - (b.committed_amount or 0.0) - (b.utilized_amount or 0.0),
             "unit_cost": b.unit_cost, "quantity": b.quantity,
             "remarks": b.remarks,
             "allocated_initiator_id": b.allocated_initiator_id,
@@ -170,8 +172,8 @@ async def budget_overview(db: AsyncSession = Depends(get_db), user: User = Depen
     result = await db.execute(query)
     entries = result.scalars().all()
     total = sum(b.total_allocation for b in entries)
-    locked = sum(b.committed_amount for b in entries)
-    deducted = sum(b.utilized_amount for b in entries)
+    locked = sum((b.committed_amount or 0.0) for b in entries)
+    deducted = sum((b.utilized_amount or 0.0) for b in entries)
     return {
         "total": total, "locked": locked, "deducted": deducted, "available": total - locked - deducted,
         "total_allocation": total, "committed_amount": locked, "utilized_amount": deducted, "available_balance": total - locked - deducted

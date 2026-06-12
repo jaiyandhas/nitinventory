@@ -125,6 +125,8 @@ export const inventoryApi = {
     api.put(`/inventory/deliveries/${deliveryId}/items/${itemId}/stores-log`, data),
   approveStoresLog: (deliveryId: number, itemId: number) =>
     api.post(`/inventory/deliveries/${deliveryId}/items/${itemId}/stores-log/approve`),
+  approveAllDeliveries: (deliveryId: number) =>
+    api.post(`/inventory/deliveries/${deliveryId}/approve-all`),
   listDiscrepancies: () => api.get('/inventory/discrepancies'),
 };
 

@@ -839,7 +839,7 @@ async def list_budget(
             selectinload(BudgetMaster.director_faculty),
             selectinload(BudgetMaster.allocated_initiator)
         )
-        .order_by(Department.short_code.asc(), BudgetMaster.file_no.asc())
+        .order_by(BudgetMaster.created_at.desc(), BudgetMaster.id.desc())
         .offset(skip)
         .limit(limit)
     )
@@ -849,12 +849,12 @@ async def list_budget(
             "id": b.id, "item_name": b.item_name,
             "total_cost": b.total_allocation,
             "total_allocation": b.total_allocation,
-            "locked_amount": b.committed_amount,
-            "committed_amount": b.committed_amount,
-            "deducted_amount": b.utilized_amount,
-            "utilized_amount": b.utilized_amount,
-            "available_amount": b.available_balance,
-            "available_balance": b.available_balance,
+            "locked_amount": b.committed_amount if b.committed_amount is not None else 0.0,
+            "committed_amount": b.committed_amount if b.committed_amount is not None else 0.0,
+            "deducted_amount": b.utilized_amount if b.utilized_amount is not None else 0.0,
+            "utilized_amount": b.utilized_amount if b.utilized_amount is not None else 0.0,
+            "available_amount": b.total_allocation - (b.committed_amount or 0.0) - (b.utilized_amount or 0.0),
+            "available_balance": b.total_allocation - (b.committed_amount or 0.0) - (b.utilized_amount or 0.0),
             "department_id": b.department_id,
             "financial_year_id": b.financial_year_id, "source_of_fund": b.source_of_fund, "expenditure_category": b.source_of_fund,
             "category": b.category, "unit_cost": b.unit_cost, "quantity": b.quantity,
@@ -873,6 +873,7 @@ async def list_budget(
             "project_code": b.project_code,
             "principal_investigator": b.principal_investigator,
             "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
         }
         for b in entries
     ]
@@ -1213,6 +1214,8 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
     b = result.scalar_one_or_none()
     if not b:
         raise HTTPException(status_code=404, detail="Budget not found")
+    committed = b.committed_amount if b.committed_amount is not None else 0.0
+    utilized = b.utilized_amount if b.utilized_amount is not None else 0.0
     return {
         "id": b.id,
         "department_id": b.department_id,
@@ -1225,6 +1228,12 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "quantity": b.quantity,
         "total_cost": b.total_allocation,
         "total_allocation": b.total_allocation,
+        "committed_amount": committed,
+        "locked_amount": committed,
+        "utilized_amount": utilized,
+        "deducted_amount": utilized,
+        "available_balance": b.total_allocation - committed - utilized,
+        "available_amount": b.total_allocation - committed - utilized,
         "file_no": b.file_no,
         "remarks": b.remarks,
         "expert1_id": b.expert1_id,
@@ -1236,6 +1245,7 @@ async def get_budget_detail(b_id: int, db: AsyncSession = Depends(get_db), _=Bud
         "project_code": b.project_code,
         "principal_investigator": b.principal_investigator,
         "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
     }
 
 
@@ -1386,7 +1396,7 @@ async def create_budget(
         course_code=course_code,
         unit_cost=unit_cost,
         quantity=quantity,
-        total_cost=unit_cost * quantity,
+        total_cost=round(unit_cost * quantity, 2),
         file_no=file_no_upper,
         remarks=remarks,
         is_revision=False,
@@ -1493,7 +1503,7 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     if "unit_cost" in body and "quantity" in body:
         b.unit_cost = float(body["unit_cost"])
         b.quantity = int(body["quantity"])
-        b.total_cost = b.unit_cost * b.quantity
+        b.total_cost = round(b.unit_cost * b.quantity, 2)
     if "allocated_initiator_id" in body:
         b.allocated_initiator_id = body["allocated_initiator_id"]
     if "remarks" in body:

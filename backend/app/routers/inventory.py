@@ -52,11 +52,14 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
     result = await db.execute(
         select(Delivery)
         .options(
-            selectinload(Delivery.items).selectinload(DeliveryItem.dept_log),
-            selectinload(Delivery.items).selectinload(DeliveryItem.stores_log),
+            selectinload(Delivery.items).selectinload(DeliveryItem.dept_log).selectinload(DeptAssetLog.logged_by),
+            selectinload(Delivery.items).selectinload(DeliveryItem.stores_log).selectinload(StoresAssetLog.logged_by),
+            selectinload(Delivery.items).selectinload(DeliveryItem.stores_log).selectinload(StoresAssetLog.approved_by),
             selectinload(Delivery.items).selectinload(DeliveryItem.discrepancy),
+            selectinload(Delivery.items).selectinload(DeliveryItem.assets),
             selectinload(Delivery.payments),
-            selectinload(Delivery.purchase_request)
+            selectinload(Delivery.purchase_request).selectinload(PurchaseRequest.purchase_order),
+            selectinload(Delivery.purchase_request).selectinload(PurchaseRequest.initiator).selectinload(User.department)
         )
         .where(Delivery.id == delivery_id)
     )
@@ -87,6 +90,15 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
         "purchase_request": {
             "id": delivery.purchase_request.id,
             "initiator_id": delivery.purchase_request.initiator_id,
+            "initiator_name": delivery.purchase_request.initiator.name if delivery.purchase_request.initiator else None,
+            "initiator_designation": delivery.purchase_request.initiator.designation if delivery.purchase_request.initiator else None,
+            "initiator_signature_path": delivery.purchase_request.initiator.signature_path if delivery.purchase_request.initiator else None,
+            "department_name": delivery.purchase_request.initiator.department.name if (delivery.purchase_request.initiator and delivery.purchase_request.initiator.department) else None,
+            "department_short_code": delivery.purchase_request.initiator.department.short_code if (delivery.purchase_request.initiator and delivery.purchase_request.initiator.department) else None,
+            "po_number": delivery.purchase_request.purchase_order.po_number if delivery.purchase_request.purchase_order else None,
+            "po_amount": delivery.purchase_request.purchase_order.po_amount if delivery.purchase_request.purchase_order else None,
+            "po_date": delivery.purchase_request.po_approved_at.isoformat() if delivery.purchase_request.po_approved_at else None,
+            "vendor_name": delivery.purchase_request.purchase_order.vendor_name if delivery.purchase_request.purchase_order else None,
         } if delivery.purchase_request else None,
         "items": [
             {
@@ -100,7 +112,11 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
                     "room": i.dept_log.room,
                     "custodian_name": i.dept_log.custodian_name,
                     "serial_numbers": i.dept_log.serial_numbers,
-                    "remarks": i.dept_log.remarks
+                    "remarks": i.dept_log.remarks,
+                    "logged_by_name": i.dept_log.logged_by.name if i.dept_log.logged_by else None,
+                    "logged_by_designation": i.dept_log.logged_by.designation if i.dept_log.logged_by else None,
+                    "logged_by_signature_path": i.dept_log.logged_by.signature_path if (i.dept_log and i.dept_log.logged_by) else None,
+                    "logged_at": i.dept_log.logged_at.isoformat() if i.dept_log.logged_at else None,
                 } if i.dept_log else None,
                 "stores_log": {
                     "id": i.stores_log.id,
@@ -112,14 +128,32 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
                     "serial_numbers": i.stores_log.serial_numbers,
                     "is_approved": i.stores_log.is_approved,
                     "grn_number": i.stores_log.grn_number,
-                    "inspection_remarks": i.stores_log.inspection_remarks
+                    "inspection_remarks": i.stores_log.inspection_remarks,
+                    "logged_by_name": i.stores_log.logged_by.name if i.stores_log.logged_by else None,
+                    "logged_by_designation": i.stores_log.logged_by.designation if i.stores_log.logged_by else None,
+                    "logged_by_signature_path": i.stores_log.logged_by.signature_path if (i.stores_log and i.stores_log.logged_by) else None,
+                    "approved_by_name": i.stores_log.approved_by.name if i.stores_log.approved_by else None,
+                    "approved_by_designation": i.stores_log.approved_by.designation if i.stores_log.approved_by else None,
+                    "approved_by_signature_path": i.stores_log.approved_by.signature_path if (i.stores_log and i.stores_log.approved_by) else None,
+                    "approved_at": i.stores_log.approved_at.isoformat() if i.stores_log.approved_at else None,
                 } if i.stores_log else None,
                 "discrepancy": {
                     "id": i.discrepancy.id,
                     "status": i.discrepancy.status,
                     "dept_qty": i.discrepancy.dept_qty,
                     "stores_qty": i.discrepancy.stores_qty
-                } if i.discrepancy else None
+                } if i.discrepancy else None,
+                "assets": [
+                    {
+                        "id": asset.id,
+                        "asset_tag": asset.asset_tag,
+                        "name": asset.name,
+                        "custodian": asset.custodian,
+                        "building": asset.building,
+                        "room": asset.room,
+                    }
+                    for asset in i.assets
+                ] if i.assets else []
             }
             for i in delivery.items
         ],
@@ -218,6 +252,29 @@ async def approve_stores_log(
     log.approved_at = datetime.utcnow()
     await db.commit()
     return {"message": "Stores log approved"}
+
+
+@router.post("/deliveries/{delivery_id}/approve-all")
+async def approve_all_stores_logs(
+    delivery_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("apex_approver")),
+):
+    # Fetch all stores logs for this delivery
+    result = await db.execute(
+        select(StoresAssetLog)
+        .join(DeliveryItem, StoresAssetLog.delivery_item_id == DeliveryItem.id)
+        .where(DeliveryItem.delivery_id == delivery_id)
+    )
+    logs = result.scalars().all()
+    for log in logs:
+        if not log.is_approved:
+            log.is_approved = True
+            log.approved_by_id = user.id
+            log.approved_at = datetime.utcnow()
+    await db.commit()
+    return {"message": "All stores logs approved"}
+
 
 
 @router.get("/discrepancies")
