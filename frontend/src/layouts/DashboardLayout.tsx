@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Wallet, Package, Box, Settings,
-  Users, ChevronLeft, ChevronRight, LogOut, Bell, Menu, X,
+  Users, ChevronLeft, ChevronRight, LogOut, Menu, X,
   Truck, AlertTriangle, BarChart2, User, Layers, PenLine
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -169,10 +169,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               <div className="text-xs font-bold text-slate-800">{user?.name}</div>
               <div className="text-xs text-slate-500">{user?.department?.name || 'Central Office'}</div>
             </div>
-            <button className="p-2 text-slate-500 hover:text-[#1a3a6b] hover:bg-slate-100 transition-colors relative border border-transparent hover:border-slate-300">
-              <Bell size={18} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 border border-white"></span>
-            </button>
+
           </div>
         </header>
 
