@@ -4,6 +4,7 @@ import { Truck, CheckCircle, AlertTriangle } from 'lucide-react';
 import { inventoryApi } from '../services/api';
 import { Delivery } from '../types';
 import { Link } from 'react-router-dom';
+import { queryKeys } from '../config/queryKeys';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-slate-100 text-slate-600 border-slate-300',
@@ -15,7 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export const DeliveriesPage: React.FC = () => {
   const { data: deliveries = [], isLoading } = useQuery<Delivery[]>({
-    queryKey: ['deliveries'],
+    queryKey: queryKeys.inventory.deliveries,
     queryFn: () => inventoryApi.listDeliveries().then(r => r.data),
   });
 
@@ -73,7 +74,7 @@ export const DeliveriesPage: React.FC = () => {
 
 export const DiscrepanciesPage: React.FC = () => {
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['discrepancies'],
+    queryKey: queryKeys.inventory.discrepancies,
     queryFn: () => inventoryApi.listDiscrepancies().then(r => r.data),
   });
 

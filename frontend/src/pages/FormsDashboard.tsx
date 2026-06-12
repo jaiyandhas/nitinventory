@@ -7,6 +7,7 @@ import {
   Layers, ChevronRight, HelpCircle, Eye, EyeOff, Lock, Unlock, AlertCircle
 } from 'lucide-react';
 import { prApi, budgetApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { PurchaseRequest } from '../types';
 import { PRFormViewer } from '../components/pr/PRFormViewer';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
@@ -62,7 +63,7 @@ export const FormsDashboardPage: React.FC = () => {
 
   // List all available Purchase Indents
   const { data: prsData, isLoading: isLoadingList } = useQuery({
-    queryKey: ['prs', 'forms_dashboard'],
+    queryKey: queryKeys.prs.formsDashboard(),
     queryFn: () => prApi.list({ limit: 200 }).then(r => r.data),
   });
   const prs = prsData?.items || [];
@@ -84,14 +85,14 @@ export const FormsDashboardPage: React.FC = () => {
 
   // Fetch full details of the selected PR
   const { data: activePr, isLoading: isLoadingDetail, refetch } = useQuery<PurchaseRequest>({
-    queryKey: ['pr', selectedPrId],
+    queryKey: queryKeys.prs.detail(selectedPrId),
     queryFn: () => prApi.get(Number(selectedPrId)).then(r => r.data),
     enabled: !!selectedPrId,
   });
 
   // Fetch faculties for HOD nominee selection
   const { data: faculties = [] } = useQuery<any[]>({
-    queryKey: ['departmentFaculty'],
+    queryKey: queryKeys.users.deptFaculty,
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
     enabled: !!selectedPrId,
   });

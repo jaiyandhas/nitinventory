@@ -169,6 +169,12 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
       if (pr.lpc_remarks) setLpcRemarks(pr.lpc_remarks);
       if (pr.lpc_committee_members) setLpcCommitteeMembers(pr.lpc_committee_members);
       if (pr.lpc_minutes_reference) setLpcMinutesReference(pr.lpc_minutes_reference);
+
+      if (pr.tender_scheduling_done) {
+        setDaTab('vendors');
+      } else {
+        setDaTab('draft');
+      }
     }
   }, [pr]);
 
@@ -186,9 +192,46 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
     }
   };
 
-  const handleTenderSubmit = async () => {
+  const handleTenderScheduleSubmit = async () => {
     if (!tenderRef.trim()) { toast.error('Tender Reference Number is required'); return; }
     if (!tenderDate) { toast.error('Tender date is required'); return; }
+    if (!hasExistingDraft && !draftTenderDoc) {
+      toast.error('Draft Tender Document is mandatory');
+      return;
+    }
+    if (!remarks.trim()) { toast.error('Remarks are required to schedule tender and advance'); return; }
+    if (!window.confirm('Are you sure you want to schedule this tender and advance?')) return;
+
+    setActionLoading(true);
+    try {
+      const formData = new FormData();
+      const payload = {
+        tender_reference_number: tenderRef,
+        date_of_tender: tenderDate,
+        date_of_tech_bid_opening: techOpenDate || null,
+        date_of_financial_bid_opening: finOpenDate || null,
+        remarks: remarks
+      };
+      formData.append('payload', JSON.stringify(payload));
+      if (draftTenderDoc) {
+        formData.append('draft_tender_document', draftTenderDoc);
+      }
+
+      await prApi.scheduleTender(pr.id, formData);
+
+      toast.success('Tender scheduled. Advancing step...');
+      await prApi.advance(pr.id, remarks);
+      setRemarks('');
+      setDraftTenderDoc(null);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Action failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTenderSubmit = async () => {
     if (tenderVendors.length === 0) { toast.error('Please add at least one commercial vendor'); return; }
     
     const hasEmptyVendorName = tenderVendors.some(v => !v.name || !v.name.trim());
@@ -202,11 +245,6 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
       if (!lpcCommitteeMembers.trim()) { toast.error('Committee members are required for Limited Tender (LPC)'); return; }
       if (!lpcMinutesReference.trim()) { toast.error('Minutes reference is required for Limited Tender (LPC)'); return; }
       if (!lpcRemarks.trim()) { toast.error('LPC remarks are required for Limited Tender (LPC)'); return; }
-    }
-
-    if (!hasExistingDraft && !draftTenderDoc) {
-      toast.error('Draft Tender Document is mandatory');
-      return;
     }
 
     if (!remarks.trim()) { toast.error('Remarks are required to register and advance'); return; }
@@ -313,31 +351,35 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         <div className="space-y-4 bg-white p-5 border border-slate-200 rounded-xl shadow-sm animate-fadeIn text-left">
           <h4 className="text-sm font-bold text-[#1a3a6b] border-b border-slate-100 pb-1.5 flex justify-between items-center">
             <span>Register Tender Details</span>
-            <span className="text-[10px] text-slate-400 font-normal">Complete both sections before submitting</span>
+            <span className="text-[10px] text-slate-400 font-normal">Tendering Phase — Stage-based Flow</span>
           </h4>
 
           {/* Tab Switcher */}
           <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs font-semibold">
             <button
               type="button"
+              disabled={pr.tender_scheduling_done}
               onClick={() => setDaTab('draft')}
-              className={`flex-1 py-2 px-3 transition-colors ${
+              className={`flex-1 py-2 px-3 transition-colors flex items-center justify-center gap-1.5 ${
                 daTab === 'draft'
                   ? 'bg-[#1a3a6b] text-white'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
+              } ${pr.tender_scheduling_done ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
+              {pr.tender_scheduling_done && <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />}
               1. Tender Scheduling
             </button>
             <button
               type="button"
+              disabled={!pr.tender_scheduling_done}
               onClick={() => setDaTab('vendors')}
-              className={`flex-1 py-2 px-3 transition-colors border-l border-slate-200 ${
+              className={`flex-1 py-2 px-3 transition-colors border-l border-slate-200 flex items-center justify-center gap-1.5 ${
                 daTab === 'vendors'
                   ? 'bg-[#1a3a6b] text-white'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
+              } ${!pr.tender_scheduling_done ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
+              {!pr.tender_scheduling_done && <AlertCircle size={13} className="text-slate-400 shrink-0" />}
               2. Bidding Registry
             </button>
           </div>
@@ -414,14 +456,43 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setDaTab('vendors')}
-                  className="btn-primary py-2 px-4 text-xs font-semibold"
-                >
-                  Next: Bidding Registry →
-                </button>
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide official remarks/justification to schedule tender and advance..."
+                  className="input-field min-h-[60px] text-xs py-1.5"
+                  required
+                />
+
+                <div className="flex flex-wrap gap-2.5 pt-1">
+                  <button
+                    onClick={handleTenderScheduleSubmit}
+                    disabled={actionLoading || !tenderRef || !tenderDate || !remarks.trim()}
+                    className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+                  >
+                    <CheckCircle2 size={14} /> Submit Tender Schedule &amp; Advance
+                  </button>
+
+                  <button
+                    onClick={() => onReject(remarks)}
+                    disabled={actionLoading || !remarks.trim()}
+                    className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                  >
+                    <XCircle size={14} /> Reject
+                  </button>
+
+                  {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                    <button
+                      onClick={() => setShowSendBackModal(true)}
+                      disabled={actionLoading}
+                      className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                    >
+                      <RotateCcw size={14} /> Send Back
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -429,6 +500,49 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
           {/* Tab 2: Bidding Registry */}
           {daTab === 'vendors' && (
             <div className="space-y-4">
+              {/* Optional: Update tender specifications */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-3">
+                <h5 className="font-bold text-[#1a3a6b] uppercase tracking-wide">Update Tender Specifications (Optional)</h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Tender Ref Number</label>
+                    <input
+                      type="text"
+                      value={tenderRef}
+                      onChange={(e) => setTenderRef(e.target.value)}
+                      className="input-field mt-1 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Date of Tender</label>
+                    <input
+                      type="date"
+                      value={tenderDate}
+                      onChange={(e) => setTenderDate(e.target.value)}
+                      className="input-field mt-1 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Tech Bid Opening</label>
+                    <input
+                      type="date"
+                      value={techOpenDate}
+                      onChange={(e) => setTechOpenDate(e.target.value)}
+                      className="input-field mt-1 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Fin Bid Opening</label>
+                    <input
+                      type="date"
+                      value={finOpenDate}
+                      onChange={(e) => setFinOpenDate(e.target.value)}
+                      className="input-field mt-1 py-1 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Vendor List URL</h5>
                 <input
@@ -549,16 +663,16 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
-                  <table className="min-w-[950px] divide-y divide-slate-100 text-xs" style={{ minWidth: '950px' }}>
+                <div className="border border-slate-200 rounded-lg bg-slate-50/30 p-0.5">
+                  <table className="w-full divide-y divide-slate-100 text-xs">
                     <thead>
                       <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
-                        <th className="px-2 py-1.5 text-left w-[22%]" style={{ minWidth: '220px' }}>Name *</th>
-                        <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '200px' }}>Email</th>
-                        <th className="px-2 py-1.5 text-left w-[18%]" style={{ minWidth: '120px' }}>Quoted (L)</th>
-                        <th className="px-2 py-1.5 text-left w-[15%]" style={{ minWidth: '140px' }}>Status</th>
-                        <th className="px-2 py-1.5 text-left w-[20%]" style={{ minWidth: '220px' }}>Remarks</th>
-                        <th className="px-2 py-1.5 text-center w-[5%]" style={{ minWidth: '50px' }}></th>
+                        <th className="px-2 py-1.5 text-left w-[25%]">Name *</th>
+                        <th className="px-2 py-1.5 text-left w-[20%]">Email</th>
+                        <th className="px-2 py-1.5 text-left w-[15%]">Quoted (L)</th>
+                        <th className="px-2 py-1.5 text-left w-[15%]">Status</th>
+                        <th className="px-2 py-1.5 text-left w-[20%]">Remarks</th>
+                        <th className="px-2 py-1.5 text-center w-[5%]"></th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
@@ -726,7 +840,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
       )}
 
       {/* Superintendent / Consultant / General Review Form */}
-      {(pr.flow?.step_order ?? 0) >= 3 && (
+      {pr.flow?.expected_role_name !== 'Dealing Assistant' && (pr.flow?.step_order ?? 0) >= 3 && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded shadow-sm text-left">
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Review Tender Details & Bidders</h4>
           
@@ -781,22 +895,31 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
 
           <div>
             <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vendor List</h5>
-            <div className="overflow-x-auto border border-slate-200 rounded bg-slate-50/30 p-0.5">
-              <table className="min-w-[780px] divide-y divide-slate-200 text-sm text-slate-700" style={{ minWidth: '780px' }}>
+            <div className="border border-slate-200 rounded bg-slate-50/30 p-0.5">
+              <table className="w-full divide-y divide-slate-200 text-sm text-slate-700">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider text-xs">
+                    <th className="px-3 py-1.5 text-left w-[25%]">Name</th>
+                    <th className="px-3 py-1.5 text-left w-[20%]">Email</th>
+                    <th className="px-3 py-1.5 text-left w-[15%]">Quoted (L)</th>
+                    <th className="px-3 py-1.5 text-left w-[15%]">Status</th>
+                    <th className="px-3 py-1.5 text-left w-[25%]">Remarks</th>
+                  </tr>
+                </thead>
                 <tbody className="bg-white divide-y divide-slate-200">
                   {pr.commercial_evaluations?.map((ce: any) => (
-                    <tr key={ce.id}>
-                      <td className="px-3 py-2 font-medium">{ce.vendor_name}</td>
-                      <td className="px-3 py-2 text-slate-500">{ce.vendor_email || '-'}</td>
-                      <td className="px-3 py-2 font-semibold text-slate-800">
+                    <tr key={ce.id} className="hover:bg-slate-50/40 transition-colors">
+                      <td className="px-3 py-2 font-medium w-[25%]">{ce.vendor_name}</td>
+                      <td className="px-3 py-2 text-slate-500 w-[20%]">{ce.vendor_email || '-'}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 w-[15%]">
                         {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? formatCurrency(ce.quoted_amount) : '-'}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 w-[15%]">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${ce.is_qualified ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                           {ce.is_qualified ? 'Qualified' : 'Not Qualified'}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-slate-500 italic">{ce.remarks || '-'}</td>
+                      <td className="px-3 py-2 text-slate-500 italic w-[25%]">{ce.remarks || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

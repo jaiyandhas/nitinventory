@@ -45,6 +45,7 @@ async def test_lpc_fields_persistency(db_session):
         financial_year_id=2,
         procurement_id=1,
         current_status=RequestStatus.IN_PROGRESS,
+        tender_scheduling_done=True,
     )
     db_session.add(pr)
     await db_session.flush()

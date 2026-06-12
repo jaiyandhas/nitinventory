@@ -73,6 +73,7 @@ class PurchaseRequest(Base):
     date_of_tender: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     date_of_tech_bid_opening: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     date_of_financial_bid_opening: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    tender_scheduling_done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     aa_approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     te_initiated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     te_approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -117,6 +118,7 @@ class PurchaseRequest(Base):
     bill_passing: Mapped[Optional["BillPassing"]] = relationship("BillPassing", back_populates="purchase_request", uselist=False, cascade="all, delete-orphan")
     deliveries: Mapped[List["Delivery"]] = relationship("Delivery", back_populates="purchase_request", cascade="all, delete-orphan")
     referrals: Mapped[List["PRReferral"]] = relationship("PRReferral", back_populates="purchase_request", cascade="all, delete-orphan")
+    purchase_order: Mapped[Optional["PurchaseOrder"]] = relationship("PurchaseOrder", back_populates="purchase_request", uselist=False, cascade="all, delete-orphan")
 
 
 class PurchaseRequestItem(Base):
@@ -205,6 +207,11 @@ class TechnicalEvaluation(Base):
     is_qualified: Mapped[bool] = mapped_column(Boolean, nullable=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    bid_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    committee_venue: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    committee_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    committee_time: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    no_of_bids_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="technical_evaluations")
 
@@ -224,6 +231,7 @@ class FinancialEvaluation(Base):
     delivery_period: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     warranty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    representation_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="financial_evaluations")
 
@@ -381,5 +389,33 @@ class PRReferral(Base):
     purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="referrals")
     referred_by: Mapped["User"] = relationship("User", foreign_keys=[referred_by_id])  # type: ignore
     referred_to: Mapped["User"] = relationship("User", foreign_keys=[referred_to_id])  # type: ignore
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_request_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False, unique=True)
+    po_number: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    vendor_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vendor_gst: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    vendor_bank_account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    vendor_bank_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    vendor_ifsc: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    po_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    delivery_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ps_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ps_mode: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ps_validity: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    emd_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ld_applicable: Mapped[bool] = mapped_column(Boolean, default=False)
+    issued_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    purchase_request: Mapped["PurchaseRequest"] = relationship("PurchaseRequest", back_populates="purchase_order")
+    issued_by: Mapped["User"] = relationship("User")  # type: ignore
+
 
 

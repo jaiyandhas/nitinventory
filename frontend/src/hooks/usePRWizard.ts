@@ -199,6 +199,39 @@ export function usePRWizard() {
       }
       return next;
     });
+
+    if (budgetFiles && fileIds.length > 0) {
+      const file = budgetFiles.find((f) => f.id === fileIds[0]);
+      if (file) {
+        const rawSource = file.source_of_fund || '';
+        let sourceVal: 'OH-35' | 'OH-31' | 'SW' | 'SEED' | 'Project code' | 'Others' | '' = '';
+        let projectCode = '';
+        let others = '';
+
+        if (rawSource.toUpperCase().includes('OH-35')) {
+          sourceVal = 'OH-35';
+        } else if (rawSource.toUpperCase().includes('OH-31')) {
+          sourceVal = 'OH-31';
+        } else if (rawSource.toUpperCase().includes('SW') || rawSource.toUpperCase().includes('STUDENT-WELFARE')) {
+          sourceVal = 'SW';
+        } else if (rawSource.toUpperCase().includes('SEED')) {
+          sourceVal = 'SEED';
+        } else if (rawSource.toUpperCase() === 'R&C') {
+          sourceVal = 'Project code';
+          projectCode = file.project_code || '';
+        } else {
+          sourceVal = 'Others';
+          others = rawSource;
+        }
+
+        setCommon((prev) => ({
+          ...prev,
+          source_of_fund: sourceVal,
+          source_of_fund_project_code: projectCode,
+          source_of_fund_others: others,
+        }));
+      }
+    }
   }, []);
 
   const updateItem = useCallback((fileId: number, patch: Partial<PRItemFormState>) => {
@@ -228,8 +261,9 @@ export function usePRWizard() {
   // ── Validators ──────────────────────────────────────────────────────────────
   const validateSelection = useCallback(
     (budgetFiles: BudgetFile[], procurementMethods: ProcurementMethod[]): string | null => {
-      const { selectedFileIds, procurementMethodId } = selection;
+      const { selectedFileIds, procurementMethodId, fileCount } = selection;
       if (selectedFileIds.length === 0) return 'Select at least one budget file';
+      if (selectedFileIds.length < fileCount) return 'Please select all budget files';
       if (new Set(selectedFileIds).size !== selectedFileIds.length) return 'Each file can only be selected once';
       const validIds = new Set(budgetFiles.map((f) => f.id));
       if (selectedFileIds.some((id) => !validIds.has(id))) return 'Invalid budget file selection';

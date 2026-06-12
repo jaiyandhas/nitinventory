@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
+import { queryKeys } from '../../config/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatFileNo } from '../../utils/format';
 import { toast } from 'react-hot-toast';
@@ -44,7 +45,7 @@ export const BudgetPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const { data: budgetsData, isLoading: loadingBudgets } = useQuery({ 
-    queryKey: ['admin_budgets', searchTerm, deptFilter, fyFilter], 
+    queryKey: queryKeys.budgets.admin(searchTerm, deptFilter, fyFilter), 
     queryFn: () => adminApi.budget({ 
       skip: 0, 
       limit: 1000,
@@ -57,29 +58,29 @@ export const BudgetPage: React.FC = () => {
   const budgets = budgetsData?.items || [];
   
   const { data: depts = [] } = useQuery({ 
-    queryKey: ['admin_departments'], 
+    queryKey: queryKeys.admin.departments, 
     queryFn: () => adminApi.departments().then(res => res.data) 
   });
   
   const { data: fys = [] } = useQuery({ 
-    queryKey: ['admin_financial_years'], 
+    queryKey: queryKeys.admin.financialYears, 
     queryFn: () => adminApi.financialYears().then(res => res.data) 
   });
 
   // Nominee Options Queries
   const { data: faculties = [] } = useQuery({
-    queryKey: ['all_faculties'],
+    queryKey: queryKeys.users.allFaculties,
     queryFn: () => budgetApi.allFaculties().then(res => res.data)
   });
 
   const { data: allUsers = [] } = useQuery({
-    queryKey: ['all_users'],
+    queryKey: queryKeys.users.allUsers,
     queryFn: () => budgetApi.allUsers().then(res => res.data)
   });
 
   // Rollover candidates — only fetched when modal is open
   const { data: rolloverCandidates = [], isLoading: loadingCandidates } = useQuery({
-    queryKey: ['rollover_candidates'],
+    queryKey: queryKeys.users.rolloverCandidates,
     queryFn: () => adminApi.getRolloverCandidates().then(res => res.data),
     enabled: isRolloverModalOpen,
   });
@@ -103,7 +104,9 @@ export const BudgetPage: React.FC = () => {
     onSuccess: () => {
       toast.success('Technical committee updated successfully');
       setSelectedBudgetForCommittee(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to update technical committee');
@@ -116,7 +119,9 @@ export const BudgetPage: React.FC = () => {
     onSuccess: () => {
       toast.success('Director nominee updated successfully');
       setSelectedBudgetForDirector(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to update director nominee');
@@ -128,7 +133,9 @@ export const BudgetPage: React.FC = () => {
     onSuccess: (res) => {
       toast.success('Budget CSV imported successfully!');
       setUploadResult(res.data);
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'CSV upload failed');
@@ -143,7 +150,9 @@ export const BudgetPage: React.FC = () => {
       setSelectedBudgetId(null);
       setSelectedBudgetForAllocation(null);
       setAllocationRemarks('');
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to assign permanent file number');
@@ -155,10 +164,12 @@ export const BudgetPage: React.FC = () => {
     mutationFn: (budgetFileIds: number[]) => adminApi.rolloverFinancialYear(budgetFileIds.length > 0 ? budgetFileIds : undefined),
     onSuccess: (res) => {
       setRolloverResult(res.data);
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
-      queryClient.invalidateQueries({ queryKey: ['budget_financial_years'] });
-      queryClient.invalidateQueries({ queryKey: ['rollover_candidates'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Rollover failed');
@@ -341,21 +352,19 @@ export const BudgetPage: React.FC = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>File No / ID</th>
-                <th>Dept</th>
-                <th>Item Name</th>
-                <th>Total Allocation</th>
-                <th>Locked Fund</th>
-                <th>Available Balance</th>
-                <th>Technical Committee</th>
-                <th>Actions</th>
+                <th className="px-3 py-2 text-xs">File No / ID</th>
+                <th className="px-3 py-2 text-xs">Dept</th>
+                <th className="px-3 py-2 text-xs">Item Name</th>
+                <th className="px-3 py-2 text-xs">Funds (Total / Locked / Avail)</th>
+                <th className="px-3 py-2 text-xs">Technical Committee</th>
+                <th className="px-3 py-2 text-xs">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loadingBudgets ? (
-                <tr><td colSpan={8} className="text-center py-8">Loading budget data...</td></tr>
+                <tr><td colSpan={6} className="text-center py-8">Loading budget data...</td></tr>
               ) : displayBudgets.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
               ) : (
                 displayBudgets.map((b: any) => {
                   const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
@@ -364,7 +373,7 @@ export const BudgetPage: React.FC = () => {
                   const fyLabel = budgetFy ? budgetFy.label : '';
                   return (
                     <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
-                      <td className="font-medium text-slate-900">
+                      <td className="px-3 py-3 font-medium text-slate-900">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono text-xs font-semibold uppercase tracking-wider">{formatFileNo(b.file_no, user?.role?.group_key)}</span>
@@ -384,80 +393,81 @@ export const BudgetPage: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
-                      <td className="max-w-[200px]" title={b.item_name}>
-                        <div className="font-medium text-slate-800">{b.item_name}</div>
+                      <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="px-3 py-3 max-w-[180px]" title={b.item_name}>
+                        <div className="font-medium text-slate-800 text-xs line-clamp-2">{b.item_name}</div>
                         {b.remarks && (
-                          <div className="text-[11px] text-slate-500 italic mt-0.5 max-w-[190px] truncate" title={b.remarks}>
+                          <div className="text-[10px] text-slate-500 italic mt-0.5 max-w-[170px] truncate" title={b.remarks}>
                             Remarks: {b.remarks}
                           </div>
                         )}
                       </td>
-                      <td>{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
-                      <td className="text-amber-600 font-medium">{formatCurrency(b.committed_amount ?? b.locked_amount)}</td>
-                      <td className="font-semibold text-green-600">{formatCurrency(b.available_balance ?? b.available_amount)}</td>
-                      <td>
-                        <div className="text-xs space-y-1 bg-slate-50 border border-slate-200/60 p-2 rounded-lg max-w-[200px]">
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-400">Initiator:</span>
-                            <span className="font-medium text-slate-850 truncate">{b.allocated_initiator?.name || 'Not allocated'}</span>
+                      <td className="px-3 py-3">
+                        <div className="text-xs space-y-0.5 font-sans">
+                          <div className="flex justify-between gap-1.5 text-[11px] font-semibold text-slate-700" title="Total Allocation">
+                            <span className="text-slate-400">Total:</span>
+                            <span>{formatCurrency(b.total_allocation ?? b.total_cost)}</span>
                           </div>
-                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
-                            <span className="text-slate-400">Exp 1:</span>
-                            <span className="font-medium text-slate-700 truncate">{b.expert1?.name || 'Not nominated'}</span>
+                          <div className="flex justify-between gap-1.5 text-[10px] text-amber-600 font-medium" title="Locked Funds">
+                            <span className="text-slate-400">Locked:</span>
+                            <span>{formatCurrency(b.committed_amount ?? b.locked_amount)}</span>
                           </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-400">Exp 2:</span>
-                            <span className="font-medium text-slate-700 truncate">{b.expert2?.name || 'Not nominated'}</span>
-                          </div>
-                          <div className="flex justify-between gap-2 border-t border-slate-200/50 pt-1">
-                            <span className="text-slate-400">Nominee:</span>
-                            <span className="font-medium text-slate-850 truncate">{b.director_faculty?.name || 'Not nominated'}</span>
+                          <div className="flex justify-between gap-1.5 text-[11px] text-green-600 font-bold" title="Available Balance">
+                            <span className="text-slate-400">Avail:</span>
+                            <span>{formatCurrency(b.available_balance ?? b.available_amount)}</span>
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td className="px-3 py-3">
+                        <div className="text-[10px] leading-tight space-y-0.5 max-w-[160px] bg-slate-50 border border-slate-200/60 p-1.5 rounded-md">
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Init:</span> {b.allocated_initiator?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 1:</span> {b.expert1?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 2:</span> {b.expert2?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Dir:</span> {b.director_faculty?.name || '—'}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
                           {(isWriteAllowed || (isHOD && matchesDept)) && (
                             <button
                               onClick={() => navigate(`/budget/edit/${b.id}`)}
                               disabled={isFyClosed}
-                              className={`p-1.5 rounded transition-colors ${
+                              className={`p-1 rounded transition-colors ${
                                 isFyClosed 
                                   ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
                                   : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
                               }`}
                               title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
                             >
-                              <Edit2 size={16} />
+                              <Edit2 size={15} />
                             </button>
                           )}
                           {isHOD && matchesDept && (
                             <button
                               onClick={() => openCommitteeModal(b)}
                               disabled={isFyClosed}
-                              className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
                                 isFyClosed
                                   ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                  : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border-indigo-200'
+                                  : 'text-indigo-650 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
                               }`}
                               title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
                             >
-                              <Users size={14} /> Nominate
+                              <Users size={12} /> Nominate
                             </button>
                           )}
                           {isDirectorOrAdmin && (
                             <button
                               onClick={() => openDirectorModal(b)}
                               disabled={isFyClosed}
-                              className={`p-1.5 rounded flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
                                 isFyClosed
                                   ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                  : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200'
+                                  : 'text-emerald-650 hover:text-emerald-850 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30'
                               }`}
                               title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
                             >
-                              <Award size={14} /> Nominee
+                              <Award size={12} /> Nominee
                             </button>
                           )}
                           {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
@@ -487,23 +497,21 @@ export const BudgetPage: React.FC = () => {
           <table className="data-table">
             <thead>
               <tr>
-                {isWriteAllowed && <th>Internal Ref No</th>}
-                <th>Dept</th>
-                <th>Item Description</th>
-                <th>Category</th>
-                <th>Financial Year</th>
-                <th>Unit Cost</th>
-                <th>Qty</th>
-                <th>Total Cost</th>
-                <th>HOD Remarks</th>
-                {isWriteAllowed && <th>Action</th>}
+                {isWriteAllowed && <th className="px-3 py-2 text-xs">Internal Ref No</th>}
+                <th className="px-3 py-2 text-xs">Dept</th>
+                <th className="px-3 py-2 text-xs">Item Description</th>
+                <th className="px-3 py-2 text-xs">Category</th>
+                <th className="px-3 py-2 text-xs">FY</th>
+                <th className="px-3 py-2 text-xs">Cost Details</th>
+                <th className="px-3 py-2 text-xs">HOD Remarks</th>
+                {isWriteAllowed && <th className="px-3 py-2 text-xs">Action</th>}
               </tr>
             </thead>
             <tbody>
               {loadingBudgets ? (
-                <tr><td colSpan={isWriteAllowed ? 11 : 9} className="text-center py-8">Loading...</td></tr>
+                <tr><td colSpan={isWriteAllowed ? 9 : 7} className="text-center py-8">Loading...</td></tr>
               ) : tempBudgets.length === 0 ? (
-                <tr><td colSpan={isWriteAllowed ? 11 : 9} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
+                <tr><td colSpan={isWriteAllowed ? 9 : 7} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
               ) : (
                 tempBudgets.map((b: any) => {
                   const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
@@ -512,7 +520,7 @@ export const BudgetPage: React.FC = () => {
                   return (
                     <tr key={b.id} className="hover:bg-slate-50 border-b border-slate-100">
                       {isWriteAllowed && (
-                        <td className="font-medium text-slate-900">
+                        <td className="px-3 py-3 font-medium text-slate-900">
                           <div className="flex flex-col gap-0.5">
                             <span className="font-mono text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded w-fit">
                               {b.file_no}
@@ -526,35 +534,38 @@ export const BudgetPage: React.FC = () => {
                           </div>
                         </td>
                       )}
-                      <td><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
-                      <td className="max-w-[180px]">
-                        <div className="font-medium text-slate-800 text-sm">{b.item_name}</div>
+                      <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="px-3 py-3 max-w-[150px]" title={b.item_name}>
+                        <div className="font-medium text-slate-800 text-xs line-clamp-2">{b.item_name}</div>
                       </td>
-                      <td>
+                      <td className="px-3 py-3">
                         <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium rounded capitalize">{b.category || '—'}</span>
                       </td>
-                      <td>
-                        <span className="px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium rounded">{fyLabel}</span>
+                      <td className="px-3 py-3">
+                        <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 text-[11px] font-medium rounded">{fyLabel}</span>
                       </td>
-                      <td className="text-slate-700 font-mono text-xs">{formatCurrency(b.unit_cost)}</td>
-                      <td className="text-slate-700 font-semibold text-sm text-center">{b.quantity}</td>
-                      <td className="font-bold text-slate-900">{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
-                      <td className="max-w-[180px]">
+                      <td className="px-3 py-3">
+                        <div className="text-xs space-y-0.5">
+                          <div className="font-bold text-slate-900">{formatCurrency(b.total_allocation ?? b.total_cost)}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">{formatCurrency(b.unit_cost)} &times; {b.quantity}</div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 max-w-[120px] truncate" title={b.remarks || ''}>
                         {b.remarks ? (
-                          <p className="text-xs text-slate-600 italic">{b.remarks}</p>
+                          <span className="text-xs text-slate-600 italic">{b.remarks}</span>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
                       {isWriteAllowed && (
-                        <td>
+                        <td className="px-3 py-3">
                           <button
                             onClick={() => {
                               setSelectedBudgetForAllocation(b);
                               setAllocationRemarks(b.remarks || '');
                             }}
                             disabled={isFyClosed}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 ${
                               isFyClosed
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                 : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow'

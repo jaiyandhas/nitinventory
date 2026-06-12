@@ -27,7 +27,7 @@ class Department(Base):
     director_faculty: Mapped[Optional["User"]] = relationship("User", foreign_keys=[director_faculty_id])
 
     budget_entries: Mapped[List["BudgetMaster"]] = relationship("BudgetMaster", back_populates="department")  # type: ignore
-    assets: Mapped[List["Asset"]] = relationship("Asset", back_populates="department")
+    assets: Mapped[List["Asset"]] = relationship("Asset", foreign_keys="[Asset.department_id]", back_populates="department")
 
 
 class RoleManager(Base):

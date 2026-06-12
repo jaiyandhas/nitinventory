@@ -6,6 +6,7 @@ import {
 import { useParams, Link } from 'react-router-dom';
 import { formatCurrency } from '../utils/format';
 import { prApi, budgetApi, adminApi, assetsApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { PurchaseRequest } from '../types';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -49,24 +50,24 @@ export const PRDetailPage: React.FC = () => {
 
   // Admin queries
   const { data: adminRoles = [] } = useQuery({
-    queryKey: ['admin_roles'],
+    queryKey: queryKeys.admin.roles,
     queryFn: () => adminApi.roles().then(res => res.data),
     enabled: isAdmin
   });
   const { data: adminUsers = [] } = useQuery({
-    queryKey: ['admin_users_list'],
+    queryKey: queryKeys.admin.usersList,
     queryFn: () => adminApi.users().then(res => res.data),
     enabled: isAdmin
   });
   const { data: adminDepts = [] } = useQuery({
-    queryKey: ['admin_depts'],
+    queryKey: queryKeys.admin.depts,
     queryFn: () => adminApi.departments().then(res => res.data),
     enabled: isAdmin
   });
 
   // Load assets and filter for this PR
   const { data: allAssetsData } = useQuery({
-    queryKey: ['assets', 'detail_list'],
+    queryKey: queryKeys.assets.detailList,
     queryFn: () => assetsApi.list({ limit: 200 }).then(r => r.data),
   });
   const allAssets = allAssetsData?.items || [];
@@ -76,7 +77,11 @@ export const PRDetailPage: React.FC = () => {
     mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateWorkflow(id, data),
     onSuccess: () => {
       toast.success('Workflow step updated successfully');
-      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(Number(id)) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to update workflow step')
   });
@@ -85,8 +90,9 @@ export const PRDetailPage: React.FC = () => {
     mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateUser(id, data),
     onSuccess: () => {
       toast.success('User role updated successfully');
-      queryClient.invalidateQueries({ queryKey: ['pr', id] });
-      queryClient.invalidateQueries({ queryKey: ['admin_users_list'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(Number(id)) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.usersList });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to update user role')
   });
@@ -96,7 +102,11 @@ export const PRDetailPage: React.FC = () => {
       toast.success('Purchase request force-advanced successfully');
       setForceAdvanceRemarks('');
       setIsForceAdvanceOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(Number(id)) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to force-advance purchase request');
@@ -115,14 +125,18 @@ export const PRDetailPage: React.FC = () => {
       toast.success('Budget file number allocated — PR has resumed.');
       setBudgetAllocRemarks('');
       setSelectedBudgetFileId('');
-      queryClient.invalidateQueries({ queryKey: ['pr', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(Number(id)) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to allocate budget file number');
     },
   });
   const { data: pr, refetch, isError, error } = useQuery<PurchaseRequest>({
-    queryKey: ['pr', id],
+    queryKey: queryKeys.prs.detail(Number(id)),
     queryFn: () => prApi.get(Number(id)).then(r => r.data),
     retry: (failureCount, err: any) => {
       // Never retry on auth/authz errors — they will not resolve on their own
@@ -133,13 +147,13 @@ export const PRDetailPage: React.FC = () => {
   });
 
   const { data: faculties = [] } = useQuery<any[]>({
-    queryKey: ['departmentFaculty'],
+    queryKey: queryKeys.users.deptFaculty,
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
     enabled: !!pr && user?.role?.group_key === 'hod' && (pr.flow?.expected_group === 'hod' || pr.flow?.expected_role_name?.toLowerCase().includes('hod') || pr.flow?.phase_name === 'Administrative Approval'),
   });
 
   const { data: permanentBudgets = [] } = useQuery<any[]>({
-    queryKey: ['permanentBudgets', pr?.initiator?.department?.id || pr?.initiator_id, pr?.financial_year_id],
+    queryKey: queryKeys.budgets.permanent(pr?.initiator?.department?.id || pr?.initiator_id, pr?.financial_year_id),
     queryFn: () => adminApi.budget({
       department_id: pr?.initiator?.department?.id,
       financial_year_id: pr?.financial_year_id,
@@ -775,7 +789,39 @@ export const PRDetailPage: React.FC = () => {
               {/* STAGE: Purchase Order */}
               {selectedStageKey === 'po' && (
                 <div className="space-y-6">
-                  {pr.current_status === 'po_issued' || pr.current_status === 'completed' ? (
+                  {pr.purchase_order ? (
+                    <div className="p-5 border border-green-200 bg-green-50/50 rounded-lg space-y-3 text-left">
+                      <div className="flex items-center justify-between border-b border-green-200/50 pb-2">
+                        <div>
+                          <span className="text-[10px] font-bold text-green-800 uppercase tracking-wide block">PO Issuance Certified</span>
+                          <span className="text-sm font-black text-[#1a3a6b] font-mono">{pr.purchase_order.po_number}</span>
+                        </div>
+                        <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase">Issued</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Vendor</span>
+                          <span className="font-semibold text-slate-800">{pr.purchase_order.vendor_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">PO Amount</span>
+                          <span className="font-bold text-emerald-800">{formatCurrency(pr.purchase_order.po_amount)}</span>
+                        </div>
+                        {pr.purchase_order.delivery_due_date && (
+                          <div>
+                            <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Delivery Due Date</span>
+                            <span className="font-semibold text-slate-800">{new Date(pr.purchase_order.delivery_due_date).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                        {pr.purchase_order.remarks && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Remarks</span>
+                            <span className="text-slate-600 italic">"{pr.purchase_order.remarks}"</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : pr.current_status === 'po_issued' || pr.current_status === 'completed' ? (
                     <div className="p-5 border border-green-200 bg-green-50/50 rounded-lg flex items-center justify-between">
                       <div className="text-xs space-y-1 text-left">
                         <span className="text-[10px] font-bold text-green-800 uppercase tracking-wide block">PO Issuance Certified</span>

@@ -107,19 +107,19 @@ async def test_director_tender_approval_conditional_skipping(db_session):
     """Test the partial_approver (Dean) → conditional Director step logic.
 
     Step layout (cat2/cat3 TD):
-      step 5  — AR (approver)
-      step 6  — Dean P&D (partial_approver) ← NEW
-      step 7  — Director (conditional: qualified_vendor_count < 3)
+      step 9  — AR (approver)
+      step 10 — Dean P&D (partial_approver) ← NEW
+      step 11 — Director (conditional: qualified_vendor_count < 3)
 
     When ≥3 qualified vendors:
-      - AR advances to Dean (step 6)
+      - AR advances to Dean (step 10)
       - _check_partial_approver_auto_advance returns True → auto-bypass Dean
-      - Dean is skipped; Director (step 7) condition is also false → None → TE phase
+      - Dean is skipped; Director (step 11) condition is also false → None → TE phase
 
     When <3 qualified vendors:
-      - AR advances to Dean (step 6)
+      - AR advances to Dean (step 10)
       - _check_partial_approver_auto_advance returns False → Dean must act
-      - Dean approves → Director (step 7) fires
+      - Dean approves → Director (step 11) fires
     """
     from app.models.purchase_request import CommercialEvaluation
     flow_service = FlowEngineService(db_session)
@@ -147,7 +147,7 @@ async def test_director_tender_approval_conditional_skipping(db_session):
     phase_td = phase_td_res.scalar_one()
 
     # ── Case A: <3 qualified vendors ──────────────────────────────────────────
-    # AR (step 5) should advance to Dean (step 6, partial_approver).
+    # AR (step 9) should advance to Dean (step 10, partial_approver).
     # The partial_approver helper should return False (Director WILL fire).
     for i in range(2):
         db_session.add(CommercialEvaluation(
@@ -155,17 +155,17 @@ async def test_director_tender_approval_conditional_skipping(db_session):
         ))
     await db_session.flush()
 
-    # Step after AR (5) is the Dean partial_approver at step 6
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step == 6, f"Expected step 6 (Dean partial_approver) after AR, got {next_step}"
+    # Step after AR (9) is the Dean partial_approver at step 10
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=9)
+    assert next_step == 10, f"Expected step 10 (Dean partial_approver) after AR, got {next_step}"
 
     # Dean partial_approver should NOT auto-advance (Director IS needed)
-    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=6)
+    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=10)
     assert not should_auto, "Dean should NOT auto-advance when <3 qualified vendors (Director needed)"
 
-    # Step after Dean (6) is Director at step 7 (condition true, < 3 vendors)
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=6)
-    assert next_step == 7, f"Expected step 7 (Director) after Dean when <3 vendors, got {next_step}"
+    # Step after Dean (10) is Director at step 11 (condition true, < 3 vendors)
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
+    assert next_step == 11, f"Expected step 11 (Director) after Dean when <3 vendors, got {next_step}"
 
     # ── Case B: ≥3 qualified vendors ─────────────────────────────────────────
     # Dean partial_approver SHOULD auto-advance (Director step NOT needed).
@@ -178,11 +178,11 @@ async def test_director_tender_approval_conditional_skipping(db_session):
     await db_session.flush()
 
     # Dean partial_approver SHOULD auto-advance (Director NOT needed)
-    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=6)
+    should_auto = await flow_service._check_partial_approver_auto_advance(pr, phase_td, partial_step_order=10)
     assert should_auto, "Dean SHOULD auto-advance when ≥3 qualified vendors (Director not needed)"
 
-    # Step after Dean (6) when condition false: Director (7) is skipped → None → next phase
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=6)
+    # Step after Dean (10) when condition false: Director (11) is skipped → None → next phase
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
     assert next_step is None, f"Expected None (Director skipped) after Dean when ≥3 vendors, got {next_step}"
 
 

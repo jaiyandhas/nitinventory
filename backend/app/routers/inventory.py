@@ -37,7 +37,8 @@ async def list_deliveries(db: AsyncSession = Depends(get_db), user: User = Depen
             "invoice_number": d.invoice_number,
             "invoice_pdf_path": d.invoice_pdf_path,
             "challan_pdf_path": d.challan_pdf_path,
-            "created_at": d.created_at.isoformat()
+            "created_at": d.created_at.isoformat(),
+            "gin_number": d.gin_number
         }
         for d in deliveries
     ]
@@ -82,6 +83,7 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
         "received_date": delivery.received_date.isoformat() if delivery.received_date else None,
         "invoice_pdf_path": delivery.invoice_pdf_path,
         "challan_pdf_path": delivery.challan_pdf_path,
+        "gin_number": delivery.gin_number,
         "purchase_request": {
             "id": delivery.purchase_request.id,
             "initiator_id": delivery.purchase_request.initiator_id,
@@ -108,7 +110,9 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
                     "room": i.stores_log.room,
                     "custodian_name": i.stores_log.custodian_name,
                     "serial_numbers": i.stores_log.serial_numbers,
-                    "is_approved": i.stores_log.is_approved
+                    "is_approved": i.stores_log.is_approved,
+                    "grn_number": i.stores_log.grn_number,
+                    "inspection_remarks": i.stores_log.inspection_remarks
                 } if i.stores_log else None,
                 "discrepancy": {
                     "id": i.discrepancy.id,

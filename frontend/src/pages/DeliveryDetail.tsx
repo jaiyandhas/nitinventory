@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, CheckCircle, AlertTriangle, FileText, Package, Upload, Clock } from 'lucide-react';
@@ -18,7 +19,7 @@ export const DeliveryDetailPage: React.FC = () => {
   const isAdmin = user?.role?.group_key === 'admin';
 
   const { data: delivery, isLoading } = useQuery({
-    queryKey: ['delivery', id],
+    queryKey: queryKeys.inventory.delivery(id!),
     queryFn: () => inventoryApi.getDelivery(Number(id)).then(res => res.data),
     enabled: !!id,
   });
@@ -34,7 +35,8 @@ export const DeliveryDetailPage: React.FC = () => {
     mutationFn: (formData: FormData) => inventoryApi.confirmDelivery(Number(id), formData),
     onSuccess: () => {
       toast.success('Delivery confirmed successfully');
-      queryClient.invalidateQueries({ queryKey: ['delivery', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.delivery(id!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.deliveries });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Error confirming delivery');
@@ -85,7 +87,15 @@ export const DeliveryDetailPage: React.FC = () => {
               {delivery.status.replace('_', ' ')}
             </span>
           </h1>
-          <p className="page-subtitle">PO Ref: #{delivery.po_id}</p>
+          <p className="page-subtitle flex items-center gap-3">
+            <span>PO Ref: #{delivery.po_id}</span>
+            {delivery.gin_number && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-bold text-[10px]">GIN: {delivery.gin_number}</span>
+              </>
+            )}
+          </p>
         </div>
       </div>
 
@@ -166,6 +176,12 @@ export const DeliveryDetailPage: React.FC = () => {
         <div className="card p-6 col-span-2">
           <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Delivery Information</h3>
           <div className="grid grid-cols-2 gap-y-4">
+            {delivery.gin_number && (
+              <div className="col-span-2">
+                <p className="text-sm text-slate-500">GIN Number (Goods Inward Note)</p>
+                <p className="font-semibold font-mono text-[#1a3a6b]">{delivery.gin_number}</p>
+              </div>
+            )}
             <div>
               <p className="text-sm text-slate-500">Challan Number</p>
               <p className="font-semibold">{delivery.challan_number || 'N/A'}</p>
@@ -259,7 +275,8 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
     room: '',
     custodian_name: '',
     serial_numbers: '',
-    remarks: ''
+    remarks: '',
+    inspection_remarks: item.stores_log?.inspection_remarks || ''
   });
 
   const isPending = deliveryStatus === 'pending';
@@ -268,7 +285,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
     mutationFn: (data: any) => inventoryApi.logDeptReceipt(deliveryId, item.id, data),
     onSuccess: () => {
       toast.success('Department receipt logged');
-      queryClient.invalidateQueries({ queryKey: ['delivery', deliveryId.toString()] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.delivery(deliveryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.deliveries });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.discrepancies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error logging receipt')
   });
@@ -277,7 +297,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
     mutationFn: (data: any) => inventoryApi.logStoresReceipt(deliveryId, item.id, data),
     onSuccess: () => {
       toast.success('Stores receipt logged');
-      queryClient.invalidateQueries({ queryKey: ['delivery', deliveryId.toString()] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.delivery(deliveryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.deliveries });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.discrepancies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error logging receipt')
   });
@@ -286,7 +309,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
     mutationFn: () => inventoryApi.approveStoresLog(deliveryId, item.id),
     onSuccess: () => {
       toast.success('Stores log approved');
-      queryClient.invalidateQueries({ queryKey: ['delivery', deliveryId.toString()] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.delivery(deliveryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.deliveries });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.discrepancies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     }
   });
 
@@ -410,8 +436,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
 
             {item.stores_log && item.stores_log.is_approved ? (
                <div className="bg-white p-4 rounded border border-slate-200 space-y-2 text-sm border-l-4 border-l-green-500">
+                 {item.stores_log.grn_number && <p className="font-mono font-bold text-[#1a3a6b]">GRN Ref: {item.stores_log.grn_number}</p>}
                  <p><span className="text-slate-500">Qty Verified:</span> {item.stores_log.quantity}</p>
                  <p><span className="text-slate-500">Condition:</span> <span className="capitalize">{item.stores_log.condition}</span></p>
+                 {item.stores_log.inspection_remarks && <p><span className="text-slate-500">Inspection Remarks:</span> {item.stores_log.inspection_remarks}</p>}
                  <p className="text-xs text-green-600 font-medium mt-2 pt-2 border-t border-slate-100">Approved by Apex Authority.</p>
                </div>
             ) : isPending ? (
@@ -455,6 +483,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
                   <label className="block text-xs font-medium text-slate-700 mb-1">Serial Numbers</label>
                   <input type="text" defaultValue={item.stores_log?.serial_numbers?.join(', ') || ''} onChange={e => setFormData({...formData, serial_numbers: e.target.value})} className="input-field w-full text-sm py-1.5" />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Inspection Remarks</label>
+                  <input type="text" defaultValue={item.stores_log?.inspection_remarks || ''} onChange={e => setFormData({...formData, inspection_remarks: e.target.value})} className="input-field w-full text-sm py-1.5" />
+                </div>
                 
                 <button type="submit" disabled={logStoresMutation.isPending} className="btn-primary w-full py-1.5 text-sm mt-2">
                   {logStoresMutation.isPending ? 'Saving...' : (item.stores_log ? 'Update Stores Log' : 'Submit Stores Log')}
@@ -462,8 +494,10 @@ const ItemRow = ({ item, deliveryId, deliveryStatus, isExpanded, onToggle, isHod
               </form>
             ) : item.stores_log ? (
               <div className="bg-white p-4 rounded border border-slate-200 space-y-2 text-sm border-l-4 border-l-blue-500">
+                {item.stores_log.grn_number && <p className="font-mono font-bold text-[#1a3a6b]">GRN Ref: {item.stores_log.grn_number}</p>}
                 <p><span className="text-slate-500">Qty Verified:</span> {item.stores_log.quantity}</p>
                 <p><span className="text-slate-500">Condition:</span> <span className="capitalize">{item.stores_log.condition}</span></p>
+                {item.stores_log.inspection_remarks && <p><span className="text-slate-500">Inspection Remarks:</span> {item.stores_log.inspection_remarks}</p>}
                 
                 {isApex && (
                   <div className="mt-4 pt-4 border-t border-slate-100">

@@ -6,42 +6,35 @@ import { useAuth } from '../context/AuthContext';
 import { PR_STATUS_COLORS, PR_STATUS_LABELS, PRStatus, PurchaseRequest } from '../types';
 import { Link } from 'react-router-dom';
 import { formatCurrency } from '../utils/format';
+import { queryKeys } from '../config/queryKeys';
 
-const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string | number; color: string }> = ({ icon, label, value, color }) => (
-  <div className="card p-5 border-l-4" style={{ borderLeftColor: color }}>
-    <div className="flex items-center justify-between mb-2">
-      <div className="text-2xl font-bold text-slate-800">{value}</div>
-      <div className="text-slate-400">{icon}</div>
-    </div>
-    <div className="text-sm font-medium text-slate-600">{label}</div>
-  </div>
-);
+
 
 export const DashboardPage: React.FC = () => {
   const { user, isRole } = useAuth();
   const isStoresUser = isRole('verifier_da', 'verifier_sp');
 
   const { data: prsData } = useQuery({
-    queryKey: ['prs', 'dashboard'],
+    queryKey: queryKeys.prs.dashboard(),
     queryFn: () => prApi.list({ limit: 200 }).then(r => r.data),
   });
   const prs = prsData?.items || [];
 
   const { data: budget } = useQuery({
-    queryKey: ['budget-overview'],
+    queryKey: queryKeys.budgets.overview(),
     queryFn: () => budgetApi.overview().then(r => r.data),
     enabled: isRole('faculty', 'hod', 'admin', 'dean_approver'),
   });
 
   const { data: assetsData } = useQuery({
-    queryKey: ['assets', 'dashboard'],
+    queryKey: queryKeys.assets.dashboard(),
     queryFn: () => assetsApi.list({ limit: 200 }).then(r => r.data),
     enabled: isRole('hod', 'verifier_sp', 'admin'),
   });
   const assets = assetsData?.items || [];
 
   const { data: discrepancies = [] } = useQuery({
-    queryKey: ['discrepancies'],
+    queryKey: queryKeys.inventory.discrepancies,
     queryFn: () => inventoryApi.listDiscrepancies().then(r => r.data),
     enabled: isRole('admin', 'verifier_sp', 'apex_approver'),
   });
@@ -149,14 +142,7 @@ export const DashboardPage: React.FC = () => {
       {/* Stat cards */}
       {user?.designation !== 'Dean P&D (Budget)' ? (
         <>
-          {!isStoresUser && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<FileText size={20} />} label="Active Indents" value={activePrs.length} color="#3b82f6" />
-              <StatCard icon={<CheckCircle size={20} />} label="PO Issued" value={completedPrs.length} color="#22c55e" />
-              <StatCard icon={<XCircle size={20} />} label="Rejected" value={rejectedPrs.length} color="#ef4444" />
-              <StatCard icon={<Layers size={20} />} label="My Pending Actions" value={pendingActions.length} color="#8b5cf6" />
-            </div>
-          )}
+
 
           {/* Open discrepancies alert */}
           {discrepancies.filter((d: { status: string }) => d.status === 'open').length > 0 && (

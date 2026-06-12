@@ -136,13 +136,13 @@ async def test_tender_routing_operators_evaluation(db_session):
         db_session.add(ce)
     await db_session.flush()
 
-    # We will query the workflow step 6 (the Director step in Tendering phase)
+    # We will query the workflow step 11 (the Director step in Tendering phase)
     # and update its tender_vendors_threshold and tender_vendors_comparison, then test routing.
     step_res = await db_session.execute(
         select(WorkFlowHierarchy).where(
             and_(
                 WorkFlowHierarchy.phase_id == phase_td.id,
-                WorkFlowHierarchy.step_order == 6,
+                WorkFlowHierarchy.step_order == 11,
                 WorkFlowHierarchy.category_id == pr.category_id,
                 WorkFlowHierarchy.procurement_id == pr.procurement_id,
                 WorkFlowHierarchy.purchase_type == pr.purchase_type,
@@ -156,37 +156,37 @@ async def test_tender_routing_operators_evaluation(db_session):
     # Operator 1: "<" (Run if count < 3. Here count=3, so 3 < 3 is False, meaning skip -> returns None)
     step.tender_vendors_comparison = "<"
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
     assert next_step is None
 
-    # Operator 2: "<=" (Run if count <= 3. Here count=3, so 3 <= 3 is True, meaning run -> returns step order 6)
+    # Operator 2: "<=" (Run if count <= 3. Here count=3, so 3 <= 3 is True, meaning run -> returns step order 11)
     step.tender_vendors_comparison = "<="
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step == 6
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
+    assert next_step == 11
 
     # Operator 3: ">" (Run if count > 3. Here count=3, so 3 > 3 is False, meaning skip -> returns None)
     step.tender_vendors_comparison = ">"
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
     assert next_step is None
 
-    # Operator 4: ">=" (Run if count >= 3. Here count=3, so 3 >= 3 is True, meaning run -> returns 6)
+    # Operator 4: ">=" (Run if count >= 3. Here count=3, so 3 >= 3 is True, meaning run -> returns 11)
     step.tender_vendors_comparison = ">="
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step == 6
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
+    assert next_step == 11
 
-    # Operator 5: "==" (Run if count == 3. Here count=3, so 3 == 3 is True, meaning run -> returns 6)
+    # Operator 5: "==" (Run if count == 3. Here count=3, so 3 == 3 is True, meaning run -> returns 11)
     step.tender_vendors_comparison = "=="
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
-    assert next_step == 6
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
+    assert next_step == 11
 
     # Operator 6: "!=" (Run if count != 3. Here count=3, so 3 != 3 is False, meaning skip -> returns None)
     step.tender_vendors_comparison = "!="
     await db_session.flush()
-    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=5)
+    next_step = await flow_service._get_next_step_in_phase(pr, phase_td, current_step=10)
     assert next_step is None
 
 
@@ -217,12 +217,12 @@ async def test_dynamic_routing_skip_condition(db_session):
     db_session.add(pr_low)
     await db_session.flush()
 
-    # Query step 6 in tendering phase
+    # Query step 11 in tendering phase
     step_res = await db_session.execute(
         select(WorkFlowHierarchy).where(
             and_(
                 WorkFlowHierarchy.phase_id == phase_td.id,
-                WorkFlowHierarchy.step_order == 6,
+                WorkFlowHierarchy.step_order == 11,
                 WorkFlowHierarchy.category_id == pr_low.category_id,
                 WorkFlowHierarchy.procurement_id == pr_low.procurement_id,
                 WorkFlowHierarchy.purchase_type == pr_low.purchase_type,
@@ -235,14 +235,14 @@ async def test_dynamic_routing_skip_condition(db_session):
     step.skip_condition = "pr.amount < 100000"
     await db_session.flush()
 
-    # Delete any steps after step 6 in this phase/category/procurement for this test,
-    # so that when step 6 is skipped, it correctly returns None.
+    # Delete any steps after step 11 in this phase/category/procurement for this test,
+    # so that when step 11 is skipped, it correctly returns None.
     from sqlalchemy import delete
     await db_session.execute(
         delete(WorkFlowHierarchy).where(
             and_(
                 WorkFlowHierarchy.phase_id == phase_td.id,
-                WorkFlowHierarchy.step_order > 6,
+                WorkFlowHierarchy.step_order > 11,
                 WorkFlowHierarchy.category_id == pr_low.category_id,
                 WorkFlowHierarchy.procurement_id == pr_low.procurement_id,
                 WorkFlowHierarchy.purchase_type == pr_low.purchase_type,
@@ -252,7 +252,7 @@ async def test_dynamic_routing_skip_condition(db_session):
     await db_session.flush()
 
     # For amount=50,000 (which is < 100,000), it evaluates to True (should skip -> returns None)
-    next_step = await flow_service._get_next_step_in_phase(pr_low, phase_td, current_step=5)
+    next_step = await flow_service._get_next_step_in_phase(pr_low, phase_td, current_step=10)
     assert next_step is None
 
     # 2. Create a PR with high amount (150,000)
@@ -268,6 +268,6 @@ async def test_dynamic_routing_skip_condition(db_session):
     db_session.add(pr_high)
     await db_session.flush()
 
-    # For amount=150,000, skip_condition evaluates to False (should NOT skip -> returns 6)
-    next_step = await flow_service._get_next_step_in_phase(pr_high, phase_td, current_step=5)
-    assert next_step == 6
+    # For amount=150,000, skip_condition evaluates to False (should NOT skip -> returns 11)
+    next_step = await flow_service._get_next_step_in_phase(pr_high, phase_td, current_step=10)
+    assert next_step == 11

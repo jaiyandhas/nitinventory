@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { formatCurrency } from '../utils/format';
 import { Plus } from 'lucide-react';
 import { prApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { PurchaseRequest, PR_STATUS_COLORS, PR_STATUS_LABELS, PRStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,7 +14,7 @@ export const PRListPage: React.FC = () => {
   const [limit, setLimit] = useState(50);
   
   const { data, isLoading } = useQuery({
-    queryKey: ['prs', page, limit],
+    queryKey: queryKeys.prs.list(page, limit),
     queryFn: () => prApi.list({ skip: (page - 1) * limit, limit }).then(r => r.data),
   });
 

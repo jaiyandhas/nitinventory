@@ -91,6 +91,7 @@ Set `RESET_DEMO_DATA=true` in `docker-compose.yml` only when you want a clean sl
    - **Techno-Commercial & Financial PCS**: Added multi-vendor side-by-side comparative statement tables (`PRItemsTable.tsx`) comparing bids on unit cost, taxes, delivery period, warranty, and qualification status.
    - **Single Bid Routing**: Enforced single-bid justification form input in the FS phase if only one vendor qualifies, dynamically routing approvals through the Director.
    - **LPC Committee Approvals**: Integrated Local Purchase Committee detail inputs (`lpc_remarks`, `lpc_committee_members`, `lpc_minutes_reference`) in the tendering phase.
+   - **Split Tendering Workflow (Scheduling & Bidding)**: Separated the tendering phase into two distinct stages: Stage 1 (Tender Scheduling) where the Dealing Assistant schedules tender reference numbers/dates and uploads the draft document, advancing it to Superintendent and Purchase Initiator (faculty) reviews; and Stage 2 (Bidding Registry) where the Dealing Assistant logs the participating vendors, quoted amounts, and final tender document, before advancing the workflow to technical/financial evaluation.
    - **Purchase Bill Passing**: Created a secure invoice bill-passing module verifying that the bill amount does not exceed the PO allocation, and blocking bill passing until HOD/Stores record a `verified` GRN delivery.
 
 6. **Budget Master Initiation, Technical Committee, Consultation & Formatting**

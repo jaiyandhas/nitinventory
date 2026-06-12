@@ -143,7 +143,28 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
   const fileNo = formatFileNo(pr.budget_file?.file_no, user?.role?.group_key);
   const deptName = pr.initiator?.email?.includes('cse') ? 'Computer Science & Engineering' : 'Main Office';
   const indentName = pr.items?.[0]?.item_description || '-';
-  const fundSource = pr.items?.[0]?.requirement_type || 'OH-35';
+  const selected_fund = pr.form_data?.source_of_fund;
+  const project_code = pr.form_data?.source_of_fund_project_code;
+  const others_detail = pr.form_data?.source_of_fund_others;
+
+  let fundSource = '—';
+  if (selected_fund) {
+    if (selected_fund === 'Project code') {
+      fundSource = project_code ? `${selected_fund} (Project code: ${project_code})` : selected_fund;
+    } else if (selected_fund === 'Others') {
+      fundSource = others_detail ? `${selected_fund} (${others_detail})` : selected_fund;
+    } else {
+      fundSource = selected_fund;
+    }
+  } else if (pr.budget_file?.source_of_fund) {
+    const rawSource = pr.budget_file.source_of_fund || '';
+    if (rawSource.toUpperCase() === 'R&C') {
+      const pCode = pr.budget_file.project_code || '';
+      fundSource = pCode ? `Project code (Project code: ${pCode})` : 'Project code';
+    } else {
+      fundSource = rawSource;
+    }
+  }
   const itemsList = pr.items || [];
 
   return (

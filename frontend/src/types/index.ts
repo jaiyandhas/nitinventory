@@ -56,6 +56,8 @@ export interface BudgetFile {
   unit_cost: number;
   quantity: number;
   source_of_fund?: string;
+  project_code?: string;
+  principal_investigator?: string;
 }
 
 export interface BudgetOverview {
@@ -151,6 +153,7 @@ export interface PurchaseRequest {
   exemption_remarks?: string;
   is_training_required?: boolean;
   tender_reference_number?: string;
+  tender_scheduling_done?: boolean;
   vendor_list_link?: string;
   date_of_tender?: string;
   date_of_tech_bid_opening?: string;
@@ -228,6 +231,29 @@ export interface PurchaseRequest {
   director_faculty?: { id: number; name: string; email: string };
   referrals?: PRReferral[];
   budget_file?: any;
+  purchase_order?: PurchaseOrder | null;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  purchase_request_id: number;
+  po_number: string;
+  vendor_name: string;
+  vendor_address?: string | null;
+  vendor_gst?: string | null;
+  vendor_bank_account?: string | null;
+  vendor_bank_name?: string | null;
+  vendor_ifsc?: string | null;
+  po_amount: number;
+  delivery_due_date?: string | null;
+  ps_amount?: number | null;
+  ps_mode?: string | null;
+  ps_validity?: string | null;
+  emd_amount?: number | null;
+  ld_applicable: boolean;
+  issued_by_id: number;
+  issued_at?: string | null;
+  remarks?: string | null;
 }
 
 export interface PRReferral {

@@ -4,6 +4,7 @@ import { Download, Check, ShieldAlert, Settings, Users, Award, X, XCircle } from
 import { PurchaseRequest, PR_STATUS_LABELS, PRStatus } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { budgetApi } from '../../../services/api';
+import { queryKeys } from '../../../config/queryKeys';
 import toast from 'react-hot-toast';
 import { formatFileNo } from '../../../utils/format';
 import { CancelPOModal } from '../actions/CancelPOModal';
@@ -86,14 +87,14 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
 
   // HOD department faculties
   const { data: deptFaculties = [] } = useQuery<any[]>({
-    queryKey: ['departmentFaculty'],
+    queryKey: queryKeys.users.deptFaculty,
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
     enabled: !!isHOD,
   });
 
   // Director nominee options (all users)
   const { data: allUsers = [] } = useQuery<any[]>({
-    queryKey: ['all_users_for_director_nomination'],
+    queryKey: queryKeys.users.directorNomination,
     queryFn: () => budgetApi.allUsers().then(r => r.data),
     enabled: !!isDirector,
   });
@@ -113,7 +114,11 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
     onSuccess: () => {
       toast.success('Technical committee experts updated successfully');
       setShowNominationModal(false);
-      queryClient.invalidateQueries({ queryKey: ['pr', pr.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(pr.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to update technical committee');
@@ -126,7 +131,11 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
     onSuccess: () => {
       toast.success('Director nominee updated successfully');
       setShowNominationModal(false);
-      queryClient.invalidateQueries({ queryKey: ['pr', pr.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.detail(pr.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to update director nominee');

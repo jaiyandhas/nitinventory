@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { budgetApi, prApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import toast from 'react-hot-toast';
 import { usePRWizard } from '../hooks/usePRWizard';
 import { PRWizardStepper } from '../components/pr-creation/PRWizardStepper';
@@ -11,7 +12,7 @@ import { StepItemDetails } from '../components/pr-creation/steps/StepItemDetails
 import { StepCommonDetails } from '../components/pr-creation/steps/StepCommonDetails';
 import { StepReviewSubmit } from '../components/pr-creation/steps/StepReviewSubmit';
 import { buildPRCreateFormData } from '../utils/prPayload';
-import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const NewPRPage: React.FC = () => {
@@ -22,27 +23,93 @@ export const NewPRPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const wizard = usePRWizard();
 
-  const { data: budgetFiles = [] } = useQuery({
-    queryKey: ['budgetFiles'],
+  const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
+    queryKey: queryKeys.budgets.files(),
     queryFn: () => budgetApi.files().then((r) => r.data),
+    refetchOnMount: 'always',
   });
 
   const { data: departmentFaculty = [] } = useQuery({
-    queryKey: ['departmentFaculty'],
+    queryKey: queryKeys.users.deptFaculty,
     queryFn: () => budgetApi.departmentFaculty().then((r) => r.data),
     enabled: isHod,
   });
 
-  const { data: procurementMethods = [] } = useQuery({
-    queryKey: ['procurementMethods'],
+  const { data: procurementMethods = [], isLoading: loadingMethods } = useQuery({
+    queryKey: queryKeys.budgets.procurementMethods,
     queryFn: () => budgetApi.procurementMethods().then((r) => r.data),
   });
 
+  const isDataLoading = loadingBudgets || loadingMethods;
 
   const selectedFiles = useMemo(
     () => budgetFiles.filter((f: any) => wizard.selection.selectedFileIds.includes(f.id)),
     [budgetFiles, wizard.selection.selectedFileIds]
   );
+
+  // Filter out any stale/invalid selected file IDs or procurement methods that are no longer available in the active lists (e.g. from draft restoration)
+  React.useEffect(() => {
+    if (!loadingBudgets && !loadingMethods) {
+      const validFileIds = new Set(budgetFiles.map((f: any) => f.id));
+      const filteredFileIds = wizard.selection.selectedFileIds.filter((id) => validFileIds.has(id));
+      
+      const validProcMethodIds = new Set(procurementMethods.map((m: any) => m.id));
+      const isProcMethodValid = wizard.selection.procurementMethodId === null || validProcMethodIds.has(wizard.selection.procurementMethodId);
+      
+      const fileIdsChanged = filteredFileIds.length !== wizard.selection.selectedFileIds.length;
+      const procMethodChanged = !isProcMethodValid;
+      
+      if (fileIdsChanged || procMethodChanged) {
+        wizard.setSelection((prev) => ({
+          ...prev,
+          selectedFileIds: filteredFileIds,
+          fileCount: Math.max(1, filteredFileIds.length),
+          procurementMethodId: isProcMethodValid ? prev.procurementMethodId : null,
+        }));
+      }
+    }
+  }, [loadingBudgets, loadingMethods, budgetFiles, procurementMethods, wizard.selection.selectedFileIds, wizard.selection.procurementMethodId, wizard.setSelection]);
+
+  // Auto-sync source of fund from selected budget files (including draft restore & async loading)
+  React.useEffect(() => {
+    if (budgetFiles.length > 0 && wizard.selection.selectedFileIds.length > 0) {
+      const file = budgetFiles.find((f: any) => f.id === wizard.selection.selectedFileIds[0]);
+      if (file) {
+        const rawSource = file.source_of_fund || '';
+        let sourceVal: 'OH-35' | 'OH-31' | 'SW' | 'SEED' | 'Project code' | 'Others' | '' = '';
+        let projectCode = '';
+        let others = '';
+
+        if (rawSource.toUpperCase().includes('OH-35')) {
+          sourceVal = 'OH-35';
+        } else if (rawSource.toUpperCase().includes('OH-31')) {
+          sourceVal = 'OH-31';
+        } else if (rawSource.toUpperCase().includes('SW') || rawSource.toUpperCase().includes('STUDENT-WELFARE')) {
+          sourceVal = 'SW';
+        } else if (rawSource.toUpperCase().includes('SEED')) {
+          sourceVal = 'SEED';
+        } else if (rawSource.toUpperCase() === 'R&C') {
+          sourceVal = 'Project code';
+          projectCode = file.project_code || '';
+        } else {
+          sourceVal = 'Others';
+          others = rawSource;
+        }
+
+        if (
+          wizard.common.source_of_fund !== sourceVal ||
+          wizard.common.source_of_fund_project_code !== projectCode ||
+          wizard.common.source_of_fund_others !== others
+        ) {
+          wizard.updateCommon({
+            source_of_fund: sourceVal,
+            source_of_fund_project_code: projectCode,
+            source_of_fund_others: others,
+          });
+        }
+      }
+    }
+  }, [budgetFiles, wizard.selection.selectedFileIds, wizard.common.source_of_fund, wizard.common.source_of_fund_project_code, wizard.common.source_of_fund_others]);
 
   const totalCost = useMemo(() => {
     return selectedFiles.reduce((acc: number, file: any) => {
@@ -107,7 +174,10 @@ export const NewPRPage: React.FC = () => {
       const res = await prApi.createWithFiles(formData);
       toast.success(`Purchase Indent initiated: ${res.data.icr_number ?? res.data.id}`);
       wizard.clearDraft();  // ← clear saved draft on success
-      queryClient.invalidateQueries({ queryKey: ['prs'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
       navigate('/pr');
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -218,8 +288,14 @@ export const NewPRPage: React.FC = () => {
                 Back
               </button>
             )}
-            <button type="button" className="btn-primary ml-auto" onClick={handleNext}>
-              Continue
+            <button
+              type="button"
+              className="btn-primary ml-auto flex items-center gap-1.5"
+              onClick={handleNext}
+              disabled={isDataLoading}
+            >
+              {isDataLoading && <Loader2 size={14} className="animate-spin" />}
+              {isDataLoading ? 'Loading data...' : 'Continue'}
             </button>
             <button type="button" className="btn-secondary" onClick={() => navigate('/pr')}>
               Cancel

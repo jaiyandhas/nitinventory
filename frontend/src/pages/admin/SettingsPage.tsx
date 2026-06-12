@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, ArrowDown, Plus, Trash2, Edit, AlertTriangle, UserX, UserCheck, Key, Lock, Calendar, RefreshCw } from 'lucide-react';
 import { adminApi, authApi } from '../../services/api';
+import { queryKeys } from '../../config/queryKeys';
 import { TitleSelect, DesignationSelect } from '../../components/UserFormFields';
 import { toast } from 'react-hot-toast';
 import { formatCurrency } from '../../utils/format';
@@ -49,20 +50,20 @@ export const SettingsPage: React.FC = () => {
   const [isFyModalOpen, setIsFyModalOpen] = useState(false);
 
   // Queries
-  const { data: workflows = [] } = useQuery({ queryKey: ['admin_workflows'], queryFn: () => adminApi.workflows().then(res => res.data) });
-  const { data: categories = [] } = useQuery({ queryKey: ['admin_categories'], queryFn: () => adminApi.categories().then(res => res.data) });
-  const { data: phases = [] } = useQuery({ queryKey: ['admin_phases'], queryFn: () => adminApi.phases().then(res => res.data) });
-  const { data: roles = [] } = useQuery({ queryKey: ['admin_roles'], queryFn: () => adminApi.roles().then(res => res.data) });
-  const { data: procs = [] } = useQuery({ queryKey: ['admin_procs'], queryFn: () => adminApi.procurementMethods().then(res => res.data) });
-  const { data: users = [] } = useQuery({ queryKey: ['admin_users_list'], queryFn: () => adminApi.users().then(res => res.data) });
-  const { data: depts = [] } = useQuery({ queryKey: ['admin_depts'], queryFn: () => adminApi.departments().then(res => res.data) });
-  const { data: fys = [] } = useQuery({ queryKey: ['admin_financial_years'], queryFn: () => adminApi.financialYears().then(res => res.data) });
+  const { data: workflows = [] } = useQuery({ queryKey: queryKeys.admin.workflows, queryFn: () => adminApi.workflows().then(res => res.data) });
+  const { data: categories = [] } = useQuery({ queryKey: queryKeys.admin.categories, queryFn: () => adminApi.categories().then(res => res.data) });
+  const { data: phases = [] } = useQuery({ queryKey: queryKeys.admin.phases, queryFn: () => adminApi.phases().then(res => res.data) });
+  const { data: roles = [] } = useQuery({ queryKey: queryKeys.admin.roles, queryFn: () => adminApi.roles().then(res => res.data) });
+  const { data: procs = [] } = useQuery({ queryKey: queryKeys.admin.procs, queryFn: () => adminApi.procurementMethods().then(res => res.data) });
+  const { data: users = [] } = useQuery({ queryKey: queryKeys.admin.usersList, queryFn: () => adminApi.users().then(res => res.data) });
+  const { data: depts = [] } = useQuery({ queryKey: queryKeys.admin.depts, queryFn: () => adminApi.departments().then(res => res.data) });
+  const { data: fys = [] } = useQuery({ queryKey: queryKeys.admin.financialYears, queryFn: () => adminApi.financialYears().then(res => res.data) });
   const { data: budgetCats = { source_of_fund_categories: [], expenditure_categories: [], item_categories: [], added_by_dean: { source_of_fund: [], expenditure: [], item: [] } } } = useQuery({
-    queryKey: ['budget_categories'],
+    queryKey: queryKeys.budgets.categories,
     queryFn: () => adminApi.getCategories().then(res => res.data),
   });
   const { data: designations = [] } = useQuery({
-    queryKey: ['admin_designations'],
+    queryKey: queryKeys.auth.designations,
     queryFn: () => authApi.designations().then(res => res.data)
   });
 
@@ -97,7 +98,7 @@ export const SettingsPage: React.FC = () => {
     onSuccess: () => {
       toast.success('Step added');
       setIsWfModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
   });
 
@@ -105,19 +106,19 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (id: number) => adminApi.deleteWorkflow(id),
     onSuccess: () => {
       toast.success('Step removed');
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
   });
 
   const toggleWfMutation = useMutation({
     mutationFn: (id: number) => adminApi.toggleWorkflow(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin_workflows'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows }),
   });
 
   const updateWfMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateWorkflow(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error updating workflow step')
   });
@@ -126,7 +127,7 @@ export const SettingsPage: React.FC = () => {
     mutationFn: () => adminApi.resetWorkflow({ category_id: selectedCat, procurement_id: selectedProc, purchase_type: selectedPurchaseType }),
     onSuccess: () => {
       toast.success('Workflows reset to default');
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
   });
 
@@ -137,7 +138,7 @@ export const SettingsPage: React.FC = () => {
       toast.success('Role added successfully');
       setIsRoleModalOpen(false);
       setIsCustomGroupKey(false);
-      queryClient.invalidateQueries({ queryKey: ['admin_roles'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.roles });
     },
     onError: (e: any) => {
       toast.error(e.response?.data?.detail || 'Failed to create role');
@@ -151,8 +152,14 @@ export const SettingsPage: React.FC = () => {
       toast.success(variables.id ? 'User updated successfully' : 'User created successfully');
       setIsUserModalOpen(false);
       setEditingUser(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_users_list'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.usersList });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.deptFaculty });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allFaculties });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.directorNomination });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.consultation });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to save user')
   });
@@ -172,8 +179,8 @@ export const SettingsPage: React.FC = () => {
       toast.success(editingCat ? 'Category updated' : 'Category created');
       setIsCatModalOpen(false);
       setEditingCat(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_categories'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.categories });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error saving category')
   });
@@ -182,8 +189,8 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (id: number) => adminApi.deleteCategory(id),
     onSuccess: () => {
       toast.success('Category and its workflow steps deleted');
-      queryClient.invalidateQueries({ queryKey: ['admin_categories'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.categories });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete category. It is referenced by existing purchase indents.')
   });
@@ -197,8 +204,8 @@ export const SettingsPage: React.FC = () => {
       toast.success(editingProc ? 'Procurement method updated' : 'Procurement method created');
       setIsProcModalOpen(false);
       setEditingProc(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_procs'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.procs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error saving procurement method')
   });
@@ -207,8 +214,8 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (id: number) => adminApi.deleteProcurementMethod(id),
     onSuccess: () => {
       toast.success('Procurement method and its workflow steps deleted');
-      queryClient.invalidateQueries({ queryKey: ['admin_procs'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.procs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Cannot delete procurement method. It is referenced by existing purchase indents.')
   });
@@ -219,7 +226,11 @@ export const SettingsPage: React.FC = () => {
     onSuccess: () => {
       toast.success('Financial Year added successfully');
       setIsFyModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
     },
     onError: (e: any) => {
       toast.error(e.response?.data?.detail || 'Failed to create financial year');
@@ -230,8 +241,12 @@ export const SettingsPage: React.FC = () => {
     mutationFn: () => adminApi.rolloverFinancialYear(),
     onSuccess: (res: any) => {
       toast.success(res.data?.message || 'Year-end rollover completed successfully');
-      queryClient.invalidateQueries({ queryKey: ['admin_financial_years'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
     },
     onError: (e: any) => {
       toast.error(e.response?.data?.detail || 'Rollover failed');
@@ -242,7 +257,7 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (data: { type: 'source_of_fund' | 'item'; value: string }) => adminApi.addCategory(data),
     onSuccess: () => {
       toast.success('Budget category added');
-      queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error adding budget category')
   });
@@ -251,7 +266,7 @@ export const SettingsPage: React.FC = () => {
     mutationFn: ({ type, value }: { type: 'source_of_fund' | 'item'; value: string }) => adminApi.deleteBudgetCategory(type, value),
     onSuccess: () => {
       toast.success('Budget category deleted');
-      queryClient.invalidateQueries({ queryKey: ['budget_categories'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error deleting budget category')
   });
@@ -260,7 +275,7 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (value: string) => adminApi.addDesignation(value),
     onSuccess: () => {
       toast.success('Designation added');
-      queryClient.invalidateQueries({ queryKey: ['admin_designations'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.designations });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to add designation');
@@ -271,7 +286,7 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (value: string) => adminApi.deleteDesignation(value),
     onSuccess: () => {
       toast.success('Designation removed');
-      queryClient.invalidateQueries({ queryKey: ['admin_designations'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.designations });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to remove designation');
@@ -342,7 +357,7 @@ export const SettingsPage: React.FC = () => {
         ]
       });
       toast.success('Workflow reordered');
-      queryClient.invalidateQueries({ queryKey: ['admin_workflows'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     } catch (e: any) {
       toast.error('Reordering failed');
     }

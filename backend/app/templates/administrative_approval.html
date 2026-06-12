@@ -938,7 +938,14 @@
             <th>Designation / Lab</th>
             <td>{{ pr.initiator.designation or 'Faculty' }} / Department Lab</td>
             <th>Source of fund</th>
-            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>
+                {% set fund = pr.form_data.get('source_of_fund') %}
+                {% if fund %}
+                    {{ fund }}{% if fund == 'Project code' and pr.form_data.get('source_of_fund_project_code') %} ({{ pr.form_data.get('source_of_fund_project_code') }}){% elif fund == 'Others' and pr.form_data.get('source_of_fund_others') %} - {{ pr.form_data.get('source_of_fund_others') }}{% endif %}
+                {% else %}
+                    {{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}
+                {% endif %}
+            </td>
         </tr>
         <tr>
             <th>Estimated Amount</th>
@@ -1112,7 +1119,14 @@
             <th>Designation / Contact</th>
             <td>{{ pr.initiator.designation or 'Faculty' }} / {{ pr.initiator.email }}</td>
             <th>Source of Fund</th>
-            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>
+                {% set fund = pr.form_data.get('source_of_fund') %}
+                {% if fund %}
+                    {{ fund }}{% if fund == 'Project code' and pr.form_data.get('source_of_fund_project_code') %} ({{ pr.form_data.get('source_of_fund_project_code') }}){% elif fund == 'Others' and pr.form_data.get('source_of_fund_others') %} - {{ pr.form_data.get('source_of_fund_others') }}{% endif %}
+                {% else %}
+                    {{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}
+                {% endif %}
+            </td>
         </tr>
         <tr>
             <th>Estimated Amount</th>
@@ -1209,7 +1223,14 @@
             <th>Contact / Email</th>
             <td>{{ pr.initiator.email }}</td>
             <th>Source of Fund</th>
-            <td>{{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}</td>
+            <td>
+                {% set fund = pr.form_data.get('source_of_fund') %}
+                {% if fund %}
+                    {{ fund }}{% if fund == 'Project code' and pr.form_data.get('source_of_fund_project_code') %} ({{ pr.form_data.get('source_of_fund_project_code') }}){% elif fund == 'Others' and pr.form_data.get('source_of_fund_others') %} - {{ pr.form_data.get('source_of_fund_others') }}{% endif %}
+                {% else %}
+                    {{ pr.items[0].budget_file.source_of_fund if (pr.items and pr.items[0].budget_file) else '-' }}
+                {% endif %}
+            </td>
         </tr>
         <tr>
             <th>Estimated Amount</th>

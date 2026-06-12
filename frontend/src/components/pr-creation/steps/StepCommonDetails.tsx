@@ -141,55 +141,32 @@ export const StepCommonDetails: React.FC<Props> = ({
         />
       </div>
 
-      <div>
-        <label className="label">Source of Fund *</label>
-        <select
-          required
-          className="input-field bg-white"
-          value={common.source_of_fund}
-          onChange={(e) => onUpdate({
-            source_of_fund: e.target.value as any,
-            source_of_fund_project_code: '',
-            source_of_fund_others: '',
-          })}
-        >
-          <option value="" disabled>Select Source of Fund</option>
-          <option value="OH-35">OH-35</option>
-          <option value="OH-31">OH-31</option>
-          <option value="SW">SW</option>
-          <option value="SEED">SEED</option>
-          <option value="Project code">Project code</option>
-          <option value="Others">Others</option>
-        </select>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 md:col-span-2 space-y-3 shadow-xs">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-1.5 h-4 rounded-full bg-[#1a3a6b] inline-block" />
+          <span className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wider">
+            Source of Fund (Linked to Budget)
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Source of Fund</span>
+            <span className="font-semibold text-slate-800">{common.source_of_fund || '—'}</span>
+          </div>
+          {common.source_of_fund === 'Project code' && (
+            <div>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Project Code</span>
+              <span className="font-mono font-bold text-slate-800">{common.source_of_fund_project_code || '—'}</span>
+            </div>
+          )}
+          {common.source_of_fund === 'Others' && (
+            <div>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Details</span>
+              <span className="font-semibold text-slate-800">{common.source_of_fund_others || '—'}</span>
+            </div>
+          )}
+        </div>
       </div>
-
-      {common.source_of_fund === 'Project code' && (
-        <div>
-          <label className="label">Project Code *</label>
-          <input
-            type="text"
-            required
-            className="input-field"
-            placeholder="Enter project code details"
-            value={common.source_of_fund_project_code}
-            onChange={(e) => onUpdate({ source_of_fund_project_code: e.target.value })}
-          />
-        </div>
-      )}
-
-      {common.source_of_fund === 'Others' && (
-        <div>
-          <label className="label">Specify other source of fund *</label>
-          <input
-            type="text"
-            required
-            className="input-field"
-            placeholder="Enter source of fund details"
-            value={common.source_of_fund_others}
-            onChange={(e) => onUpdate({ source_of_fund_others: e.target.value })}
-          />
-        </div>
-      )}
 
       <div>
         <label className="label">BoG Resolution No (if applicable)</label>

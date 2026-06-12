@@ -17,7 +17,7 @@ from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestItem, PurchaseRequestHistory,
     PurchaseRequestFlow, PurchaseRequestAssignment, TechnicalEvaluation, FinancialEvaluation,
     CommercialEvaluation, Document, WorkFlowHierarchy, RequestStatus, AssignmentStatus,
-    VendorMaster, PRReferral
+    VendorMaster, PRReferral, PurchaseOrder
 )
 from app.models.budget import BudgetMaster, PurchaseCategory, ProcurementManager, PhaseManager, FinancialYear
 from app.services.flow_engine import FlowEngineService
@@ -25,6 +25,7 @@ from app.services.budget_service import BudgetService
 from app.services.document_service import DocumentService
 from app.models.inventory import Delivery
 from app.schemas.pr_create import PRCreatePayload, PRItemCreate
+from app.schemas.purchase_order import PurchaseOrderCreate
 
 from datetime import timedelta, timezone
 
@@ -268,17 +269,17 @@ async def _persist_pr(
         
         if item_est_total > bm.available_balance:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{bm.available_balance:,.2f}."
             )
         total_amount += item_est_total
 
     if len(budget_by_id) > 1:
-        sources_of_fund = {bm.source_of_fund for bm in budget_by_id.values()}
+        sources_of_fund = sorted(list({bm.source_of_fund for bm in budget_by_id.values() if bm.source_of_fund}))
         if len(sources_of_fund) > 1:
             raise HTTPException(
-                status_code=400,
-                detail="All selected budget files must have the same source of fund."
+                status_code=422,
+                detail=f"All items in a Purchase Indent must belong to the same Source of Fund. Found: {', '.join(sources_of_fund)}."
             )
 
     from sqlalchemy import case
@@ -786,7 +787,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
             selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
             selectinload(PurchaseRequest.parent_pr),
-            selectinload(PurchaseRequest.child_prs)
+            selectinload(PurchaseRequest.child_prs),
+            selectinload(PurchaseRequest.purchase_order)
         )
         .where(PurchaseRequest.id == pr_id)
     )
@@ -1094,6 +1096,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "exemption": pr.exemption,
         "is_training_required": pr.is_training_required,
         "tender_reference_number": pr.tender_reference_number,
+        "tender_scheduling_done": pr.tender_scheduling_done,
         "vendor_list_link": pr.vendor_list_link,
         "date_of_tender": pr.date_of_tender.isoformat() if pr.date_of_tender else None,
         "date_of_tech_bid_opening": pr.date_of_tech_bid_opening.isoformat() if pr.date_of_tech_bid_opening else None,
@@ -1208,6 +1211,26 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             }
             for doc in pr.documents
         ],
+        "purchase_order": {
+            "id": pr.purchase_order.id,
+            "po_number": pr.purchase_order.po_number,
+            "vendor_name": pr.purchase_order.vendor_name,
+            "vendor_address": pr.purchase_order.vendor_address,
+            "vendor_gst": pr.purchase_order.vendor_gst,
+            "vendor_bank_account": pr.purchase_order.vendor_bank_account,
+            "vendor_bank_name": pr.purchase_order.vendor_bank_name,
+            "vendor_ifsc": pr.purchase_order.vendor_ifsc,
+            "po_amount": pr.purchase_order.po_amount,
+            "delivery_due_date": pr.purchase_order.delivery_due_date.isoformat() if pr.purchase_order.delivery_due_date else None,
+            "ps_amount": pr.purchase_order.ps_amount,
+            "ps_mode": pr.purchase_order.ps_mode,
+            "ps_validity": pr.purchase_order.ps_validity.isoformat() if pr.purchase_order.ps_validity else None,
+            "emd_amount": pr.purchase_order.emd_amount,
+            "ld_applicable": pr.purchase_order.ld_applicable,
+            "issued_by_id": pr.purchase_order.issued_by_id,
+            "issued_at": pr.purchase_order.issued_at.isoformat() + "Z" if pr.purchase_order.issued_at else None,
+            "remarks": pr.purchase_order.remarks,
+        } if pr.purchase_order else None,
     }
 
 
@@ -1528,7 +1551,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
             raise HTTPException(status_code=403, detail="Only the Superintendent may assign a Dealing Assistant")
         return
 
-    if action_type in ["tender-details", "technical-eval", "financial-bids"] and (group == "verifier_da" or step.user_type == "verifier_da"):
+    if action_type in ["tender-schedule", "tender-details", "technical-eval", "financial-bids"] and (group == "verifier_da" or step.user_type == "verifier_da"):
         assignment_result = await db.execute(
             select(PurchaseRequestAssignment).where(
                 and_(
@@ -1540,6 +1563,8 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         assignment = assignment_result.scalar_one_or_none()
         if not assignment:
             raise HTTPException(status_code=403, detail="User is not the assigned Dealing Assistant for this PR")
+        if action_type == "tender-schedule" and phase_name != "Tendering":
+            raise HTTPException(status_code=403, detail="Tender can only be scheduled during Tendering phase")
         if action_type == "tender-details" and phase_name != "Tendering":
             raise HTTPException(status_code=403, detail="Tender details can only be registered during Tendering phase")
         if action_type == "technical-eval" and phase_name != "Technical Evaluation":
@@ -1718,6 +1743,86 @@ async def assign_da(
     return {"message": f"PR assigned to {da.name}"}
 
 
+@router.post("/{pr_id}/tender-schedule")
+async def schedule_tender(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("verifier_da")),
+):
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
+    await check_pr_fy_closed(pr, db)
+    
+    await verify_current_user_group_for_pr(pr, user, db, "tender-schedule")
+
+    if pr.tender_scheduling_done:
+        raise HTTPException(status_code=400, detail="Tender is already scheduled")
+
+    content_type = request.headers.get("content-type", "")
+    draft_file = None
+    form = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        draft_file = form.get("draft_tender_document")
+        if draft_file and not getattr(draft_file, "filename", None):
+            draft_file = None
+    else:
+        body = await request.json()
+
+    if "multipart/form-data" in content_type:
+        await db.refresh(pr, ["documents"])
+        existing_draft = next((d for d in pr.documents if d.doc_key == "draft_tender_document"), None)
+        if not existing_draft and not draft_file:
+            raise HTTPException(status_code=400, detail="Draft tender document is mandatory")
+
+    tender_ref = body.get("tender_reference_number")
+    if not tender_ref or not tender_ref.strip():
+        raise HTTPException(status_code=400, detail="Tender Reference Number is required")
+    pr.tender_reference_number = tender_ref
+
+    from datetime import date
+    if body.get("date_of_tender"):
+        pr.date_of_tender = date.fromisoformat(body["date_of_tender"])
+    else:
+        raise HTTPException(status_code=400, detail="Tender date is required")
+
+    if body.get("date_of_tech_bid_opening"):
+        pr.date_of_tech_bid_opening = date.fromisoformat(body["date_of_tech_bid_opening"])
+    if body.get("date_of_financial_bid_opening"):
+        pr.date_of_financial_bid_opening = date.fromisoformat(body["date_of_financial_bid_opening"])
+
+    doc_svc = DocumentService(db)
+    if draft_file:
+        await db.refresh(pr, ["documents"])
+        existing_draft = next((d for d in pr.documents if d.doc_key == "draft_tender_document"), None)
+        if existing_draft:
+            await db.delete(existing_draft)
+        await doc_svc.save_upload(pr, "draft_tender_document", draft_file, user.id)
+
+    pr.tender_scheduling_done = True
+
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Tender Scheduled",
+        remarks=body.get("remarks") or "Tender scheduled — Awaiting SP Review.",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    return {"message": "Tender scheduled successfully"}
+
+
 @router.post("/{pr_id}/tender-details")
 async def add_tender_details(
     pr_id: int,
@@ -1734,6 +1839,9 @@ async def add_tender_details(
     
     await verify_current_user_group_for_pr(pr, user, db, "tender-details")
 
+    if not pr.tender_scheduling_done:
+        raise HTTPException(status_code=400, detail="Tender must be scheduled first before entering vendor details")
+
     content_type = request.headers.get("content-type", "")
     draft_file = None
     tender_file = None
@@ -1745,10 +1853,8 @@ async def add_tender_details(
         if not raw:
             raise HTTPException(status_code=400, detail="Missing payload field")
         body = json.loads(raw)
-        # Use form.get() directly — more reliable than isinstance filtering
         draft_file = form.get("draft_tender_document")
         tender_file = form.get("tender_document")
-        # Treat empty-filename uploads (no file chosen) as None
         if draft_file and not getattr(draft_file, "filename", None):
             draft_file = None
         if tender_file and not getattr(tender_file, "filename", None):
@@ -1756,16 +1862,8 @@ async def add_tender_details(
     else:
         body = await request.json()
 
-    # Enforce draft tender document validation only for multipart (frontend) requests
-    if "multipart/form-data" in content_type:
-        await db.refresh(pr, ["documents"])
-        existing_draft = next((d for d in pr.documents if d.doc_key == "draft_tender_document"), None)
-        if not existing_draft and not draft_file:
-            raise HTTPException(status_code=400, detail="Draft tender document is mandatory")
-
-    pr.tender_reference_number = body.get("tender_reference_number")
-    if not pr.tender_reference_number or not pr.tender_reference_number.strip():
-        raise HTTPException(status_code=400, detail="Tender Reference Number is required")
+    if body.get("tender_reference_number"):
+        pr.tender_reference_number = body.get("tender_reference_number")
     
     from datetime import date
     if body.get("date_of_tender"):
@@ -2113,6 +2211,151 @@ async def print_pr(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+@router.post("/{pr_id}/purchase-order")
+async def create_purchase_order(
+    pr_id: int,
+    payload: PurchaseOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create a Purchase Order for a Purchase Request."""
+    result = await db.execute(
+        select(PurchaseRequest).where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
+    await check_pr_fy_closed(pr, db)
+
+    # Restriction check: stores/admin/DA
+    await db.refresh(user, ["role"])
+    group_key = user.role.group_key if user.role else None
+    if group_key not in ("verifier_sp", "verifier_da", "admin"):
+        raise HTTPException(status_code=403, detail="You do not have permission to issue a purchase order")
+
+    # Check if a PO already exists for this PR
+    po_res = await db.execute(
+        select(PurchaseOrder).where(PurchaseOrder.purchase_request_id == pr_id)
+    )
+    existing_po = po_res.scalar_one_or_none()
+    if existing_po:
+        raise HTTPException(status_code=400, detail="A purchase order has already been issued for this purchase request")
+
+    # Generate PO Number: PO/{financial_year.label}/{dept_short_code}/{seq:03d}
+    await db.refresh(pr, ["financial_year", "initiator"])
+    if pr.initiator:
+        await db.refresh(pr.initiator, ["department"])
+    
+    fy_label = pr.financial_year.label if pr.financial_year else "FY"
+    dept_code = pr.initiator.department.short_code if (pr.initiator and pr.initiator.department) else "DEPT"
+
+    # Count how many POs exist in the current financial year
+    count_stmt = select(func.count(PurchaseOrder.id)).join(
+        PurchaseRequest, PurchaseOrder.purchase_request_id == PurchaseRequest.id
+    ).where(PurchaseRequest.financial_year_id == pr.financial_year_id)
+    
+    count_res = await db.execute(count_stmt)
+    po_count = count_res.scalar_one()
+    seq = po_count + 1
+    po_number = f"PO/{fy_label}/{dept_code}/{seq:03d}"
+
+    # Create PurchaseOrder
+    new_po = PurchaseOrder(
+        purchase_request_id=pr.id,
+        po_number=po_number,
+        vendor_name=payload.vendor_name,
+        vendor_address=payload.vendor_address,
+        vendor_gst=payload.vendor_gst,
+        vendor_bank_account=payload.vendor_bank_account,
+        vendor_bank_name=payload.vendor_bank_name,
+        vendor_ifsc=payload.vendor_ifsc,
+        po_amount=payload.po_amount,
+        delivery_due_date=payload.delivery_due_date,
+        ps_amount=payload.ps_amount,
+        ps_mode=payload.ps_mode,
+        ps_validity=payload.ps_validity,
+        emd_amount=payload.emd_amount,
+        ld_applicable=payload.ld_applicable,
+        issued_by_id=user.id,
+        remarks=payload.remarks,
+    )
+    db.add(new_po)
+
+    pr.current_status = RequestStatus.PO_ISSUED
+    
+    history = PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="PO Issued",
+        remarks=payload.remarks or f"Purchase Order {po_number} issued to {payload.vendor_name}",
+        acted_at=datetime.utcnow(),
+    )
+    db.add(history)
+
+    await db.commit()
+    await db.refresh(new_po)
+    
+    return {
+        "message": "Purchase order issued successfully",
+        "po_number": new_po.po_number,
+        "po": {
+            "id": new_po.id,
+            "po_number": new_po.po_number,
+            "vendor_name": new_po.vendor_name,
+            "po_amount": new_po.po_amount,
+            "issued_at": new_po.issued_at.isoformat() + "Z" if new_po.issued_at else None,
+        }
+    }
+
+
+@router.get("/{pr_id}/purchase-order")
+async def get_purchase_order(
+    pr_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fetch Purchase Order details for a Purchase Request."""
+    result = await db.execute(
+        select(PurchaseRequest).where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    await check_pr_access(pr, user, db)
+
+    po_res = await db.execute(
+        select(PurchaseOrder).where(PurchaseOrder.purchase_request_id == pr_id)
+    )
+    po = po_res.scalar_one_or_none()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found for this purchase request")
+
+    return {
+        "id": po.id,
+        "purchase_request_id": po.purchase_request_id,
+        "po_number": po.po_number,
+        "vendor_name": po.vendor_name,
+        "vendor_address": po.vendor_address,
+        "vendor_gst": po.vendor_gst,
+        "vendor_bank_account": po.vendor_bank_account,
+        "vendor_bank_name": po.vendor_bank_name,
+        "vendor_ifsc": po.vendor_ifsc,
+        "po_amount": po.po_amount,
+        "delivery_due_date": po.delivery_due_date.isoformat() if po.delivery_due_date else None,
+        "ps_amount": po.ps_amount,
+        "ps_mode": po.ps_mode,
+        "ps_validity": po.ps_validity.isoformat() if po.ps_validity else None,
+        "emd_amount": po.emd_amount,
+        "ld_applicable": po.ld_applicable,
+        "issued_by_id": po.issued_by_id,
+        "issued_at": po.issued_at.isoformat() + "Z" if po.issued_at else None,
+        "remarks": po.remarks,
+    }
 
 
 @router.post("/{pr_id}/cancel-po")

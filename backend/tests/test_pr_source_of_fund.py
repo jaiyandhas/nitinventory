@@ -130,8 +130,8 @@ async def test_pr_source_of_fund_validation(db_session):
         )
         with pytest.raises(HTTPException) as exc_info:
             await _persist_pr(payload_mixed, faculty_cse, db_session, bg_tasks)
-        assert exc_info.value.status_code == 400
-        assert "All selected budget files must have the same source of fund" in exc_info.value.detail
+        assert exc_info.value.status_code == 422
+        assert "All items in a Purchase Indent must belong to the same Source of Fund" in exc_info.value.detail
 
         # Test Case 2: Try creating PR with matching sources (CAPEX + CAPEX) - Should SUCCESS
         payload_matching = PRCreatePayload(

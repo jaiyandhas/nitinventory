@@ -2,6 +2,7 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { assetsApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, Edit, Trash2, ArrowRightLeft, Shield, MapPin, User as UserIcon, Calendar, IndianRupee, Activity } from 'lucide-react';
@@ -18,7 +19,7 @@ export const AssetDetailPage: React.FC = () => {
   const isAdmin = user?.role?.group_key === 'admin';
 
   const { data: asset, isLoading } = useQuery({
-    queryKey: ['asset', id],
+    queryKey: queryKeys.assets.detail(id!),
     queryFn: () => assetsApi.get(Number(id)).then(res => res.data),
     enabled: !!id,
   });
@@ -27,7 +28,8 @@ export const AssetDetailPage: React.FC = () => {
     mutationFn: (condition: string) => assetsApi.updateCondition(Number(id), condition),
     onSuccess: () => {
       toast.success('Condition updated');
-      queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.detail(id!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     }
   });
 
@@ -35,7 +37,8 @@ export const AssetDetailPage: React.FC = () => {
     mutationFn: (data: any) => assetsApi.move(Number(id), data.to_building, data.to_room, data.reason),
     onSuccess: () => {
       toast.success('Asset moved successfully');
-      queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.detail(id!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     }
   });
 
@@ -43,7 +46,8 @@ export const AssetDetailPage: React.FC = () => {
     mutationFn: () => assetsApi.flagDisposal(Number(id)),
     onSuccess: () => {
       toast.success('Asset flagged for disposal');
-      queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.detail(id!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     }
   });
 
@@ -51,7 +55,8 @@ export const AssetDetailPage: React.FC = () => {
     mutationFn: () => assetsApi.confirmDisposal(Number(id)),
     onSuccess: () => {
       toast.success('Asset disposed permanently');
-      queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.detail(id!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     }
   });
 
@@ -59,7 +64,7 @@ export const AssetDetailPage: React.FC = () => {
     mutationFn: () => assetsApi.delete(Number(id)),
     onSuccess: () => {
       toast.success('Asset deleted successfully');
-      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
       navigate('/assets');
     },
     onError: (err: any) => {

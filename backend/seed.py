@@ -496,8 +496,7 @@ async def seed():
                         "title": "CPPP Procurement Details",
                         "properties": {
                             "tender_id": { "type": "string", "title": "CPPP Tender ID" },
-                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" }
                         },
                         "required": ["tender_id"]
                     }
@@ -508,9 +507,7 @@ async def seed():
                     form_schema={
                         "type": "object",
                         "title": "Limited Tender Details",
-                        "properties": {
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
-                        },
+                        "properties": {},
                         "required": []
                     }
                 ),
@@ -528,8 +525,7 @@ async def seed():
                                 "enum": ["sole_manufacturer", "no_alternative", "similar_unavailable"],
                                 "title": "PAC Justification Basis"
                             },
-                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" }
                         },
                         "required": ["manufacturer_name", "justification_type"]
                     }
@@ -542,8 +538,7 @@ async def seed():
                         "type": "object",
                         "title": "Direct Purchase Details",
                         "properties": {
-                            "justification": { "type": "string", "title": "Justification for Direct Purchase" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" }
                         },
                         "required": ["justification"]
                     }
@@ -591,8 +586,7 @@ async def seed():
                         "title": "CPPP Procurement Details",
                         "properties": {
                             "tender_id": { "type": "string", "title": "CPPP Tender ID" },
-                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "publication_date": { "type": "string", "title": "Publication Date (YYYY-MM-DD)" }
                         },
                         "required": ["tender_id"]
                     }
@@ -600,9 +594,7 @@ async def seed():
                     p_item.form_schema = {
                         "type": "object",
                         "title": "Limited Tender Details",
-                        "properties": {
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
-                        },
+                        "properties": {},
                         "required": []
                     }
                 elif p_item.name == "Proprietary Purchase":
@@ -617,8 +609,7 @@ async def seed():
                                 "enum": ["sole_manufacturer", "no_alternative", "similar_unavailable"],
                                 "title": "PAC Justification Basis"
                             },
-                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "finance_concurrence_ref": { "type": "string", "title": "Finance Concurrence Reference" }
                         },
                         "required": ["manufacturer_name", "justification_type"]
                     }
@@ -627,8 +618,7 @@ async def seed():
                         "type": "object",
                         "title": "Direct Purchase Details",
                         "properties": {
-                            "justification": { "type": "string", "title": "Justification for Direct Purchase" },
-                            "gem_nac_attached": { "type": "boolean", "title": "GeM Non-Availability Certificate (NAC) Attached?" }
+                            "justification": { "type": "string", "title": "Justification for Direct Purchase" }
                         },
                         "required": ["justification"]
                     }

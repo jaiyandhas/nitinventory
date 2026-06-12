@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
+import { queryKeys } from '../../config/queryKeys';
 import { toast } from 'react-hot-toast';
 import { Edit, UserX, UserCheck, Key, Plus, UserPlus, FileText, Check, X, ShieldAlert } from 'lucide-react';
 
@@ -12,23 +13,23 @@ export const UsersPage: React.FC = () => {
 
   // Queries
   const { data: users = [], isLoading: isUsersLoading } = useQuery({ 
-    queryKey: ['admin_users'], 
+    queryKey: queryKeys.admin.users, 
     queryFn: () => adminApi.users().then(res => res.data) 
   });
   
   const { data: pendingUsers = [], isLoading: isPendingLoading } = useQuery({
-    queryKey: ['admin_pending_users'],
+    queryKey: queryKeys.admin.pendingUsers,
     queryFn: () => adminApi.getPendingUsers().then(res => res.data),
     enabled: activeTab === 'pending'
   });
 
   const { data: roles = [] } = useQuery({ 
-    queryKey: ['admin_roles'], 
+    queryKey: queryKeys.admin.roles, 
     queryFn: () => adminApi.roles().then(res => res.data) 
   });
   
   const { data: depts = [] } = useQuery({ 
-    queryKey: ['admin_depts'], 
+    queryKey: queryKeys.admin.depts, 
     queryFn: () => adminApi.departments().then(res => res.data) 
   });
 
@@ -43,7 +44,13 @@ export const UsersPage: React.FC = () => {
     onSuccess: () => {
       toast.success('User created');
       setIsModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['admin_users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.deptFaculty });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allFaculties });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.directorNomination });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.consultation });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error creating user')
   });
@@ -53,7 +60,13 @@ export const UsersPage: React.FC = () => {
     onSuccess: () => {
       toast.success('User updated');
       setEditingUser(null);
-      queryClient.invalidateQueries({ queryKey: ['admin_users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.deptFaculty });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allFaculties });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.directorNomination });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.consultation });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     }
   });
 
@@ -66,8 +79,14 @@ export const UsersPage: React.FC = () => {
     mutationFn: (id: number) => adminApi.approveUser(id),
     onSuccess: () => {
       toast.success('User onboarding request approved!');
-      queryClient.invalidateQueries({ queryKey: ['admin_users'] });
-      queryClient.invalidateQueries({ queryKey: ['admin_pending_users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.pendingUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.deptFaculty });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allFaculties });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.directorNomination });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.consultation });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error approving user')
   });
@@ -76,7 +95,13 @@ export const UsersPage: React.FC = () => {
     mutationFn: (id: number) => adminApi.rejectUser(id),
     onSuccess: () => {
       toast.success('User onboarding request rejected & deleted');
-      queryClient.invalidateQueries({ queryKey: ['admin_pending_users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.pendingUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.deptFaculty });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allFaculties });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.allUsers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.directorNomination });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.consultation });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error rejecting user')
   });

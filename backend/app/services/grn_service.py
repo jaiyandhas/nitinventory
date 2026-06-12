@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from fastapi import BackgroundTasks
 
 from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
@@ -27,10 +27,32 @@ class GrnService:
         )
         pr_items = result.scalars().all()
 
+        # Auto-generate gin_number
+        from app.models.budget import FinancialYear
+        from sqlalchemy import func
+        fy_result = await self.db.execute(
+            select(FinancialYear).where(FinancialYear.is_active == True)
+        )
+        financial_year = fy_result.scalar_one_or_none()
+        fy_label = financial_year.label if financial_year else "FY"
+        fy_id = financial_year.id if financial_year else None
+
+        if fy_id:
+            count_stmt = select(func.count(Delivery.id)).join(
+                PurchaseRequest, Delivery.po_id == PurchaseRequest.id
+            ).where(PurchaseRequest.financial_year_id == fy_id)
+        else:
+            count_stmt = select(func.count(Delivery.id))
+            
+        count_res = await self.db.execute(count_stmt)
+        seq = count_res.scalar_one() + 1
+        gin_number = f"GIN/{fy_label}/{seq:03d}"
+
         delivery = Delivery(
             po_id=pr.id,
             department_id=pr.initiator.department_id,
             status=DeliveryStatus.PENDING,
+            gin_number=gin_number,
         )
         self.db.add(delivery)
         await self.db.flush()
@@ -99,7 +121,38 @@ class GrnService:
             log.room = data.get("room")
             log.custodian_name = data.get("custodian_name")
             log.serial_numbers = data.get("serial_numbers", [])
+            log.inspection_remarks = data.get("inspection_remarks")
         else:
+            # Auto-generate grn_number
+            from app.models.budget import FinancialYear
+            from sqlalchemy import func
+            fy_result = await self.db.execute(
+                select(FinancialYear).where(FinancialYear.is_active == True)
+            )
+            financial_year = fy_result.scalar_one_or_none()
+            fy_label = financial_year.label if financial_year else "FY"
+            fy_id = financial_year.id if financial_year else None
+            
+            if fy_id:
+                count_stmt = select(func.count(StoresAssetLog.id)).join(
+                    DeliveryItem, StoresAssetLog.delivery_item_id == DeliveryItem.id
+                ).join(
+                    Delivery, DeliveryItem.delivery_id == Delivery.id
+                ).join(
+                    PurchaseRequest, Delivery.po_id == PurchaseRequest.id
+                ).where(
+                    and_(
+                        PurchaseRequest.financial_year_id == fy_id,
+                        StoresAssetLog.grn_number != None
+                    )
+                )
+            else:
+                count_stmt = select(func.count(StoresAssetLog.id)).where(StoresAssetLog.grn_number != None)
+                
+            count_res = await self.db.execute(count_stmt)
+            seq = count_res.scalar_one() + 1
+            grn_number = f"GRN/{fy_label}/{seq:03d}"
+
             log = StoresAssetLog(
                 delivery_item_id=delivery_item_id,
                 logged_by_id=user.id,
@@ -109,6 +162,8 @@ class GrnService:
                 room=data.get("room"),
                 custodian_name=data.get("custodian_name"),
                 serial_numbers=data.get("serial_numbers", []),
+                grn_number=grn_number,
+                inspection_remarks=data.get("inspection_remarks"),
             )
             self.db.add(log)
 

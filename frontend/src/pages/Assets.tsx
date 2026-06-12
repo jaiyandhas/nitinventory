@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { assetsApi, authApi } from '../services/api';
+import { queryKeys } from '../config/queryKeys';
 import { Asset } from '../types';
 import { Link, useParams } from 'react-router-dom';
 import { Plus, Search, Filter, Upload } from 'lucide-react';
@@ -40,7 +41,7 @@ export const AssetListPage: React.FC = () => {
   const [limit, setLimit] = useState(50);
 
   const { data: assetsData, isLoading } = useQuery({
-    queryKey: ['assets', page, limit, searchTerm, filterYear, filterCategory, filterCondition, filterStatus, filterFundSource, filterDept],
+    queryKey: queryKeys.assets.list(page, limit, searchTerm, filterYear, filterCategory, filterCondition, filterStatus, filterFundSource, filterDept),
     queryFn: () => assetsApi.list({
       skip: (page - 1) * limit,
       limit,
@@ -59,7 +60,7 @@ export const AssetListPage: React.FC = () => {
   const totalPages = Math.ceil(total / limit) || 1;
 
   const { data: departments = [] } = useQuery({
-    queryKey: ['departments'],
+    queryKey: queryKeys.auth.departments,
     queryFn: () => authApi.departments().then(r => r.data),
     enabled: isAdmin(),
   });
@@ -69,7 +70,7 @@ export const AssetListPage: React.FC = () => {
     onSuccess: (res: any) => {
       toast.success(res.data.message || 'Asset registered successfully');
       setIsModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to register asset');
@@ -82,7 +83,7 @@ export const AssetListPage: React.FC = () => {
       toast.success(res.data.message || 'Assets imported successfully!');
       setIsCsvModalOpen(false);
       setImportErrors([]);
-      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
     },
     onError: (err: any) => {
       const details = err.response?.data?.detail;
@@ -401,7 +402,7 @@ export const AssetListPage: React.FC = () => {
 export const AssetPublicPage: React.FC = () => {
   const { tag } = useParams<Record<string, string>>();
   const { data: asset, isLoading } = useQuery({
-    queryKey: ['asset-public', tag],
+    queryKey: queryKeys.assets.public(tag!),
     queryFn: () => assetsApi.publicProfile(tag!).then(r => r.data),
   });
 

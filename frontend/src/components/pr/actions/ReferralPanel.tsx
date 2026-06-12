@@ -3,6 +3,7 @@ import { Users, Download, ShieldAlert, MessageSquare, Clock, CheckCircle2, Chevr
 import { prApi, budgetApi } from '../../../services/api';
 import { PurchaseRequest, PRReferral } from '../../../types';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../../../config/queryKeys';
 import toast from 'react-hot-toast';
 
 interface ReferralPanelProps {
@@ -154,7 +155,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
   const [showHistory, setShowHistory] = useState(true);
 
   const { data: allUsers = [] } = useQuery({
-    queryKey: ['all_users_for_consultation'],
+    queryKey: queryKeys.users.consultation,
     queryFn: () => budgetApi.allUsers().then((res: any) => res.data),
     enabled: !!user,
   });

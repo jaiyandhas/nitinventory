@@ -7,7 +7,7 @@ from datetime import datetime, date
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles, require_own_department
 from app.models.user import User
-from app.models.asset import Asset, AssetMovement, AssetLog
+from app.models.asset import Asset, AssetMovement, AssetLog, InstallationRecord
 from app.services.asset_service import AssetService
 from pydantic import BaseModel
 from typing import Optional
@@ -32,6 +32,15 @@ class PublicAssetView(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InstallationRecordCreate(BaseModel):
+    installation_date: Optional[date] = None
+    installed_by: Optional[str] = None
+    installation_scope: Optional[str] = None
+    is_commissioned: bool = False
+    certificate_path: Optional[str] = None
+    remarks: Optional[str] = None
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -222,7 +231,8 @@ async def get_asset(asset_id: int, db: AsyncSession = Depends(get_db), user: Use
         select(Asset)
         .options(
             selectinload(Asset.movements),
-            selectinload(Asset.logs).selectinload(AssetLog.performed_by)
+            selectinload(Asset.logs).selectinload(AssetLog.performed_by),
+            selectinload(Asset.installation_records)
         )
         .where(Asset.id == asset_id)
     )
@@ -259,6 +269,19 @@ async def get_asset(asset_id: int, db: AsyncSession = Depends(get_db), user: Use
                 "performed_by_name": l.performed_by.name if l.performed_by else f"User {l.performed_by_id}"
             }
             for l in asset.logs
+        ],
+        "installation_records": [
+            {
+                "id": ir.id,
+                "installation_date": ir.installation_date.isoformat() if ir.installation_date else None,
+                "installed_by": ir.installed_by,
+                "installation_scope": ir.installation_scope,
+                "is_commissioned": ir.is_commissioned,
+                "certificate_path": ir.certificate_path,
+                "remarks": ir.remarks,
+                "recorded_at": ir.recorded_at.isoformat() if ir.recorded_at else None,
+            }
+            for ir in asset.installation_records
         ],
     }
 
@@ -492,3 +515,88 @@ async def import_assets(
     result = await svc.import_assets_csv(file_content, user)
     await db.commit()
     return result
+
+
+@router.post("/{asset_id}/installation")
+async def record_installation(
+    asset_id: int,
+    payload: InstallationRecordCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Record installation details for an asset."""
+    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    await db.refresh(user, ["role"])
+    if user.role.group_key in ("hod", "faculty") and asset.department_id != user.department_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    record = InstallationRecord(
+        asset_id=asset.id,
+        installation_date=payload.installation_date,
+        installed_by=payload.installed_by,
+        installation_scope=payload.installation_scope,
+        is_commissioned=payload.is_commissioned,
+        certificate_path=payload.certificate_path,
+        remarks=payload.remarks,
+        recorded_by_id=user.id,
+    )
+    db.add(record)
+    
+    log = AssetLog(
+        asset_id=asset.id,
+        action="installation_recorded",
+        performed_by_id=user.id,
+        old_value=None,
+        new_value={
+            "installation_date": payload.installation_date.isoformat() if payload.installation_date else None,
+            "installed_by": payload.installed_by,
+            "is_commissioned": payload.is_commissioned,
+        },
+        performed_at=datetime.utcnow(),
+    )
+    db.add(log)
+    await db.commit()
+    return {"message": "Installation record saved successfully"}
+
+
+@router.get("/{asset_id}/installation")
+async def get_installation_records(
+    asset_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fetch installation records for an asset."""
+    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    await db.refresh(user, ["role"])
+    if user.role.group_key in ("hod", "faculty") and asset.department_id != user.department_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    rec_res = await db.execute(
+        select(InstallationRecord)
+        .where(InstallationRecord.asset_id == asset_id)
+        .order_by(InstallationRecord.recorded_at.desc())
+    )
+    records = rec_res.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "asset_id": r.asset_id,
+            "installation_date": r.installation_date.isoformat() if r.installation_date else None,
+            "installed_by": r.installed_by,
+            "installation_scope": r.installation_scope,
+            "is_commissioned": r.is_commissioned,
+            "certificate_path": r.certificate_path,
+            "remarks": r.remarks,
+            "recorded_by_id": r.recorded_by_id,
+            "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+        }
+        for r in records
+    ]

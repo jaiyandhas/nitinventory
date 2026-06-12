@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save, Loader2, Plus, Check, Trash2, Paperclip, FileText, X } from 'lucide-react';
 import { adminApi, budgetApi, authApi } from '../../services/api';
+import { queryKeys } from '../../config/queryKeys';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
@@ -66,23 +67,23 @@ export const BudgetFormPage: React.FC = () => {
 
   // Queries
   const { data: depts = [], isLoading: loadingDepts } = useQuery({
-    queryKey: ['admin_departments'],
+    queryKey: queryKeys.admin.departments,
     queryFn: () => authApi.departments().then(res => res.data),
   });
 
   const { data: fys = [], isLoading: loadingFys } = useQuery({
-    queryKey: ['budget_financial_years'],
+    queryKey: queryKeys.budgets.financialYears,
     queryFn: () => budgetApi.financialYears().then(res => res.data),
   });
 
   const { data: cats = { source_of_fund_categories: ['CAPEX', 'OPEX'], expenditure_categories: ['CAPEX', 'OPEX'], item_categories: ['computer', 'lab_equipment', 'software', 'furniture'] }, isLoading: loadingCats } = useQuery({
-    queryKey: ['budget_categories'],
+    queryKey: queryKeys.budgets.categories,
     queryFn: () => adminApi.getCategories().then(res => res.data),
   });
 
   // Fetch budget detail if editing
   const { data: budgetDetail, isLoading: loadingDetail } = useQuery({
-    queryKey: ['budget_detail', id],
+    queryKey: queryKeys.budgets.detail(Number(id)),
     queryFn: () => adminApi.getBudgetDetail(Number(id)).then(res => res.data),
     enabled: isEdit,
   });
@@ -169,7 +170,7 @@ export const BudgetFormPage: React.FC = () => {
       // res is the full Axios response; extract .data to match how the query caches it
       const updated = res.data;
       toast.success('Category added successfully');
-      queryClient.setQueryData(['budget_categories'], updated);
+      queryClient.setQueryData(queryKeys.budgets.categories, updated);
       setShowAddExp(false);
       setShowAddItem(false);
       // Select the newly added value using the confirmed stored value
@@ -196,7 +197,7 @@ export const BudgetFormPage: React.FC = () => {
     onSuccess: (res) => {
       const updated = res.data;
       toast.success('Category deleted successfully');
-      queryClient.setQueryData(['budget_categories'], updated);
+      queryClient.setQueryData(queryKeys.budgets.categories, updated);
       
       // Reset selected category to a default if the deleted one was selected
       if (pendingCatType === 'source_of_fund' && pendingCatValue) {
@@ -234,7 +235,9 @@ export const BudgetFormPage: React.FC = () => {
     },
     onSuccess: () => {
       toast.success(isEdit ? 'Budget file updated successfully' : 'Budget file created successfully');
-      queryClient.invalidateQueries({ queryKey: ['admin_budgets'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
       if (redirectUrl) {
         navigate(redirectUrl);
       } else {

@@ -38,6 +38,7 @@ class Delivery(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     po_id: Mapped[int] = mapped_column(ForeignKey("purchase_requests.id"), nullable=False)
+    gin_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
     challan_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     invoice_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     invoice_pdf_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -107,6 +108,8 @@ class StoresAssetLog(Base):
     approved_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    grn_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    inspection_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     delivery_item: Mapped[DeliveryItem] = relationship("DeliveryItem", back_populates="stores_log")
     logged_by: Mapped["User"] = relationship("User", foreign_keys=[logged_by_id])  # type: ignore

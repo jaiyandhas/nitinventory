@@ -42,6 +42,8 @@ class Asset(Base):
     building: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     room: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     custodian: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    custodian_designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    custodian_department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), nullable=True)
     serial_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     legacy_asset_tag: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     fund_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -68,10 +70,12 @@ class Asset(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
-    department: Mapped["Department"] = relationship("Department", back_populates="assets")  # type: ignore
+    department: Mapped["Department"] = relationship("Department", foreign_keys=[department_id], back_populates="assets")  # type: ignore
+    custodian_department: Mapped[Optional["Department"]] = relationship("Department", foreign_keys=[custodian_department_id])  # type: ignore
     delivery_item: Mapped[Optional["DeliveryItem"]] = relationship("DeliveryItem", back_populates="assets")
     movements: Mapped[List["AssetMovement"]] = relationship("AssetMovement", back_populates="asset", cascade="all, delete-orphan")
     logs: Mapped[List["AssetLog"]] = relationship("AssetLog", back_populates="asset", cascade="all, delete-orphan")
+    installation_records: Mapped[List["InstallationRecord"]] = relationship("InstallationRecord", back_populates="asset", cascade="all, delete-orphan")
 
 
 class AssetMovement(Base):
@@ -106,3 +110,22 @@ class AssetLog(Base):
 
     asset: Mapped[Asset] = relationship("Asset", back_populates="logs")
     performed_by: Mapped["User"] = relationship("User")  # type: ignore
+
+
+class InstallationRecord(Base):
+    __tablename__ = "installation_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False)
+    installation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    installed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Vendor name or "Department"
+    installation_scope: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "supplier" / "department"
+    is_commissioned: Mapped[bool] = mapped_column(Boolean, default=False)
+    certificate_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    asset: Mapped["Asset"] = relationship("Asset", back_populates="installation_records")
+    recorded_by: Mapped["User"] = relationship("User")  # type: ignore
+

@@ -4,6 +4,7 @@ import { prApi, budgetApi } from '../../services/api';
 import { PurchaseRequest } from '../../types';
 import toast from 'react-hot-toast';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../../config/queryKeys';
 
 // Subcomponents
 import { AAAction } from './actions/AAAction';
@@ -70,7 +71,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   }, [pr]);
 
   const { data: allUsers = [] } = useQuery<any[]>({
-    queryKey: ['all_users_for_director_nomination'],
+    queryKey: queryKeys.users.directorNomination,
     queryFn: () => budgetApi.allUsers().then(r => r.data),
     enabled: !!isDirector && pr.flow?.phase_name === 'Administrative Approval',
   });
