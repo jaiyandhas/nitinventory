@@ -1,6 +1,6 @@
 import pytest
 from fastapi import HTTPException, BackgroundTasks
-from sqlalchemy import select
+from sqlalchemy import select, and_, not_
 from app.models.user import User, Department, RoleManager
 from app.models.budget import BudgetMaster, FinancialYear, ProcurementManager
 from app.models.purchase_request import PurchaseRequest
@@ -43,7 +43,12 @@ async def test_hod_pr_initiation_and_assignment(db_session):
 
     # Get a budget file in CSE
     budget_res = await db_session.execute(
-        select(BudgetMaster).where(BudgetMaster.department_id == hod.department_id)
+        select(BudgetMaster).where(
+            and_(
+                BudgetMaster.department_id == hod.department_id,
+                not_(BudgetMaster.file_no.like("TEMP%"))
+            )
+        )
     )
     budget = budget_res.scalars().first()
     assert budget is not None
