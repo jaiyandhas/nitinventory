@@ -33,7 +33,7 @@ export const BudgetPage: React.FC = () => {
   const [selectedBudgetId, setSelectedBudgetId] = useState<number | null>(null);
   const [selectedBudgetForAllocation, setSelectedBudgetForAllocation] = useState<any>(null);
   const [allocationRemarks, setAllocationRemarks] = useState('');
-  const [activeTab, setActiveTab] = useState<'active' | 'review' | 'allocate'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'review'>('active');
 
   // Rollover modal states
   const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
@@ -333,25 +333,6 @@ export const BudgetPage: React.FC = () => {
             {tempBudgets.length}
           </span>
         </button>
-        {isWriteAllowed && (
-          <button
-            onClick={() => { setActiveTab('allocate'); setPage(1); }}
-            className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
-              activeTab === 'allocate'
-                ? 'border-emerald-600 text-emerald-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Allocate
-            {tempBudgets.length > 0 && (
-              <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${
-                activeTab === 'allocate' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {tempBudgets.length}
-              </span>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Active Budgets Table */}
@@ -493,25 +474,16 @@ export const BudgetPage: React.FC = () => {
         </div>
       )}
 
-      {/* Review Requests Tab */}
-      {(activeTab === 'review' || activeTab === 'allocate') && (
+      {activeTab === 'review' && (
         <div className="card overflow-x-auto border border-slate-200 shadow-sm">
-          {activeTab === 'review' && (
-            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
-              <AlertCircle size={15} className="text-amber-600" />
-              <p className="text-xs text-amber-700 font-medium">
-                These are HOD-submitted temporary budget requests awaiting Dean review. File reference numbers are internal and not visible to HOD/Faculty.
-              </p>
-            </div>
-          )}
-          {activeTab === 'allocate' && isWriteAllowed && (
-            <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
-              <CheckCircle size={15} className="text-emerald-600" />
-              <p className="text-xs text-emerald-700 font-medium">
-                Review the request details and assign a permanent file number to approve the budget allocation.
-              </p>
-            </div>
-          )}
+          <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+            <AlertCircle size={15} className="text-amber-600" />
+            <p className="text-xs text-amber-700 font-medium">
+              {isWriteAllowed 
+                ? "These are HOD-submitted temporary budget requests awaiting Dean review. Assign a permanent file number to approve budget allocation."
+                : "These are HOD-submitted temporary budget requests awaiting Dean review. File reference numbers are internal and not visible to HOD/Faculty."}
+            </p>
+          </div>
           <table className="data-table">
             <thead>
               <tr>
@@ -523,15 +495,15 @@ export const BudgetPage: React.FC = () => {
                 <th>Unit Cost</th>
                 <th>Qty</th>
                 <th>Total Cost</th>
-                {activeTab === 'review' && <th>HOD Remarks</th>}
-                {activeTab === 'allocate' && isWriteAllowed && <th>Action</th>}
+                <th>HOD Remarks</th>
+                {isWriteAllowed && <th>Action</th>}
               </tr>
             </thead>
             <tbody>
               {loadingBudgets ? (
-                <tr><td colSpan={9} className="text-center py-8">Loading...</td></tr>
+                <tr><td colSpan={isWriteAllowed ? 11 : 9} className="text-center py-8">Loading...</td></tr>
               ) : tempBudgets.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
+                <tr><td colSpan={isWriteAllowed ? 11 : 9} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
               ) : (
                 tempBudgets.map((b: any) => {
                   const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
@@ -567,16 +539,14 @@ export const BudgetPage: React.FC = () => {
                       <td className="text-slate-700 font-mono text-xs">{formatCurrency(b.unit_cost)}</td>
                       <td className="text-slate-700 font-semibold text-sm text-center">{b.quantity}</td>
                       <td className="font-bold text-slate-900">{formatCurrency(b.total_allocation ?? b.total_cost)}</td>
-                      {activeTab === 'review' && (
-                        <td className="max-w-[180px]">
-                          {b.remarks ? (
-                            <p className="text-xs text-slate-600 italic">{b.remarks}</p>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
-                        </td>
-                      )}
-                      {activeTab === 'allocate' && isWriteAllowed && (
+                      <td className="max-w-[180px]">
+                        {b.remarks ? (
+                          <p className="text-xs text-slate-600 italic">{b.remarks}</p>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      {isWriteAllowed && (
                         <td>
                           <button
                             onClick={() => {
