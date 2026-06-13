@@ -409,7 +409,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           <div className="col-span-2 border-t border-slate-100 pt-4">
             <div className="flex justify-between items-center mb-2">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Purchase Committee</div>
-              {((isHOD || isDirector) && pr.flow?.phase_name === "Administrative Approval") && (
+              {((isHOD || isDirector) && pr.flow?.phase_name === "Indent and Detailed Tech Specification") && (
                 <button
                   onClick={() => setShowNominationModal(true)}
                   className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded transition-colors"

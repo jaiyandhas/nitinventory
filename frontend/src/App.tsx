@@ -19,6 +19,10 @@ import { AssetDetailPage } from './pages/AssetDetail';
 import { AnalyticsPage } from './pages/Placeholders';
 import { ProfilePage } from './pages/ProfilePage';
 import { FormsDashboardPage } from './pages/FormsDashboard';
+import { AdministrativeApprovalsListPage } from './pages/AdministrativeApprovalsList';
+import { AdministrativeApprovalCreatePage } from './pages/AdministrativeApprovalCreate';
+import { AdministrativeApprovalDetailPage } from './pages/AdministrativeApprovalDetail';
+
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -59,6 +63,10 @@ const App: React.FC = () => {
         <Route path="/pr/create" element={<ProtectedRoute roles={['faculty']}><NewPRPage /></ProtectedRoute>} />
         <Route path="/pr/:id" element={<ProtectedRoute prRestricted><PRDetailPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/administrative-approvals" element={<ProtectedRoute><AdministrativeApprovalsListPage /></ProtectedRoute>} />
+        <Route path="/administrative-approvals/create" element={<ProtectedRoute roles={['faculty']}><AdministrativeApprovalCreatePage /></ProtectedRoute>} />
+        <Route path="/administrative-approvals/:id" element={<ProtectedRoute><AdministrativeApprovalDetailPage /></ProtectedRoute>} />
+
 
         <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver']}><BudgetPage /></ProtectedRoute>} />
         <Route path="/budget/create" element={<ProtectedRoute roles={['admin', 'dean_approver', 'hod']}><BudgetFormPage /></ProtectedRoute>} />

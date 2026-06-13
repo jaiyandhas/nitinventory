@@ -10,6 +10,11 @@ from app.models.purchase_request import (
 )
 from app.models.inventory import Delivery, DeliveryItem, DeptAssetLog, StoresAssetLog, Discrepancy, Payment
 from app.models.asset import Asset, AssetMovement, AssetLog, InstallationRecord
+from app.models.administrative_approval import (
+    AdministrativeApproval, AdministrativeApprovalHistory,
+    AdministrativeApprovalWorkflow, AdministrativeApprovalNominee
+)
+from app.models.notification import Notification
 
 __all__ = [
     "User", "Department", "RoleManager",
@@ -24,5 +29,8 @@ __all__ = [
     "Delivery", "DeliveryItem", "DeptAssetLog", "StoresAssetLog",
     "Discrepancy", "Payment",
     "Asset", "AssetMovement", "AssetLog", "InstallationRecord",
+    "AdministrativeApproval", "AdministrativeApprovalHistory", "AdministrativeApprovalWorkflow", "AdministrativeApprovalNominee",
+    "Notification",
 ]
+
 

@@ -51,6 +51,7 @@ export const SettingsPage: React.FC = () => {
 
   // Queries
   const { data: workflows = [] } = useQuery({ queryKey: queryKeys.admin.workflows, queryFn: () => adminApi.workflows().then(res => res.data) });
+  const { data: aaWorkflows = [] } = useQuery({ queryKey: queryKeys.admin.aaWorkflows, queryFn: () => adminApi.aaWorkflows().then(res => res.data) });
   const { data: categories = [] } = useQuery({ queryKey: queryKeys.admin.categories, queryFn: () => adminApi.categories().then(res => res.data) });
   const { data: phases = [] } = useQuery({ queryKey: queryKeys.admin.phases, queryFn: () => adminApi.phases().then(res => res.data) });
   const { data: roles = [] } = useQuery({ queryKey: queryKeys.admin.roles, queryFn: () => adminApi.roles().then(res => res.data) });
@@ -129,6 +130,50 @@ export const SettingsPage: React.FC = () => {
       toast.success('Workflows reset to default');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
+  });
+
+  // Administrative Approval Workflow mutations
+  const createAaWfMutation = useMutation({
+    mutationFn: (data: any) => adminApi.createAaWorkflow(data),
+    onSuccess: () => {
+      toast.success('AA Step added');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error adding AA step')
+  });
+
+  const deleteAaWfMutation = useMutation({
+    mutationFn: (id: number) => adminApi.deleteAaWorkflow(id),
+    onSuccess: () => {
+      toast.success('AA Step removed');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error removing AA step')
+  });
+
+  const toggleAaWfMutation = useMutation({
+    mutationFn: (id: number) => adminApi.toggleAaWorkflow(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error toggling AA step')
+  });
+
+  const updateAaWfMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateAaWorkflow(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error updating AA step')
+  });
+
+  const resetAaWfMutation = useMutation({
+    mutationFn: () => adminApi.resetAaWorkflow(),
+    onSuccess: () => {
+      toast.success('AA Workflows reset to default');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error resetting AA steps')
   });
 
   // Role mutation
@@ -363,6 +408,34 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleMoveAa = async (stepId: number, direction: 'up' | 'down') => {
+    const step = aaWorkflows.find((w: any) => w.id === stepId);
+    if (!step) return;
+
+    const sortedSteps = [...aaWorkflows].sort((a: any, b: any) => a.step_order - b.step_order);
+    const index = sortedSteps.findIndex((w: any) => w.id === stepId);
+    if (index === -1) return;
+
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === sortedSteps.length - 1) return;
+
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    
+    const tempOrder = sortedSteps[index].step_order;
+    sortedSteps[index].step_order = sortedSteps[targetIdx].step_order;
+    sortedSteps[targetIdx].step_order = tempOrder;
+
+    const stepIds = sortedSteps.sort((a: any, b: any) => a.step_order - b.step_order).map((s: any) => s.id);
+
+    try {
+      await adminApi.reorderAaWorkflows({ step_ids: stepIds });
+      toast.success('AA Workflow reordered');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
+    } catch (e: any) {
+      toast.error('Reordering failed');
+    }
+  };
+
   const handleWfAddSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -525,7 +598,166 @@ export const SettingsPage: React.FC = () => {
 
       {activeTab === 'workflows' && (
         <div className="space-y-6">
-          <div className="card p-6 bg-white border border-slate-200">
+          {/* Standalone Administrative Approval Workflow - Common for All */}
+          <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl animate-fadeIn">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">1. Administrative Approval Workflow</h3>
+                <p className="text-slate-500 text-xs mt-0.5">This standardized workflow applies to all procurement proposals before purchase request/indent creation.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (confirm('Reset Administrative Approval workflow to defaults?')) {
+                      resetAaWfMutation.mutate();
+                    }
+                  }}
+                  className="btn-secondary flex items-center gap-1 text-xs py-1.5 px-3 font-semibold"
+                >
+                  Reset to Default
+                </button>
+                <button
+                  onClick={() => {
+                    const nextOrder = aaWorkflows.length > 0 ? Math.max(...aaWorkflows.map((w: any) => w.step_order)) + 1 : 1;
+                    createAaWfMutation.mutate({
+                      user_group: 'Dean',
+                      step_order: nextOrder
+                    });
+                  }}
+                  className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 font-semibold"
+                >
+                  <Plus size={14} /> Add Step
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 mt-6">
+              {aaWorkflows.length === 0 ? (
+                <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-300 rounded">
+                  No administrative approval steps configured. Please click "Reset to Default" or "Add Step".
+                </p>
+              ) : (
+                [...aaWorkflows].sort((a: any, b: any) => a.step_order - b.step_order).map((wf: any, idx: number) => (
+                  <div key={wf.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-xs hover:shadow-sm transition-all duration-200">
+                    <div className="flex items-center gap-4 flex-1">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${wf.is_enabled ? 'bg-[#1a3a6b] text-white' : 'bg-slate-300 text-slate-600'}`}>
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-[200px]">
+                        <select
+                          value={wf.role_id ? `role:${wf.role_id}` : `group:${wf.user_group}`}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val.startsWith('role:')) {
+                              const roleId = Number(val.substring(5));
+                              const matchingRole = roles.find((r: any) => r.id === roleId);
+                              updateAaWfMutation.mutate({
+                                id: wf.id,
+                                data: { role_id: roleId, user_group: matchingRole ? matchingRole.name : 'Role' }
+                              });
+                            } else if (val.startsWith('group:')) {
+                              const groupKey = val.substring(6);
+                              updateAaWfMutation.mutate({
+                                id: wf.id,
+                                data: { role_id: null, user_group: groupKey }
+                              });
+                            }
+                          }}
+                          className={`font-semibold bg-transparent border-b border-dashed border-slate-300 hover:border-slate-500 focus:border-[#1a3a6b] focus:outline-none pr-6 py-0.5 max-w-full text-sm cursor-pointer ${wf.is_enabled ? 'text-slate-800' : 'text-slate-400 line-through'}`}
+                        >
+                          <optgroup label="Roles">
+                            {roles.map((r: any) => (
+                              <option key={r.id} value={`role:${r.id}`}>
+                                {r.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="User Groups">
+                            <option value="group:faculty">Faculty Group</option>
+                            <option value="group:hod">HOD Group</option>
+                            <option value="group:verifier_da">Dealing Assistant Group</option>
+                            <option value="group:verifier_sp">Superintendent / AR Group</option>
+                            <option value="group:verifier_general">Associate Dean Group</option>
+                            <option value="group:dean_approver">Dean Approver Group</option>
+                            <option value="group:apex_approver">Apex Approver Group</option>
+                            <option value="group:PI">PI</option>
+                            <option value="group:Dean">Dean</option>
+                            <option value="group:Director">Director</option>
+                            <option value="group:HOD">HOD</option>
+                            <option value="group:ADPD">ADPD</option>
+                          </optgroup>
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Role/Group: <span className="font-semibold">{wf.user_group}</span>
+                          {!wf.is_enabled && <span className="text-rose-500 font-bold ml-2">(Disabled)</span>}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 max-w-xs sm:max-w-md">
+                          <span className="text-[10px] font-bold text-slate-450 uppercase shrink-0">Skip If:</span>
+                          <input
+                            type="text"
+                            placeholder="e.g. aa.total_cost < 25000"
+                            defaultValue={wf.skip_condition || ''}
+                            onBlur={(e) => {
+                              if (e.target.value !== (wf.skip_condition || '')) {
+                                updateAaWfMutation.mutate({
+                                  id: wf.id,
+                                  data: { skip_condition: e.target.value.trim() || null }
+                                });
+                              }
+                            }}
+                            className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:border-[#1a3a6b] font-mono text-slate-705"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={wf.is_enabled}
+                          onChange={() => toggleAaWfMutation.mutate(wf.id)}
+                          className="rounded text-[#1a3a6b] focus:ring-[#1a3a6b] h-3.5 w-3.5"
+                        />
+                        Enabled
+                      </label>
+                      <div className="flex gap-1 border-l border-slate-200 pl-3">
+                        <button
+                          onClick={() => handleMoveAa(wf.id, 'up')}
+                          disabled={idx === 0}
+                          className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30 disabled:hover:text-slate-400"
+                          title="Move Up"
+                        >
+                          <ArrowUp size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleMoveAa(wf.id, 'down')}
+                          disabled={idx === aaWorkflows.length - 1}
+                          className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30 disabled:hover:text-slate-400"
+                          title="Move Down"
+                        >
+                          <ArrowDown size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove this step from the Administrative Approval workflow?`)) {
+                              deleteAaWfMutation.mutate(wf.id);
+                            }
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600"
+                          title="Delete Step"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Category</label>

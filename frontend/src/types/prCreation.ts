@@ -65,6 +65,7 @@ export interface PRWizardSelection {
   fileCount: number;
   selectedFileIds: number[];
   procurementMethodId: number | null;
+  administrativeApprovalId: number | null;
 }
 
 export function createEmptyItemState(budgetFileId: number): PRItemFormState {

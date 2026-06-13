@@ -3,9 +3,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Wallet, Package, Box, Settings,
   Users, ChevronLeft, ChevronRight, LogOut, Menu, X,
-  Truck, AlertTriangle, BarChart2, User, Layers, PenLine
+  Truck, AlertTriangle, BarChart2, User, Layers, PenLine, Bell
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { notificationsApi } from '../services/api';
 
 interface NavItem {
   label: string;
@@ -16,6 +18,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Admin Approvals', icon: PenLine, href: '/administrative-approvals' },
   { label: 'Purchase Indents', icon: FileText, href: '/pr' },
   { label: 'Budget', icon: Wallet, href: '/budget', roles: ['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver'] },
   { label: 'Deliveries', icon: Truck, href: '/inventory/deliveries', roles: ['faculty', 'hod', 'verifier_sp', 'admin'] },
@@ -30,9 +33,43 @@ const NAV_ITEMS: NavItem[] = [
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: () => notificationsApi.unreadCount().then((res) => res.data),
+    refetchInterval: 10000,
+    enabled: !!user,
+  });
+
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications-list'],
+    queryFn: () => notificationsApi.list().then(res => res.data),
+    refetchInterval: 10000,
+    enabled: !!user,
+  });
+
+  const readAllMutation = useMutation({
+    mutationFn: () => notificationsApi.readAll(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications-list'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+    }
+  });
+
+  const readSingleMutation = useMutation({
+    mutationFn: (id: number) => notificationsApi.read(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications-list'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+    }
+  });
+
+  const unreadCount = unreadData?.count || 0;
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.label === 'Purchase Indents' && user?.designation === 'Dean P&D (Budget)') {
@@ -165,11 +202,81 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-550 hover:text-slate-700 transition focus:outline-none z-50"
+                title="View Notifications"
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 border border-white text-white text-[9px] font-black rounded-full flex items-center justify-center animate-bounce">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden text-left">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                      <span className="text-xs font-bold text-slate-800">Notifications</span>
+                      {notifications.some((n: any) => !n.is_read) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            readAllMutation.mutate();
+                          }}
+                          className="text-[10px] font-bold text-[#1a3a6b] hover:underline"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-xs text-slate-405 italic font-medium animate-pulse">
+                          No notifications yet.
+                        </div>
+                      ) : (
+                        notifications.map((n: any) => (
+                          <div
+                            key={n.id}
+                            onClick={() => {
+                              if (!n.is_read) {
+                                readSingleMutation.mutate(n.id);
+                              }
+                              setShowNotifications(false);
+                              if (n.link) navigate(n.link);
+                            }}
+                            className={`p-3 text-xs transition-all cursor-pointer relative hover:bg-slate-50 ${
+                              n.is_read ? 'bg-white text-slate-500' : 'bg-blue-50/40 text-slate-800'
+                            }`}
+                          >
+                            {!n.is_read && (
+                              <span className="absolute top-4 right-3 w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                            )}
+                            <div className="flex justify-between items-center gap-1.5">
+                              <span className="font-bold text-slate-700 truncate max-w-[170px]">{n.title}</span>
+                              <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                                {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-normal mt-0.5 line-clamp-2">{n.message}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="text-right hidden sm:block">
               <div className="text-xs font-bold text-slate-800">{user?.name}</div>
               <div className="text-xs text-slate-500">{user?.department?.name || 'Central Office'}</div>
             </div>
-
           </div>
         </header>
 

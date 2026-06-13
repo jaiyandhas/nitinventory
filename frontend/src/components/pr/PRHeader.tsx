@@ -347,7 +347,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
           <div className="col-span-2 border-t border-slate-100 pt-4">
             <div className="flex justify-between items-center mb-2">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Purchase Committee</div>
-              {((isHOD || isDirector) && pr.flow?.phase_name === "Administrative Approval") && (
+              {((isHOD || isDirector) && (pr.flow?.phase_name === "Indent and Detailed Tech Specification" || pr.flow?.phase_name === "Administrative Approval")) && (
                 <button
                   onClick={() => setShowNominationModal(true)}
                   className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded transition-colors"
@@ -423,14 +423,23 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                       </span>
                     </div>
                   </div>
-                  <a
-                    href={doc.path}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold shrink-0 ml-4 hover:underline"
-                  >
-                    View File
-                  </a>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-4">
+                    <a
+                      href={doc.path}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-slate-600 hover:text-slate-900 font-bold hover:underline"
+                    >
+                      View
+                    </a>
+                    <a
+                      href={doc.path}
+                      download={doc.original_name}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 px-2 py-0.5 rounded"
+                    >
+                      ↓ Download
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>

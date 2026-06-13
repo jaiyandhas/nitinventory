@@ -15,7 +15,7 @@ async def main():
         res = await db.execute(select(BudgetMaster))
         items = res.scalars().all()
         for b in items:
-            print(f"ID: {b.id} | FileNo: {b.file_no} | Item: {b.item_name} | DeptID: {b.department_id} | FY_ID: {b.financial_year_id}")
+            print(f"ID: {b.id} | FileNo: {b.file_no} | Item: {b.item_name} | Total: {b.total_allocation} | Committed: {b.committed_amount} | Utilized: {b.utilized_amount} | Available: {b.available_balance}")
 
 if __name__ == "__main__":
     asyncio.run(main())

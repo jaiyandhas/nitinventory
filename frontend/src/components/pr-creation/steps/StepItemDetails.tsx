@@ -11,9 +11,18 @@ interface Props {
   items: Record<number, PRItemFormState>;
   procurementName: string;
   onUpdate: (fileId: number, patch: Partial<PRItemFormState>) => void;
+  administrativeApprovalId?: number | null;
+  approvedAAs?: any[];
 }
 
-export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName, onUpdate }) => {
+export const StepItemDetails: React.FC<Props> = ({
+  files,
+  items,
+  procurementName,
+  onUpdate,
+  administrativeApprovalId = null,
+  approvedAAs = [],
+}) => {
   const { user } = useAuth();
   const isGem = isGemProcurement(procurementName);
 
@@ -22,6 +31,13 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
       {files.map((file, index) => {
         const item = items[file.id] ?? { budget_file_id: file.id };
         const fid = file.id;
+
+        // Retrieve selected AA cost if this is the budget file linked to it
+        const selectedAA = administrativeApprovalId
+          ? approvedAAs.find((a) => a.id === administrativeApprovalId && a.budget_file_id === fid)
+          : null;
+        const aaCost = selectedAA ? selectedAA.total_cost : 0;
+        const availableAmount = (file.available_balance ?? file.available_amount) + aaCost;
 
         return (
           <section key={fid} className="card p-6 space-y-5">
@@ -42,24 +58,24 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
               </div>
               <div>
                 <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Available Balance</span>
-                <span className="font-bold text-sm text-emerald-700">{formatCurrency(file.available_balance ?? file.available_amount)}</span>
+                <span className="font-bold text-sm text-emerald-700">{formatCurrency(availableAmount)}</span>
               </div>
               <div>
                 <span className="block text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Max Purchase Qty</span>
                 <span className="font-bold text-sm text-blue-700">
-                  {Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost)}
+                  {Math.floor(availableAmount / file.unit_cost)}
                 </span>
               </div>
             </div>
 
             {/* Warning banner if budget is exhausted */}
-            {Math.floor((file.available_balance ?? file.available_amount) / file.unit_cost) <= 0 && (
+            {Math.floor(availableAmount / file.unit_cost) <= 0 && (
               <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 text-sm space-y-1">
                 <div className="font-semibold flex items-center gap-1.5 text-red-900">
                   <span>⚠️</span> Budget Exhausted
                 </div>
                 <p className="text-xs text-red-700">
-                  The available budget for this file ({formatCurrency(file.available_balance ?? file.available_amount)}) is less than the unit cost ({formatCurrency(file.unit_cost)}). No units can be purchased.
+                  The available budget for this file ({formatCurrency(availableAmount)}) is less than the unit cost ({formatCurrency(file.unit_cost)}). No units can be purchased.
                 </p>
               </div>
             )}
@@ -69,12 +85,16 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                 <label className="label">Quantity to Purchase *</label>
                 <input
                   type="number"
-                  disabled={true}
-                  className="input-field disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed font-medium text-slate-750"
-                  value={file.quantity}
+                  min={1}
+                  required
+                  className="input-field font-medium text-slate-750"
+                  value={item.quantity || ''}
+                  onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
-                  Estimated Item Total: <strong className="text-[#1a3a6b] font-bold">{formatCurrency(file.quantity * file.unit_cost)}</strong>
+                  Base Cost: <span className="text-slate-700 font-bold">{formatCurrency((Number(item.quantity) || 0) * file.unit_cost)}</span>
+                  {' | '}
+                  Total Cost (incl. GST): <strong className="text-[#1a3a6b] font-bold">{formatCurrency(((Number(item.quantity) || 0) * file.unit_cost) * (1 + (Number(item.charges) || 0) / 100))}</strong>
                 </span>
               </div>
 
@@ -90,6 +110,9 @@ export const StepItemDetails: React.FC<Props> = ({ files, items, procurementName
                   value={item.charges}
                   onChange={(e) => onUpdate(fid, { charges: e.target.value })}
                 />
+                <span className="text-xs text-slate-500 mt-1 block font-medium">
+                  GST Amount: <span className="text-slate-700 font-bold">{formatCurrency(((Number(item.quantity) || 0) * file.unit_cost) * (Number(item.charges) || 0) / 100)}</span>
+                </span>
               </div>
 
               <div>

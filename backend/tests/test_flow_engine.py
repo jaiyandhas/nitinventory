@@ -38,10 +38,10 @@ async def test_workflow_flow_engine_lifecycle(db_session):
     flow_res = await db_session.execute(select(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id))
     flow = flow_res.scalar_one()
     
-    # Initial phase should be phase order 1 (Administrative Approval)
+    # Initial phase should be phase order 1 (Indent and Detailed Tech Specification)
     phase_res = await db_session.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
     phase = phase_res.scalar_one()
-    assert phase.phase_name == "Administrative Approval"
+    assert phase.phase_name == "Indent and Detailed Tech Specification"
     
     # 3. Test advance to next step by dynamically finding the correct user role expected by the engine
     async def get_approver_for_current_step(pr_obj):

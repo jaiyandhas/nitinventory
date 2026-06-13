@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { budgetApi, prApi } from '../services/api';
+import { budgetApi, prApi, aaApi } from '../services/api';
 import { queryKeys } from '../config/queryKeys';
 import toast from 'react-hot-toast';
 import { usePRWizard } from '../hooks/usePRWizard';
@@ -35,12 +35,20 @@ export const NewPRPage: React.FC = () => {
     enabled: isHod,
   });
 
+  const { data: approvedAAs = [], isLoading: loadingAAs } = useQuery({
+    queryKey: ['approved-administrative-approvals'],
+    queryFn: () => aaApi.list({ status: 'Administrative Approval Granted' }).then((r) => r.data),
+    refetchOnMount: 'always',
+  });
+
   const { data: procurementMethods = [], isLoading: loadingMethods } = useQuery({
     queryKey: queryKeys.budgets.procurementMethods,
     queryFn: () => budgetApi.procurementMethods().then((r) => r.data),
+    refetchOnMount: 'always',
   });
 
-  const isDataLoading = loadingBudgets || loadingMethods;
+  const isDataLoading = loadingBudgets || loadingMethods || loadingAAs;
+
 
   const selectedFiles = useMemo(
     () => budgetFiles.filter((f: any) => wizard.selection.selectedFileIds.includes(f.id)),
@@ -131,9 +139,21 @@ export const NewPRPage: React.FC = () => {
         return;
       }
       wizard.initItemsFromSelection(wizard.selection.selectedFileIds, budgetFiles);
+      if (wizard.selection.administrativeApprovalId) {
+        const aa = approvedAAs.find((a: any) => a.id === wizard.selection.administrativeApprovalId);
+        if (aa) {
+          const budgetFileId = aa.budget_file_id;
+          wizard.updateItem(budgetFileId, {
+            tech_specs_text: aa.item_description,
+            justification_for_procurement: aa.justification,
+            charges: String(aa.gst_rate),
+            quantity: String(aa.quantity || 1),
+          });
+        }
+      }
     }
     if (wizard.stepId === 'items' && procurementMethod) {
-      const err = wizard.validateItems(procurementMethod.name, budgetFiles);
+      const err = wizard.validateItems(procurementMethod.name, budgetFiles, approvedAAs);
       if (err) {
         toast.error(err);
         return;
@@ -156,7 +176,7 @@ export const NewPRPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name, isHod) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles);
+    const err = wizard.validateSubmit() ?? wizard.validateCommon(totalCost, procurementMethod?.form_schema, procurementMethod?.name, isHod) ?? wizard.validateItems(procurementMethod?.name ?? '', budgetFiles, approvedAAs);
     if (err) {
       toast.error(err);
       return;
@@ -169,7 +189,8 @@ export const NewPRPage: React.FC = () => {
         wizard.selection.selectedFileIds,
         wizard.selection.procurementMethodId,
         wizard.items,
-        wizard.common
+        wizard.common,
+        wizard.selection.administrativeApprovalId
       );
       const res = await prApi.createWithFiles(formData);
       toast.success(`Purchase Indent initiated: ${res.data.icr_number ?? res.data.id}`);
@@ -238,6 +259,8 @@ export const NewPRPage: React.FC = () => {
             budgetFiles={budgetFiles}
             procurementMethods={procurementMethods}
             selection={wizard.selection}
+            approvedAAs={approvedAAs}
+            loadingAAs={loadingAAs}
             onChange={(patch) => wizard.setSelection((s) => ({ ...s, ...patch }))}
           />
         )}
@@ -252,6 +275,8 @@ export const NewPRPage: React.FC = () => {
             items={wizard.items}
             procurementName={procurementMethod.name}
             onUpdate={wizard.updateItem}
+            administrativeApprovalId={wizard.selection.administrativeApprovalId}
+            approvedAAs={approvedAAs}
           />
         )}
 

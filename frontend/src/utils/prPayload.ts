@@ -5,7 +5,8 @@ export function buildPRCreateFormData(
   selectedFileIds: number[],
   procurementMethodId: number,
   items: Record<number, PRItemFormState>,
-  common: PRCommonFormState
+  common: PRCommonFormState,
+  administrativeApprovalId?: number | null
 ): FormData {
   const specs: Record<string, any> = {};
   selectedFileIds.forEach((fileId) => {
@@ -28,6 +29,7 @@ export function buildPRCreateFormData(
     purchase_type: common.purchase_type || 'departmental',
     nominee_id: common.nominee_id ? Number(common.nominee_id) : null,
     initiator_id: common.initiator_id ? Number(common.initiator_id) : null,
+    administrative_approval_id: administrativeApprovalId || null,
     basis_of_estimate: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : common.basis_of_estimate,
     basis_of_estimate_others: common.basis_of_estimate === 'Others' ? common.basis_of_estimate_others : null,
     emd: Number(common.emd),

@@ -10,6 +10,9 @@ from app.models.budget import BudgetMaster
 from app.models.purchase_request import PurchaseRequest
 
 
+from sqlalchemy.orm import selectinload
+from typing import List
+
 async def _load_budget_file(db: AsyncSession, pr: PurchaseRequest) -> Optional[BudgetMaster]:
     await db.refresh(pr, ["items"])
     if not pr.items:
@@ -70,10 +73,67 @@ def dedupe_committee_ids(*member_ids: Optional[int]) -> list[int]:
     return ordered
 
 
+async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) -> bool:
+    """Check if the committee is fully configured, either dynamically or legacy."""
+    if pr.committee_nominee_ids is not None:
+        nominees = pr.committee_nominee_ids
+        if isinstance(nominees, str):
+            import json
+            try:
+                nominees = json.loads(nominees)
+            except:
+                nominees = []
+        return len(nominees) > 0
+        
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+    return all(x is not None for x in (expert1_id, expert2_id, director_faculty_id))
+
+
+async def get_tech_committee_member_ids(db: AsyncSession, pr: PurchaseRequest) -> List[int]:
+    """
+    Return a deduplicated list of user IDs for the technical committee.
+    If pr.committee_nominee_ids is populated, it returns [pr.initiator_id] + pr.committee_nominee_ids.
+    Otherwise, fallback to legacy [pr.initiator_id, expert1_id, expert2_id, director_faculty_id].
+    """
+    if pr.committee_nominee_ids is not None:
+        nominees = pr.committee_nominee_ids
+        if isinstance(nominees, str):
+            import json
+            try:
+                nominees = json.loads(nominees)
+            except:
+                nominees = []
+        if nominees:
+            return dedupe_committee_ids(pr.initiator_id, *nominees)
+
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+    return dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id)
+
+
 async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bool:
     """Persist resolved committee nominees onto the PR when fields are missing."""
-    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
     updated = False
+    
+    if pr.committee_nominee_ids is None:
+        if pr.administrative_approval_id:
+            from app.models.administrative_approval import AdministrativeApproval
+            aa_res = await db.execute(
+                select(AdministrativeApproval)
+                .options(selectinload(AdministrativeApproval.nominees))
+                .where(AdministrativeApproval.id == pr.administrative_approval_id)
+            )
+            aa = aa_res.scalar_one_or_none()
+            if aa and aa.nominees:
+                pr.committee_nominee_ids = [nom.nominee_id for nom in aa.nominees]
+                updated = True
+                
+        if pr.committee_nominee_ids is None:
+            budget_file = await _load_budget_file(db, pr)
+            if budget_file and budget_file.nominee_ids:
+                pr.committee_nominee_ids = list(budget_file.nominee_ids)
+                updated = True
+
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
     if not pr.faculty1_id and expert1_id:
         pr.faculty1_id = expert1_id
         updated = True
@@ -84,3 +144,4 @@ async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bo
         pr.faculty3_id = director_faculty_id
         updated = True
     return updated
+

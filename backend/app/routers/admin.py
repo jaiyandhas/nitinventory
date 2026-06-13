@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.limiter import limiter
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from typing import Optional, List, Any
@@ -1902,8 +1902,14 @@ async def reset_workflows(body: dict, db: AsyncSession = Depends(get_db), _=Admi
     phases_res = await db.execute(select(PhaseManager))
     phases = {}
     for p in phases_res.scalars():
-        key = {"Administrative Approval": "AA", "Tendering": "TD", "Technical Evaluation": "TE",
-               "Financial Sanction": "FS", "Purchase Order": "PO"}.get(p.phase_name)
+        key = {
+            "Administrative Approval": "AA",
+            "Indent and Detailed Tech Specification": "AA",
+            "Tendering": "TD",
+            "Technical Evaluation": "TE",
+            "Financial Sanction": "FS",
+            "Purchase Order": "PO"
+        }.get(p.phase_name)
         if key:
             phases[key] = p
 
@@ -2222,4 +2228,150 @@ async def delete_designation(
 
     await db.commit()
     return {"message": "Designation deleted successfully", "designations": existing}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMINISTRATIVE APPROVAL WORKFLOW
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/aa-workflows")
+async def list_aa_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    result = await db.execute(
+        select(AdministrativeApprovalWorkflow)
+        .options(selectinload(AdministrativeApprovalWorkflow.role))
+        .order_by(AdministrativeApprovalWorkflow.step_order)
+    )
+    steps = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "step_order": s.step_order,
+            "role_id": s.role_id,
+            "role_name": s.role.name if s.role else None,
+            "user_group": s.user_group,
+            "is_enabled": s.is_enabled,
+        }
+        for s in steps
+    ]
+
+
+@router.post("/aa-workflows")
+async def create_aa_workflow(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    
+    role_id = body.get("role_id")
+    user_group = body.get("user_group")
+    step_order = body.get("step_order")
+    
+    if not user_group:
+        raise HTTPException(status_code=400, detail="user_group is required")
+        
+    if step_order is None:
+        res = await db.execute(select(func.max(AdministrativeApprovalWorkflow.step_order)))
+        max_order = res.scalar() or 0
+        step_order = max_order + 1
+        
+    s = AdministrativeApprovalWorkflow(
+        role_id=role_id,
+        user_group=user_group,
+        step_order=step_order,
+        is_enabled=True,
+    )
+    db.add(s)
+    await db.commit()
+    return {"message": "Workflow step created", "id": s.id}
+
+
+@router.put("/aa-workflows/{step_id}")
+async def update_aa_workflow(step_id: int, body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    result = await db.execute(select(AdministrativeApprovalWorkflow).where(AdministrativeApprovalWorkflow.id == step_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Step not found")
+        
+    if "role_id" in body:
+        s.role_id = body["role_id"]
+    if "user_group" in body:
+        s.user_group = body["user_group"]
+    if "step_order" in body:
+        s.step_order = body["step_order"]
+    if "is_enabled" in body:
+        s.is_enabled = body["is_enabled"]
+        
+    await db.commit()
+    return {"message": "Workflow step updated"}
+
+
+@router.delete("/aa-workflows/{step_id}")
+async def delete_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    result = await db.execute(select(AdministrativeApprovalWorkflow).where(AdministrativeApprovalWorkflow.id == step_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Step not found")
+        
+    await db.delete(s)
+    
+    # Re-normalize step orders
+    remaining_res = await db.execute(
+        select(AdministrativeApprovalWorkflow)
+        .order_by(AdministrativeApprovalWorkflow.step_order)
+    )
+    remaining = remaining_res.scalars().all()
+    for idx, rem in enumerate(remaining, start=1):
+        rem.step_order = idx
+        
+    await db.commit()
+    return {"message": "Workflow step deleted"}
+
+
+@router.patch("/aa-workflows/{step_id}/toggle")
+async def toggle_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    result = await db.execute(select(AdministrativeApprovalWorkflow).where(AdministrativeApprovalWorkflow.id == step_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Step not found")
+        
+    s.is_enabled = not s.is_enabled
+    await db.commit()
+    return {"message": "Toggled", "is_enabled": s.is_enabled}
+
+
+@router.post("/aa-workflows/reorder")
+async def reorder_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    step_ids = body.get("step_ids", [])
+    if not step_ids:
+        raise HTTPException(status_code=400, detail="Missing step_ids")
+        
+    for idx, sid in enumerate(step_ids, start=1):
+        await db.execute(
+            text("UPDATE administrative_approval_workflows SET step_order = :order WHERE id = :id"),
+            {"order": idx, "id": sid}
+        )
+    await db.commit()
+    return {"message": "Reordered successfully"}
+
+
+@router.post("/aa-workflows/reset-defaults")
+async def reset_aa_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    from app.models.user import RoleManager
+    await db.execute(text("DELETE FROM administrative_approval_workflows;"))
+    
+    roles_res = await db.execute(select(RoleManager))
+    roles = {r.value: r for r in roles_res.scalars()}
+    default_aa_steps = [
+        AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
+        AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
+        AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
+    ]
+    for s in default_aa_steps:
+        db.add(s)
+    await db.commit()
+    return {"message": "Reset to defaults"}
+
 

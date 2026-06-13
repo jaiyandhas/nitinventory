@@ -140,7 +140,7 @@ export function usePRWizard() {
 
   const [stepIndex, setStepIndex] = useState(draft?.stepIndex ?? 0);
   const [selection, setSelection] = useState<PRWizardSelection>(
-    draft?.selection ?? { fileCount: 1, selectedFileIds: [], procurementMethodId: null }
+    draft?.selection ?? { fileCount: 1, selectedFileIds: [], procurementMethodId: null, administrativeApprovalId: null }
   );
   const [items, setItems] = useState<Record<number, PRItemFormState>>(
     draft?.items ? deserializeItems(draft.items) : {}
@@ -174,7 +174,7 @@ export function usePRWizard() {
   const clearDraft = useCallback(() => {
     clearDraftStorage();
     setStepIndex(0);
-    setSelection({ fileCount: 1, selectedFileIds: [], procurementMethodId: null });
+    setSelection({ fileCount: 1, selectedFileIds: [], procurementMethodId: null, administrativeApprovalId: null });
     setItems({});
     setCommon(createEmptyCommonState());
     setFilesNeedReupload(false);
@@ -261,7 +261,8 @@ export function usePRWizard() {
   // ── Validators ──────────────────────────────────────────────────────────────
   const validateSelection = useCallback(
     (budgetFiles: BudgetFile[], procurementMethods: ProcurementMethod[]): string | null => {
-      const { selectedFileIds, procurementMethodId, fileCount } = selection;
+      const { selectedFileIds, procurementMethodId, fileCount, administrativeApprovalId } = selection;
+      if (!administrativeApprovalId) return 'Please select an approved Administrative Approval reference';
       if (selectedFileIds.length === 0) return 'Select at least one budget file';
       if (selectedFileIds.length < fileCount) return 'Please select all budget files';
       if (new Set(selectedFileIds).size !== selectedFileIds.length) return 'Each file can only be selected once';
@@ -286,7 +287,7 @@ export function usePRWizard() {
   );
 
   const validateItems = useCallback(
-    (procurementName: string, budgetFiles: BudgetFile[]): string | null => {
+    (procurementName: string, budgetFiles: BudgetFile[], approvedAAs: any[] = []): string | null => {
       const isGem = isGemProcurement(procurementName);
       for (const fileId of selection.selectedFileIds) {
         const item = items[fileId];
@@ -294,7 +295,13 @@ export function usePRWizard() {
         const ctx: Record<string, any> = { ...item, _procurement_is_gem: isGem };
         const file = budgetFiles.find((f) => f.id === fileId);
         if (file && file.unit_cost > 0) {
-          const maxQty = Math.floor(file.available_amount / file.unit_cost);
+          const selectedAA = selection.administrativeApprovalId
+            ? approvedAAs.find((a) => a.id === selection.administrativeApprovalId && a.budget_file_id === fileId)
+            : null;
+          const aaCost = selectedAA ? selectedAA.total_cost : 0;
+          const availableAmount = (file.available_balance ?? file.available_amount) + aaCost;
+
+          const maxQty = Math.floor(availableAmount / file.unit_cost);
           if (maxQty <= 0) return `Budget for "${file.item_name}" is exhausted. Please select a different budget file.`;
           const qty = Number(item.quantity);
           if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) return `Quantity for "${file.item_name}" must be a valid positive integer`;

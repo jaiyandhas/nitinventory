@@ -126,7 +126,7 @@ export const AAAction: React.FC<AAActionProps> = ({
         <textarea
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Enter official remarks for Administrative Approval..."
+          placeholder="Enter official remarks for Indent & Tech Spec approval..."
           rows={3}
           className="input-field resize-none bg-white mt-1"
         />
@@ -138,7 +138,7 @@ export const AAAction: React.FC<AAActionProps> = ({
           disabled={actionLoading || !remarks.trim()} 
           className="btn-primary flex items-center gap-2"
         >
-          <CheckCircle2 size={16} /> Approve &amp; Forward (AA)
+          <CheckCircle2 size={16} /> Approve &amp; Forward
         </button>
         
         <button 

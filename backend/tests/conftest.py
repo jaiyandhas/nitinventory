@@ -22,6 +22,16 @@ def event_loop():
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_test_database():
     """Create tables and run seed script once for the test session."""
+    # Ensure test database exists
+    default_url = "postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory"
+    temp_engine = create_async_engine(default_url, isolation_level="AUTOCOMMIT")
+    async with temp_engine.connect() as conn:
+        try:
+            await conn.execute(text("CREATE DATABASE nitinventory_test"))
+        except Exception:
+            pass
+    await temp_engine.dispose()
+
     # Create test engine and sessionmaker inside the active event loop
     test_engine = create_async_engine(os.environ["DATABASE_URL"], echo=True)
     TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False, class_=AsyncSession)
@@ -47,6 +57,7 @@ async def setup_test_database():
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP;"))
         await conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_source VARCHAR(50) DEFAULT 'legacy';"))
+        await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(512);"))
     
     # Run the seed function from seed.py
     from seed import seed

@@ -27,6 +27,8 @@ class PRCreatePayload(BaseModel):
     mop: int
     nominee_id: Optional[int] = None
     initiator_id: Optional[int] = None
+    administrative_approval_id: Optional[int] = None
+
     basis_of_estimate: str
     emd: float
     performance_security: float

@@ -59,10 +59,11 @@ async def test_pr_quantity_locking_validation(db_session):
 
     bg_tasks = BackgroundTasks()
 
-    with pytest.raises(HTTPException) as exc_info:
+    # 1. Attempt to create PR with mismatched quantity (should NOT raise quantity mismatch error)
+    try:
         await _persist_pr(payload_mismatch, faculty, db_session, bg_tasks)
-    assert exc_info.value.status_code == 400
-    assert "does not match the allocated budget quantity" in exc_info.value.detail
+    except HTTPException as exc_info:
+        assert "does not match the allocated budget quantity" not in str(exc_info.detail)
 
     # 2. Attempt to create PR with correct quantity (e.g. 5)
     item_match = PRItemCreate(

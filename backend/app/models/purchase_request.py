@@ -12,6 +12,8 @@ import enum
 if TYPE_CHECKING:
     from app.models.user import User, Department, RoleManager
     from app.models.budget import BudgetMaster, PurchaseCategory, FinancialYear, ProcurementManager, PhaseManager
+    from app.models.administrative_approval import AdministrativeApproval
+
 
 
 class RequestStatus(str, enum.Enum):
@@ -84,10 +86,13 @@ class PurchaseRequest(Base):
     faculty1_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     faculty2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     faculty3_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    committee_nominee_ids: Mapped[Optional[List[int]]] = mapped_column(JSON, nullable=True)
     aa_approver_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     form_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     parent_pr_id: Mapped[Optional[int]] = mapped_column(ForeignKey("purchase_requests.id"), nullable=True)
+    administrative_approval_id: Mapped[Optional[int]] = mapped_column(ForeignKey("administrative_approvals.id"), nullable=True)
     lpc_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     lpc_committee_members: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     lpc_minutes_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     single_bid_justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -119,6 +124,8 @@ class PurchaseRequest(Base):
     deliveries: Mapped[List["Delivery"]] = relationship("Delivery", back_populates="purchase_request", cascade="all, delete-orphan")
     referrals: Mapped[List["PRReferral"]] = relationship("PRReferral", back_populates="purchase_request", cascade="all, delete-orphan")
     purchase_order: Mapped[Optional["PurchaseOrder"]] = relationship("PurchaseOrder", back_populates="purchase_request", uselist=False, cascade="all, delete-orphan")
+    administrative_approval: Mapped[Optional["AdministrativeApproval"]] = relationship("AdministrativeApproval")
+
 
 
 class PurchaseRequestItem(Base):

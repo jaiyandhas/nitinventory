@@ -15,6 +15,7 @@ from app.core.security import get_password_hash
 import app.models  # noqa: F401
 
 from app.models.user import User, Department, RoleManager
+from app.models.administrative_approval import AdministrativeApprovalWorkflow
 from app.models.budget import (
     BudgetMaster,
     FinancialYear,
@@ -76,6 +77,8 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS project_code VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS principal_investigator VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS project_due_date DATE;"))
+        await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;"))
+        await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(512);"))
 
         # Update existing purchase categories for cat3 bounds
         await conn.execute(text("UPDATE purchase_categories SET max_amount = 999999999, title = REPLACE(title, 'Rs. 10,00,001 to Rs. 30,00,000', 'Rs. 10,00,001 and above') WHERE title LIKE '%Rs. 10,00,001 to Rs. 30,00,000%';"))
@@ -153,12 +156,76 @@ async def create_tables():
                 condition_value = COALESCE(tender_vendors_threshold, 3) 
             WHERE tender_vendors_threshold IS NOT NULL AND condition_field IS NULL;
         """))
+
+        # Data migration: rename first PR workflow phase from "Administrative Approval"
+        # to "Indent and Detailed Tech Specification" to distinguish it from the
+        # standalone Administrative Approval module.
+        await conn.execute(text("""
+            UPDATE phase_managers
+            SET phase_name = 'Indent and Detailed Tech Specification',
+                description = 'Purchase indent and detailed technical specification approval'
+            WHERE phase_name = 'Administrative Approval' AND phase_order = 1;
+        """))
+
+        # Create administrative_approval_workflows table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS administrative_approval_workflows (
+                id SERIAL PRIMARY KEY,
+                step_order INTEGER NOT NULL,
+                role_id INTEGER REFERENCES role_managers(id) ON DELETE SET NULL,
+                user_group VARCHAR(100),
+                is_enabled BOOLEAN NOT NULL DEFAULT TRUE
+            );
+        """))
+
+        # Dynamic Nominees and workflows migrations
+        await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS nominee_ids JSONB;"))
+        await conn.execute(text("ALTER TABLE administrative_approval_workflows ADD COLUMN IF NOT EXISTS skip_condition VARCHAR(500);"))
+        await conn.execute(text("ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS committee_nominee_ids JSONB;"))
+
+        # Create notifications table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                link VARCHAR(512),
+                is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
+            );
+        """))
     print("✓ Database tables verified/created")
+
 
 
 async def seed():
     async with SessionLocal() as db:
         print("🌱 Checking database state for seeding...")
+
+        # Skip seeding if users already exist to preserve user data
+        try:
+            user_check = await db.execute(select(User).limit(1))
+            has_users = user_check.scalar_one_or_none() is not None
+        except Exception:
+            has_users = False
+
+        if has_users and not RESET_DEMO_DATA:
+            aa_wf_check = await db.execute(select(AdministrativeApprovalWorkflow).limit(1))
+            if aa_wf_check.scalar_one_or_none() is None:
+                roles_res = await db.execute(select(RoleManager))
+                roles = {r.value: r for r in roles_res.scalars()}
+                default_aa_steps = [
+                    AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
+                    AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
+                    AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
+                ]
+                for s in default_aa_steps:
+                    db.add(s)
+                await db.commit()
+                print("  Seeded 3 default Administrative Approval workflow steps in already populated DB.")
+            print("✓ Database is already populated. Skipping seeding to preserve user data.")
+            return
 
         # 1. Departments and Users from CSV
         import csv
@@ -171,7 +238,8 @@ async def seed():
             "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
             "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
             "technical_evaluations", "financial_evaluations", "commercial_evaluations",
-            "documents", "purchase_request_items", "purchase_requests", "budget_master"
+            "documents", "purchase_request_items", "purchase_requests",
+            "administrative_approval_history", "administrative_approvals", "budget_master"
         ]
         for table in tables_to_delete:
             await db.execute(text(f"DELETE FROM {table};"))
@@ -704,7 +772,7 @@ async def seed():
         if not has_phases:
             print("  Seeding phase managers...")
             phase_rows = [
-                ("AA", "Administrative Approval", "Initial administrative approval", 1),
+                ("AA", "Indent and Detailed Tech Specification", "Purchase indent and detailed technical specification approval", 1),
                 ("TD", "Tendering", "Tender preparation and publication", 2),
                 ("TE", "Technical Evaluation", "Technical bid evaluation", 3),
                 ("FS", "Financial Sanction", "Financial sanction", 4),
@@ -718,10 +786,23 @@ async def seed():
         else:
             phases_res = await db.execute(select(PhaseManager))
             for p in phases_res.scalars():
-                key = {"Administrative Approval": "AA", "Tendering": "TD", "Technical Evaluation": "TE",
-                       "Financial Sanction": "FS", "Purchase Order": "PO"}.get(p.phase_name)
+                key = {
+                    "Indent and Detailed Tech Specification": "AA",
+                    "Administrative Approval": "AA",  # legacy name fallback
+                    "Tendering": "TD",
+                    "Technical Evaluation": "TE",
+                    "Financial Sanction": "FS",
+                    "Purchase Order": "PO",
+                }.get(p.phase_name)
                 if key:
                     phases[key] = p
+            # Rename the old phase name in DB if it still exists
+            for p in list(phases.values()):
+                if p.phase_name == "Administrative Approval" and p.phase_order == 1:
+                    p.phase_name = "Indent and Detailed Tech Specification"
+                    p.description = "Purchase indent and detailed technical specification approval"
+                    db.add(p)
+            await db.flush()
 
         # 8. Workflow Hierarchy
         from app.models.purchase_request import WorkFlowHierarchy
@@ -757,6 +838,20 @@ async def seed():
         else:
             print("  All workflow hierarchies are already present.")
 
+        # 8.5. Seed Administrative Approval Workflow
+        aa_wf_check = await db.execute(select(AdministrativeApprovalWorkflow).limit(1))
+        if aa_wf_check.scalar_one_or_none() is None:
+            print("  Seeding default Administrative Approval workflow...")
+            default_aa_steps = [
+                AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
+                AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
+                AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
+            ]
+            for s in default_aa_steps:
+                db.add(s)
+            await db.flush()
+            print("  Seeded 3 default Administrative Approval workflow steps.")
+
         # 9. Clear and Reseed Transactional & Budget Data
         if RESET_DEMO_DATA:
             print("🧹 Clearing previous transactional and budget data...")
@@ -766,7 +861,8 @@ async def seed():
                 "bill_passings", "tender_cancellations", "po_cancellations", "pr_referrals",
                 "purchase_request_assignments", "purchase_request_history", "purchase_request_flows",
                 "technical_evaluations", "financial_evaluations", "commercial_evaluations",
-                "documents", "purchase_request_items", "purchase_requests", "budget_master"
+                "documents", "purchase_request_items", "purchase_requests",
+                "administrative_approval_history", "administrative_approvals", "budget_master"
             ]
             try:
                 await db.execute(text(f"TRUNCATE TABLE {', '.join(tables_to_truncate)} RESTART IDENTITY CASCADE;"))

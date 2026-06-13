@@ -2,14 +2,16 @@ import React, { useEffect, useState } from 'react';
 import type { BudgetFile, ProcurementMethod } from '../../../types';
 import type { PRWizardSelection } from '../../../types/prCreation';
 import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Info, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { formatFileNo } from '../../../utils/format';
+import { formatFileNo, formatCurrency } from '../../../utils/format';
 
 interface Props {
   budgetFiles: BudgetFile[];
   procurementMethods: ProcurementMethod[];
   selection: PRWizardSelection;
+  approvedAAs: any[];
+  loadingAAs: boolean;
   onChange: (patch: Partial<PRWizardSelection>) => void;
 }
 
@@ -17,11 +19,12 @@ export const StepSelectFiles: React.FC<Props> = ({
   budgetFiles,
   procurementMethods,
   selection,
+  approvedAAs,
+  loadingAAs,
   onChange,
 }) => {
+  const { user } = useAuth();
   const [filterTexts, setFilterTexts] = useState<Record<number, string>>({});
-  const { isRole, user } = useAuth();
-  const isHod = isRole('hod');
 
   useEffect(() => {
     const count = selection.fileCount;
@@ -30,8 +33,35 @@ export const StepSelectFiles: React.FC<Props> = ({
     }
   }, [selection.fileCount, selection.selectedFileIds, onChange]);
 
+  const selectedAA = React.useMemo(() => {
+    if (!selection.administrativeApprovalId) return null;
+    return approvedAAs.find((a) => a.id === selection.administrativeApprovalId);
+  }, [approvedAAs, selection.administrativeApprovalId]);
+
   const renderFileSelect = (index: number) => {
     const current = selection.selectedFileIds[index] ?? null;
+
+    if (selection.administrativeApprovalId) {
+      // Read-only selected budget file from Administrative Approval
+      const file = budgetFiles.find((f) => f.id === current);
+      return (
+        <div key={index} className="p-4 border border-emerald-250 rounded-lg bg-emerald-50/25 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-emerald-800 font-bold uppercase tracking-wider">
+            <CheckCircle2 size={14} className="text-emerald-600" /> Pre-Selected Budget File (From Approved AA)
+          </div>
+          <div className="text-sm font-bold text-slate-800 mt-1">
+            {file ? `${formatFileNo(file.file_no, user?.role?.group_key)} — ${file.item_name}` : 'Loading...'}
+          </div>
+          {file && (
+            <div className="grid grid-cols-2 gap-4 text-xs text-slate-500 font-semibold pt-1">
+              <div>Allocated: {formatCurrency(file.total_allocation)}</div>
+              <div>Available: {formatCurrency(file.available_amount)}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     const usedElsewhere = new Set(
       selection.selectedFileIds.filter((_, i) => i !== index)
     );
@@ -90,7 +120,11 @@ export const StepSelectFiles: React.FC<Props> = ({
             -- Select file --
           </option>
           {sliced.map((f) => {
-            const isExhausted = (f.available_balance ?? f.available_amount) < f.unit_cost;
+            let available = f.available_balance ?? f.available_amount;
+            if (selectedAA && selectedAA.budget_file_id === f.id) {
+              available += selectedAA.total_cost;
+            }
+            const isExhausted = available < f.unit_cost;
             return (
               <option key={f.id} value={f.id} disabled={isExhausted}>
                 {formatFileNo(f.file_no, user?.role?.group_key)} — {f.item_name} {isExhausted ? ' (Budget Exhausted)' : ''}
@@ -107,66 +141,110 @@ export const StepSelectFiles: React.FC<Props> = ({
     );
   };
 
+  const selectedMop = React.useMemo(() => {
+    if (!selection.procurementMethodId) return null;
+    return procurementMethods.find((m) => m.id === selection.procurementMethodId);
+  }, [procurementMethods, selection.procurementMethodId]);
+
   return (
     <div className="space-y-6">
-      <div>
-        <label className="label" htmlFor="fileCount">
-          How many purchase files do you want to include?
-        </label>
-        <input
-          id="fileCount"
-          type="number"
-          min={1}
-          max={Math.min(50, budgetFiles.length || 1)}
-          className="input-field w-32"
-          value={selection.fileCount}
-          onChange={(e) => {
-            const count = Math.max(1, Math.min(50, Number(e.target.value) || 1));
-            onChange({ fileCount: count, selectedFileIds: selection.selectedFileIds.slice(0, count) });
-          }}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        {Array.from({ length: selection.fileCount }, (_, i) => renderFileSelect(i))}
-      </div>
-
-      <div>
-        <label className="label" htmlFor="mop">
-          Proposed mode of purchase <span className="text-red-500">*</span>
-        </label>
-        <select
-          id="mop"
-          required
-          className="input-field bg-white"
-          value={selection.procurementMethodId ?? ''}
-          onChange={(e) => onChange({ procurementMethodId: Number(e.target.value) })}
-        >
-          <option value="" disabled>
-            -- Select mode of purchase --
-          </option>
-          {procurementMethods.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {budgetFiles.length === 0 && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-          No budget files are available for your department in the active financial year.
+      {/* Pre-requisite step: Administrative Approval */}
+      <div className="p-5 border border-blue-200 rounded-lg bg-blue-50/20 space-y-3">
+        <div className="flex items-center gap-1.5 text-xs text-[#1a3a6b] font-bold uppercase tracking-wider">
+          <Info size={15} /> Pre-requisite Approval Step
+        </div>
+        <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+          Procurement requests must have an approved Administrative Approval before proceeding to the Indent and Technical Specification stage.
         </p>
+
+        {loadingAAs ? (
+          <div className="text-slate-500 text-xs flex items-center gap-1.5 pt-1">
+            <Plus className="animate-spin" size={14} /> Loading your approved Administrative Approvals...
+          </div>
+        ) : approvedAAs.length === 0 ? (
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded text-xs mt-2">
+            <span className="font-bold">No Approved Administrative Approvals Found:</span> You do not have any Administrative Approvals with status &quot;Administrative Approval Granted&quot;. Please submit an Administrative Approval request first and wait for Director approval.
+            <div className="mt-2.5">
+              <Link
+                to="/administrative-approvals/create"
+                className="inline-flex items-center gap-1 text-xs text-blue-700 font-bold hover:underline"
+              >
+                Create Administrative Approval Request →
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="pt-2">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Choose Approved Administrative Reference <span className="text-rose-500">*</span>
+            </label>
+            <select
+              className="w-full border border-slate-350 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
+              value={selection.administrativeApprovalId ?? ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) {
+                  onChange({
+                    administrativeApprovalId: null,
+                    selectedFileIds: [],
+                    fileCount: 1,
+                    procurementMethodId: null,
+                  });
+                  return;
+                }
+                const id = Number(val);
+                const aa = approvedAAs.find((a) => a.id === id);
+                if (aa) {
+                  // Resolve procurement method
+                  const mopName = aa.mode_of_procurement;
+                  const method = procurementMethods.find(
+                    (m) =>
+                      m.name.toLowerCase().includes(mopName.toLowerCase()) ||
+                      mopName.toLowerCase().includes(m.name.toLowerCase())
+                  );
+
+                  onChange({
+                    administrativeApprovalId: id,
+                    selectedFileIds: [aa.budget_file_id],
+                    fileCount: 1,
+                    procurementMethodId: method ? method.id : null,
+                  });
+                }
+              }}
+              required
+            >
+              <option value="">-- Select approved Administrative Approval --</option>
+              {approvedAAs.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.aa_number} | {a.item_name} ({formatCurrency(a.total_cost)})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {selection.administrativeApprovalId && (
+        <div className="space-y-6">
+          {/* Locked file count/selections */}
+          <div className="grid grid-cols-1 gap-4">
+            {renderFileSelect(0)}
+          </div>
+
+          {/* Locked Mode of Purchase */}
+          <div>
+            <label className="label font-bold text-slate-700">Mode of Purchase (Locked from AA)</label>
+            <div className="input-field bg-slate-50 border border-slate-200 text-slate-650 font-bold select-none">
+              {selectedMop ? selectedMop.name : 'Resolving mode...'}
+            </div>
+          </div>
+        </div>
       )}
 
-      {isHod && (
-        <div className="flex justify-end pt-2">
-          <Link
-            to="/budget/create?redirect=/pr/create"
-            className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-2 rounded-lg transition-all shadow-xs hover:shadow-sm"
-          >
-            <Plus size={14} /> Create/Request New Budget File
-          </Link>
+      {/* Manual selection fallback only if not choosing from AA (but we enforce selection) */}
+      {!selection.administrativeApprovalId && approvedAAs.length > 0 && (
+        <div className="text-center text-xs text-slate-400 font-bold pt-4 border-t border-slate-100">
+          Please select an approved Administrative Reference above to proceed.
         </div>
       )}
     </div>

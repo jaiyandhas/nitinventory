@@ -382,21 +382,14 @@ class FlowEngineService:
             return
             
         elif step.user_type == "tech_evaluation":
+            from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
             await sync_tech_committee_to_pr(self.db, pr)
-            _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(self.db, pr)
-
-            raw_committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
-            if any(x is None for x in raw_committee_ids):
+            if not await is_tech_committee_configured(self.db, pr):
                 raise ValueError(
                     "The technical evaluation committee is not fully configured. "
                     "Ensure Expert 1, Expert 2, and Director nominee are assigned on the budget file."
                 )
-            seen_ids: set = set()
-            committee_ids: list = []
-            for cid in raw_committee_ids:
-                if cid not in seen_ids:
-                    committee_ids.append(cid)
-                    seen_ids.add(cid)
+            committee_ids = await get_tech_committee_member_ids(self.db, pr)
 
             # Must be one of the committee members (advance is allowed after signing via /technical-eval)
             if user.id not in committee_ids:
@@ -445,11 +438,34 @@ class FlowEngineService:
         """Called when PR is first submitted. Locks budget and creates flow step 1."""
         from app.services.budget_service import BudgetService
         budget_svc = BudgetService(self.db)
+
+        # If PR is linked to an Administrative Approval, release the AA's commitment first
+        if pr.administrative_approval_id:
+            from app.models.administrative_approval import AdministrativeApproval
+            # Fetch AA
+            aa_res = await self.db.execute(
+                select(AdministrativeApproval).where(AdministrativeApproval.id == pr.administrative_approval_id)
+            )
+            aa = aa_res.scalar_one_or_none()
+            if aa and aa.status == "Administrative Approval Granted":
+                # Release AA's commitment
+                bm_res = await self.db.execute(
+                    select(BudgetMaster).where(BudgetMaster.id == aa.budget_file_id).with_for_update()
+                )
+                bm = bm_res.scalar_one_or_none()
+                if bm:
+                    bm.committed_amount = max(0.0, bm.committed_amount - aa.total_cost)
+                    await self.db.flush()
+
         await budget_svc.lock_amount(pr)
 
         await sync_tech_committee_to_pr(self.db, pr)
 
         first_phase = await self._get_first_phase()
+        # Note: All PRs must go through the "Indent and Detailed Tech Specification" phase,
+        # regardless of whether they are linked to an administrative approval.
+        # The AA provides the budget commitment context, but the PR still needs its own
+        # indent & tech spec verification workflow.
         first_step = await self._get_first_step(pr, first_phase)
 
         if not first_step:
@@ -521,9 +537,9 @@ class FlowEngineService:
                 for h in pr.history
             )
             
+            from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
             await sync_tech_committee_to_pr(self.db, pr)
-            _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(self.db, pr)
-            if any(x is None for x in (expert1_id, expert2_id, director_faculty_id)):
+            if not await is_tech_committee_configured(self.db, pr):
                 if has_approval_log:
                     raise ValueError("You have already signed/approved this technical evaluation round.")
                 default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
@@ -532,9 +548,7 @@ class FlowEngineService:
                 flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS
             else:
-                required_ids = set(
-                    dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id)
-                )
+                required_ids = set(await get_tech_committee_member_ids(self.db, pr))
                 await self.db.refresh(pr, ["history"])
                 approved_ids = {
                     h.current_approver_id for h in pr.history
@@ -603,7 +617,7 @@ class FlowEngineService:
                 # ── END PARTIAL APPROVER ────────────────────────────────────────
 
             else:
-                if current_phase.phase_name == "Administrative Approval":
+                if current_phase.phase_name in ("Indent and Detailed Tech Specification", "Administrative Approval"):
                     pr.aa_approved_at = datetime.utcnow()
                     pr.aa_approver_id = acted_by.id
                 elif current_phase.phase_name == "Technical Evaluation":
@@ -900,7 +914,7 @@ class FlowEngineService:
             pr.current_status = RequestStatus.IN_PROGRESS
             await self._add_history(pr, acted_by, hist_status, remarks)
         else:
-            if current_phase.phase_name == "Administrative Approval":
+            if current_phase.phase_name in ("Indent and Detailed Tech Specification", "Administrative Approval"):
                 pr.aa_approved_at = datetime.utcnow()
                 pr.aa_approver_id = acted_by.id
             elif current_phase.phase_name == "Technical Evaluation":

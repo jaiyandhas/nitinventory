@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://nitinventory-backend:8000', changeOrigin: true },
       '/storage': { target: 'http://nitinventory-backend:8000', changeOrigin: true },
+      '/static/uploads': { target: 'http://nitinventory-backend:8000', changeOrigin: true },
     },
   },
   build: {

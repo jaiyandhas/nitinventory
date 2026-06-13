@@ -82,14 +82,23 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                     {doc.original_name}
                   </span>
                 </div>
-                <a
-                  href={doc.path}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary text-xs py-1.5 px-3 border-blue-200 text-blue-600 hover:bg-blue-50 shrink-0 font-semibold"
-                >
-                  View PDF
-                </a>
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={doc.path}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary text-xs py-1.5 px-2.5 border-slate-200 text-slate-600 hover:bg-slate-100 shrink-0 font-semibold"
+                  >
+                    View
+                  </a>
+                  <a
+                    href={doc.path}
+                    download={doc.original_name}
+                    className="btn-secondary text-xs py-1.5 px-2.5 border-blue-200 text-blue-600 hover:bg-blue-50 shrink-0 font-semibold flex items-center gap-1"
+                  >
+                    ↓ Download
+                  </a>
+                </div>
               </div>
             ))}
           </div>

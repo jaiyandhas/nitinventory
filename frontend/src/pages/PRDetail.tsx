@@ -14,9 +14,11 @@ import toast from 'react-hot-toast';
 // Modular Detail Components
 import { PRHeader } from '../components/pr/detail/PRHeader';
 import { PRItemsTable } from '../components/pr/detail/PRItemsTable';
-import { PRTimeline } from '../components/pr/detail/PRTimeline';
+import { WorkflowTimeline } from '../components/pr/detail/WorkflowTimeline';
+import { WorkflowTracker } from '../components/pr/detail/WorkflowTracker';
 import { PRCommitteePanel } from '../components/pr/detail/PRCommitteePanel';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
+import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
 
 const STAGES = [
   { key: 'request', label: 'Request', desc: 'Initial Indent' },
@@ -135,7 +137,7 @@ export const PRDetailPage: React.FC = () => {
       toast.error(err.response?.data?.detail || 'Failed to allocate budget file number');
     },
   });
-  const { data: pr, refetch, isError, error } = useQuery<PurchaseRequest>({
+  const { data: pr, refetch: originalRefetch, isError, error } = useQuery<PurchaseRequest>({
     queryKey: queryKeys.prs.detail(Number(id)),
     queryFn: () => prApi.get(Number(id)).then(r => r.data),
     retry: (failureCount, err: any) => {
@@ -146,10 +148,26 @@ export const PRDetailPage: React.FC = () => {
     },
   });
 
+  const refetch = () => {
+    originalRefetch();
+    queryClient.invalidateQueries({ queryKey: queryKeys.prs.all });
+    queryClient.invalidateQueries({ queryKey: ['dashboard-aas'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+    queryClient.invalidateQueries({ queryKey: ['administrative-approvals'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.inventory.deliveries });
+    queryClient.invalidateQueries({ queryKey: queryKeys.assets.all });
+  };
+
   const { data: faculties = [] } = useQuery<any[]>({
     queryKey: queryKeys.users.deptFaculty,
     queryFn: () => budgetApi.departmentFaculty().then(r => r.data),
-    enabled: !!pr && user?.role?.group_key === 'hod' && (pr.flow?.expected_group === 'hod' || pr.flow?.expected_role_name?.toLowerCase().includes('hod') || pr.flow?.phase_name === 'Administrative Approval'),
+    enabled: !!pr && user?.role?.group_key === 'hod' && (
+      pr.flow?.expected_group === 'hod' ||
+      pr.flow?.expected_role_name?.toLowerCase().includes('hod') ||
+      pr.flow?.phase_name === 'Indent and Detailed Tech Specification' ||
+      pr.flow?.phase_name === 'Administrative Approval'
+    ),
   });
 
   const { data: permanentBudgets = [] } = useQuery<any[]>({
@@ -170,7 +188,8 @@ export const PRDetailPage: React.FC = () => {
       return 0; // Request
     }
     const phase = pr.flow.phase_name;
-    if (phase === 'Administrative Approval') return 1;
+    // Support both old and new phase name for backward compat
+    if (phase === 'Indent and Detailed Tech Specification' || phase === 'Administrative Approval') return 1;
     if (phase === 'Tendering') return 2;
     if (phase === 'Technical Evaluation') return 3;
     if (phase === 'Financial Sanction') return 4;
@@ -501,42 +520,10 @@ export const PRDetailPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* STAGE: Request */}
+              {/* STAGE: Request — Full PR Summary */}
               {selectedStageKey === 'request' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 bg-slate-50 p-4 border border-slate-200 rounded-md text-xs">
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Initiator</span>
-                      <span className="font-semibold text-slate-800">{pr.initiator?.name}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Department</span>
-                      <span className="font-semibold text-slate-800">{pr.initiator?.department?.name || 'CSE'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Category</span>
-                      <span className="font-semibold text-slate-800">{pr.category?.title}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Procurement Method</span>
-                      <span className="font-semibold text-slate-800">{pr.procurement?.name}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Purchase Type</span>
-                      <span className="font-semibold text-slate-800 capitalize">{pr.purchase_type}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Total Amount</span>
-                      <span className="font-bold text-[#1a3a6b]">{formatCurrency(pr.amount)}</span>
-                    </div>
-                    {pr.delivery_location && (
-                      <div className="col-span-2 sm:col-span-3">
-                        <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Delivery Location</span>
-                        <span className="font-semibold text-slate-800">{pr.delivery_location} ({pr.delivery_mode})</span>
-                      </div>
-                    )}
-                  </div>
-                  <PRItemsTable pr={pr} formatCurrency={formatCurrency} />
+                <div className="space-y-4">
+                  <PRSummaryTable pr={pr} formatCurrency={formatCurrency} />
                 </div>
               )}
 
@@ -960,7 +947,7 @@ export const PRDetailPage: React.FC = () => {
               </div>
               {showHistory && (
                 <div className="p-6">
-                  <PRTimeline history={pr.history} currentStatus={pr.current_status} />
+                  <WorkflowTimeline pr={pr} />
                 </div>
               )}
             </div>
@@ -969,6 +956,7 @@ export const PRDetailPage: React.FC = () => {
 
           {/* Right column: Status details / history */}
           <div className="lg:col-span-4 space-y-6">
+            <WorkflowTracker pr={pr} />
             
             {/* Case status details */}
             <div className="card text-left">

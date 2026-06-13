@@ -463,41 +463,57 @@
                         {% if pr_created_at_str %}<span style="font-size: 8pt; color: #555;"> ({{ pr_created_at_str }})</span>{% endif %}
                     </td>
                 </tr>
+                {% if nominees %}
+                    {% for nom in nominees %}
+                    <tr>
+                        <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">{{ loop.index + 2 }})</td>
+                        <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Technical Committee Nominee / Expert {{ loop.index }}</td>
+                        <td style="border: 1px solid #333; padding: 6px;">
+                            {% if nom.signature_url %}
+                                <img src="{{ nom.signature_url }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
+                            {% endif %}
+                            {{ nom.name }} ({{ nom.dept }})
+                            {% if nom.acted_at_str and nom.acted_at_str != '-' %}<span style="font-size: 8pt; color: #555;"> ({{ nom.acted_at_str }})</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">3)</td>
+                        <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 1 / Technical expert nominated by HoD</td>
+                        <td style="border: 1px solid #333; padding: 6px;">
+                            {% if faculty1_sig %}
+                                <img src="{{ faculty1_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
+                            {% endif %}
+                            {{ expert1_ns.name }}
+                            {% if faculty1_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty1_date_str }})</span>{% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">4)</td>
+                        <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 2 / Technical expert nominated by HoD</td>
+                        <td style="border: 1px solid #333; padding: 6px;">
+                            {% if faculty2_sig %}
+                                <img src="{{ faculty2_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
+                            {% endif %}
+                            {{ expert2_ns.name }}
+                            {% if faculty2_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty2_date_str }})</span>{% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">5)</td>
+                        <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Faculty - Nominated by the Director</td>
+                        <td style="border: 1px solid #333; padding: 6px;">
+                            {% if faculty3_sig %}
+                                <img src="{{ faculty3_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
+                            {% endif %}
+                            {{ expert3_ns.name }}
+                            {% if faculty3_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty3_date_str }})</span>{% endif %}
+                        </td>
+                    </tr>
+                {% endif %}
                 <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">3)</td>
-                    <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 1 / Technical expert nominated by HoD</td>
-                    <td style="border: 1px solid #333; padding: 6px;">
-                        {% if faculty1_sig %}
-                            <img src="{{ faculty1_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
-                        {% endif %}
-                        {{ expert1_ns.name }}
-                        {% if faculty1_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty1_date_str }})</span>{% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">4)</td>
-                    <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Dept.Faculty 2 / Technical expert nominated by HoD</td>
-                    <td style="border: 1px solid #333; padding: 6px;">
-                        {% if faculty2_sig %}
-                            <img src="{{ faculty2_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
-                        {% endif %}
-                        {{ expert2_ns.name }}
-                        {% if faculty2_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty2_date_str }})</span>{% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">5)</td>
-                    <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">Faculty - Nominated by the Director</td>
-                    <td style="border: 1px solid #333; padding: 6px;">
-                        {% if faculty3_sig %}
-                            <img src="{{ faculty3_sig }}" style="max-height: 20px; vertical-align: middle; margin-right: 10px;" />
-                        {% endif %}
-                        {{ expert3_ns.name }}
-                        {% if faculty3_date_str %}<span style="font-size: 8pt; color: #555;"> ({{ faculty3_date_str }})</span>{% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">6)</td>
+                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">{{ (nominees|length + 3) if nominees else 6 }})</td>
                     <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">
                         DR/AR (S&amp;P)<br/>
                         DR (R&amp;C) for R&amp;C
@@ -510,7 +526,7 @@
                     </td>
                 </tr>
                 <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">7)</td>
+                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">{{ (nominees|length + 4) if nominees else 7 }})</td>
                     <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">DR/AR (F&amp;A)</td>
                     <td style="border: 1px solid #333; padding: 6px;">
                         {% if dr_ar_fa_sig %}
@@ -520,7 +536,7 @@
                     </td>
                 </tr>
                 <tr>
-                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">8)</td>
+                    <td style="border: 1px solid #333; padding: 6px; text-align: center; font-weight: bold;">{{ (nominees|length + 5) if nominees else 8 }})</td>
                     <td style="border: 1px solid #333; padding: 6px; font-weight: bold;">IA</td>
                     <td style="border: 1px solid #333; padding: 6px;">
                         {% if ia_sig %}
@@ -566,6 +582,40 @@
                 <div style="font-weight: bold;">Head of the Department</div>
             </td>
         </tr>
+
+        <!-- Nominee Row (Only shown if nominees are present) -->
+        {% if nominees %}
+        <tr style="border: none; height: 30px;"><td colspan="3" style="border: none;"></td></tr>
+        <tr style="border: none;">
+            <td colspan="3" style="border: none; padding: 0;">
+                <div style="font-weight: bold; font-size: 10pt; margin-bottom: 10px; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 3px;">
+                    Committee Nominee Approvals
+                </div>
+                <table style="width: 100%; border: none; border-collapse: collapse;">
+                    <tr style="border: none;">
+                        {% for nom in nominees %}
+                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            {% if nom.signature_url %}
+                                <img src="{{ nom.signature_url }}" style="max-height: 35px; display: block; margin: 0 auto;" />
+                            {% else %}
+                                <div style="font-style: italic; font-size: 8pt; color: #777;">{{ nom.status }}</div>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    <tr style="border: none;">
+                        {% for nom in nominees %}
+                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">{{ nom.name }}</div>
+                            <div style="font-size: 8pt; color: #555;">Committee Nominee {{ nom.step_order }}</div>
+                            <div style="font-size: 8pt; color: #777;">Dept: {{ nom.dept }}</div>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        {% endif %}
         
         <!-- Spacer -->
         <tr style="border: none; height: 30px;"><td colspan="3" style="border: none;"></td></tr>
@@ -693,6 +743,231 @@
         <!-- Consultations/Referrals Log removed from separate section copy -->
 
     {% endif %}
+
+    {% elif module == 'administrative_approval' %}
+    <div style="font-weight: bold; font-size: 11pt; margin-bottom: 10px;">
+        File No: <span class="bold">{{ file_nos_str }}</span>
+    </div>
+
+    <table class="details-table" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">Name of the Department</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ pr.initiator.department.name if (pr.initiator and pr.initiator.department) else 'Main Office' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Name of the Purchase Indentor</td>
+            <td style="border: 1px solid #333; padding: 6px;">
+                <strong>Name:</strong> {{ pr.initiator.name }}<br/>
+                <strong>Designation:</strong> {{ pr.initiator.designation or 'Faculty' }}<br/>
+                <strong>Contact:</strong> {{ pr.initiator.email }}
+            </td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Source of fund</td>
+            <td style="border: 1px solid #333; padding: 6px;">
+                {% set fund = aa.budget_file.source_of_fund %}
+                {% set proj_code = aa.budget_file.project_code %}
+                <strong>{{ fund }}</strong>
+                {% if proj_code %} (Project code: {{ proj_code }}){% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Estimated amount (incl. GST)</td>
+            <td style="border: 1px solid #333; padding: 6px; font-weight: bold; color: #1a3a6b;">Rs. {{ "%.2f"|format(grand_total) }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Mode of procurement</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.mode_of_procurement }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Justification / Purpose</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.justification }}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">a) <u>Details of the required items:</u></div>
+    <table class="data-table" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+        <thead>
+            <tr>
+                <th style="width: 5%; border: 1px solid #333; padding: 6px; text-align: center;">S.No</th>
+                <th style="width: 45%; border: 1px solid #333; padding: 6px; text-align: left;">Description of the item</th>
+                <th style="width: 10%; border: 1px solid #333; padding: 6px; text-align: center;">Qty</th>
+                <th style="width: 15%; border: 1px solid #333; padding: 6px; text-align: right;">Unit Cost (Rs.)</th>
+                <th style="width: 10%; border: 1px solid #333; padding: 6px; text-align: center;">GST in %</th>
+                <th style="width: 15%; border: 1px solid #333; padding: 6px; text-align: right;">Total Cost (Rs.)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items_details %}
+            <tr>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px;">{{ item.s_no }}</td>
+                <td style="border: 1px solid #333; padding: 6px;">{{ item.description }}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px;">{{ item.qty }}</td>
+                <td style="text-align: right; border: 1px solid #333; padding: 6px;">{{ "%.2f"|format(item.unit_cost) }}</td>
+                <td style="text-align: center; border: 1px solid #333; padding: 6px;">{{ "%.1f"|format(item.gst_pct or 0.0) }}%</td>
+                <td style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold;">{{ "%.2f"|format(item.total_cost) }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="bold" style="background-color: #f9f9f9;">
+                <td colspan="5" style="text-align: right; border: 1px solid #333; padding: 6px;">Grand Total (Rs.)</td>
+                <td style="text-align: right; border: 1px solid #333; padding: 6px; color: #1a3a6b;">{{ "%.2f"|format(grand_total) }}</td>
+            </tr>
+            <tr class="bold" style="background-color: #f9f9f9;">
+                <td colspan="6" style="border: 1px solid #333; padding: 6px;">Grand Total (in words): Rupees {{ grand_total_words }} only</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-title" style="margin-top: 25px;">b) <u>Approval and Signatures:</u></div>
+    <table style="width: 100%; border: none; border-collapse: collapse; margin-top: 15px; font-size: 10pt; page-break-inside: avoid;">
+        <!-- Row 1: PI (Left) and HoD (Right) -->
+        <tr style="border: none;">
+            <td style="width: 45%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                {% if initiator_sig %}
+                    <img src="{{ initiator_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                {% endif %}
+            </td>
+            <td style="width: 10%; border: none;"></td>
+            <td style="width: 45%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                {% if hod_sig %}
+                    <img src="{{ hod_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                {% endif %}
+            </td>
+        </tr>
+        <tr style="border: none;">
+            <td style="width: 45%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                <div style="font-weight: bold;">{{ pr.initiator.name }}</div>
+                <div style="font-size: 8pt; color: #555;">Purchase Indentor (PI)</div>
+                {% if pr_created_at_str %}<div style="font-size: 8pt; color: #777;">Date: {{ pr_created_at_str }}</div>{% endif %}
+            </td>
+            <td style="width: 10%; border: none;"></td>
+            <td style="width: 45%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                <div style="font-weight: bold;">{{ hod_user.name if hod_user else 'Head of Department' }}</div>
+                <div style="font-size: 8pt; color: #555;">Chairperson / HoD</div>
+                {% if hod_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ hod_date_str }}</div>{% endif %}
+            </td>
+        </tr>
+
+        <!-- Nominee Row (Only shown if nominees are present) -->
+        {% if nominees %}
+        <tr style="border: none; height: 25px;"><td colspan="3" style="border: none;"></td></tr>
+        <tr style="border: none;">
+            <td colspan="3" style="border: none; padding: 0;">
+                <div style="font-weight: bold; font-size: 9pt; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 3px;">
+                    Committee Nominee Approvals
+                </div>
+                <table style="width: 100%; border: none; border-collapse: collapse;">
+                    <tr style="border: none;">
+                        {% for nom in nominees %}
+                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            {% if nom.signature_url %}
+                                <img src="{{ nom.signature_url }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% else %}
+                                <div style="font-style: italic; font-size: 8pt; color: #777;">{{ nom.status }}</div>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    <tr style="border: none;">
+                        {% for nom in nominees %}
+                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">{{ nom.name }}</div>
+                            <div style="font-size: 8pt; color: #555;">Committee Nominee {{ nom.step_order }}</div>
+                            <div style="font-size: 8pt; color: #777;">Dept: {{ nom.dept }}</div>
+                            {% if nom.acted_at_str and nom.acted_at_str != '-' %}<div style="font-size: 8pt; color: #777;">Date: {{ nom.acted_at_str }}</div>{% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        {% endif %}
+        
+        <!-- Standard Roles: Dean, Director, DR/AR S&P, DR/AR F&A, IA -->
+        {% if dean_sig or director_sig or dr_ar_sp_sig or dr_ar_fa_sig or ia_sig %}
+        <tr style="border: none; height: 25px;"><td colspan="3" style="border: none;"></td></tr>
+        <tr style="border: none;">
+            <td colspan="3" style="border: none; padding: 0;">
+                <div style="font-weight: bold; font-size: 9pt; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 3px;">
+                    Administrative Approvals & Scrutiny
+                </div>
+                <table style="width: 100%; border: none; border-collapse: collapse;">
+                    <tr style="border: none;">
+                        {% if dr_ar_sp_sig %}
+                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ dr_ar_sp_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        </td>
+                        {% endif %}
+                        {% if dr_ar_fa_sig %}
+                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ dr_ar_fa_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        </td>
+                        {% endif %}
+                        {% if ia_sig %}
+                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ ia_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        </td>
+                        {% endif %}
+                    </tr>
+                    <tr style="border: none;">
+                        {% if dr_ar_sp_sig %}
+                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Stores &amp; Purchase</div>
+                            <div style="font-size: 8pt; color: #555;">DR/AR (S&amp;P)</div>
+                            {% if dr_ar_sp_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_sp_date_str }}</div>{% endif %}
+                        </td>
+                        {% endif %}
+                        {% if dr_ar_fa_sig %}
+                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Finance &amp; Accounts</div>
+                            <div style="font-size: 8pt; color: #555;">DR/AR (F&amp;A)</div>
+                            {% if dr_ar_fa_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_fa_date_str }}</div>{% endif %}
+                        </td>
+                        {% endif %}
+                        {% if ia_sig %}
+                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Internal Audit</div>
+                            <div style="font-size: 8pt; color: #555;">Internal Auditor</div>
+                            {% if ia_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ ia_date_str }}</div>{% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+
+                    <tr style="border: none; height: 25px;"><td colspan="3" style="border: none;"></td></tr>
+
+                    <tr style="border: none;">
+                        {% if dean_sig %}
+                        <td style="width: 50%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ dean_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        </td>
+                        {% endif %}
+                        {% if director_sig %}
+                        <td style="width: 50%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ director_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        </td>
+                        {% endif %}
+                    </tr>
+                    <tr style="border: none;">
+                        {% if dean_sig %}
+                        <td style="width: 50%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Dean</div>
+                            <div style="font-size: 8pt; color: #555;">Dean P&amp;D/Dean R&amp;C/Dean SW/Registrar</div>
+                            {% if dean_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dean_date_str }}</div>{% endif %}
+                        </td>
+                        {% endif %}
+                        {% if director_sig %}
+                        <td style="width: 50%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Director</div>
+                            <div style="font-size: 8pt; color: #555;">Competent Authority</div>
+                            {% if director_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ director_date_str }}</div>{% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        {% endif %}
+    </table>
 
     {% elif module == 'specs' %}
     <!-- ====== NIT Official Annexure Header ====== -->
@@ -2681,7 +2956,7 @@
     </table>
     {% endif %}
 
-    {% if (pr.faculty1_id or pr.faculty2_id or pr.faculty3_id) and pr.purchase_category and pr.purchase_category.max_amount > 100000 %}
+    {% if committee_sigs or (pr.faculty1_id or pr.faculty2_id or pr.faculty3_id) %}
     <div class="section-title">Purchase Committee</div>
     <table class="data-table">
         <thead>
@@ -2705,52 +2980,72 @@
                     {% endif %}
                 </td>
             </tr>
-            {% if pr.faculty1 %}
-            <tr>
-                <td class="bold">Committee Member 1 (Dept Faculty)</td>
-                <td>{{ pr.faculty1.name }}</td>
-                <td>{{ pr.faculty1.designation or 'Faculty' }} / {{ pr.faculty1.department.name if pr.faculty1.department else 'N/A' }}</td>
-                <td>
-                    {% if faculty1_sig %}
-                    <img src="{{ faculty1_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-            </tr>
-            {% endif %}
-            {% if pr.faculty2 %}
-            <tr>
-                <td class="bold">Committee Member 2 (Dept Faculty)</td>
-                <td>{{ pr.faculty2.name }}</td>
-                <td>{{ pr.faculty2.designation or 'Faculty' }} / {{ pr.faculty2.department.name if pr.faculty2.department else 'N/A' }}</td>
-                <td>
-                    {% if faculty2_sig %}
-                    <img src="{{ faculty2_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-            </tr>
-            {% endif %}
-            {% if pr.faculty3 %}
-            <tr>
-                <td class="bold">Committee Member 3 (Director Nominee)</td>
-                <td>{{ pr.faculty3.name }}</td>
-                <td>{{ pr.faculty3.designation or 'Faculty' }} / {{ pr.faculty3.department.name if pr.faculty3.department else 'N/A' }}</td>
-                <td>
-                    {% if faculty3_sig %}
-                    <img src="{{ faculty3_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-            </tr>
+            {% if committee_sigs %}
+                {% for sig in committee_sigs %}
+                {% if pr.initiator and sig.name != pr.initiator.name %}
+                <tr>
+                    <td class="bold">{{ sig.role or ('Committee Nominee ' ~ loop.index) }}</td>
+                    <td>{{ sig.name }}</td>
+                    <td>{{ sig.dept }}</td>
+                    <td>
+                        {% if sig.signature_url %}
+                        <img src="{{ sig.signature_url }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            {% else %}
+                {% if pr.faculty1 %}
+                <tr>
+                    <td class="bold">Committee Member 1 (Dept Faculty)</td>
+                    <td>{{ pr.faculty1.name }}</td>
+                    <td>{{ pr.faculty1.designation or 'Faculty' }} / {{ pr.faculty1.department.name if pr.faculty1.department else 'N/A' }}</td>
+                    <td>
+                        {% if faculty1_sig %}
+                        <img src="{{ faculty1_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% if pr.faculty2 %}
+                <tr>
+                    <td class="bold">Committee Member 2 (Dept Faculty)</td>
+                    <td>{{ pr.faculty2.name }}</td>
+                    <td>{{ pr.faculty2.designation or 'Faculty' }} / {{ pr.faculty2.department.name if pr.faculty2.department else 'N/A' }}</td>
+                    <td>
+                        {% if faculty2_sig %}
+                        <img src="{{ faculty2_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% if pr.faculty3 %}
+                <tr>
+                    <td class="bold">Committee Member 3 (Director Nominee)</td>
+                    <td>{{ pr.faculty3.name }}</td>
+                    <td>{{ pr.faculty3.designation or 'Faculty' }} / {{ pr.faculty3.department.name if pr.faculty3.department else 'N/A' }}</td>
+                    <td>
+                        {% if faculty3_sig %}
+                        <img src="{{ faculty3_sig }}" style="max-height: 30px; max-width: 100px; object-fit: contain;" />
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
             {% endif %}
         </tbody>
     </table>
     {% endif %}
 
+    {% if module != 'administrative_approval' %}
     <div class="section-title">Approval and Action Log</div>
     <table class="data-table" style="width: 100%; border-collapse: collapse;">
         <thead>
@@ -2820,6 +3115,7 @@
             </td>
         </tr>
     </table>
+    {% endif %}
     {% endif %}
 
     <div class="footer-note">

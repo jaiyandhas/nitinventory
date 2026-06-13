@@ -104,7 +104,7 @@ export const budgetApi = {
   allFaculties: () => api.get('/budget/all-faculties'),
   assignCommittee: (
     budgetId: number,
-    data: { expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }
+    data: { expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null; nominee_ids?: number[] }
   ) => api.post(`/budget/files/${budgetId}/committee`, data),
   assignDirectorCommittee: (budgetId: number, data: { director_faculty_id: number | null }) =>
     api.post(`/budget/files/${budgetId}/director-committee`, data),
@@ -207,4 +207,38 @@ export const adminApi = {
     api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),
   addDesignation: (value: string) => api.post('/admin/designations', { value }),
   deleteDesignation: (value: string) => api.delete('/admin/designations', { params: { value } }),
+  aaWorkflows: () => api.get('/admin/aa-workflows'),
+  createAaWorkflow: (data: object) => api.post('/admin/aa-workflows', data),
+  updateAaWorkflow: (id: number, data: object) => api.put(`/admin/aa-workflows/${id}`, data),
+  deleteAaWorkflow: (id: number) => api.delete(`/admin/aa-workflows/${id}`),
+  toggleAaWorkflow: (id: number) => api.patch(`/admin/aa-workflows/${id}/toggle`, {}),
+  reorderAaWorkflows: (data: object) => api.post('/admin/aa-workflows/reorder', data),
+  resetAaWorkflow: () => api.post('/admin/aa-workflows/reset-defaults'),
 };
+
+// Administrative Approvals
+export const aaApi = {
+  list: (params?: { status?: string; source_of_fund?: string; search?: string; sort_by?: string; sort_order?: string }) =>
+    api.get('/administrative-approvals', { params }),
+  get: (id: number) => api.get(`/administrative-approvals/${id}`),
+  create: (data: { budget_file_id: number; quantity: number; item_description: string; gst_rate: number; mode_of_procurement: string; justification: string }) =>
+    api.post('/administrative-approvals', data),
+  action: (id: number, action: 'Approve' | 'Send Back' | 'Reject', remarks: string, extraData?: any) =>
+    api.post(`/administrative-approvals/${id}/action`, { action, remarks, ...extraData }),
+  uploadAttachment: (id: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/administrative-approvals/${id}/attachment`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
+// Notifications
+export const notificationsApi = {
+  list: () => api.get('/notifications'),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  readAll: () => api.post('/notifications/read-all'),
+  read: (id: number) => api.post(`/notifications/${id}/read`),
+};
+

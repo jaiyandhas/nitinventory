@@ -21,7 +21,12 @@ class AssetService:
         if count <= 0:
             return []
         clean_dept = "".join(c for c in dept_code.lower() if c.isalnum())
-        await self.db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS asset_seq_{clean_dept} START 1;"))
+        try:
+            async with self.db.begin_nested():
+                await self.db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS asset_seq_{clean_dept} START 1;"))
+        except Exception:
+            # If sequence already exists or concurrent creation occurs, ignore the exception
+            pass
         res = await self.db.execute(
             text(f"SELECT nextval('asset_seq_{clean_dept}') FROM generate_series(1, :qty);"),
             {"qty": count}

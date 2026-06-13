@@ -73,7 +73,15 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             )
         )
 
-    query = select(BudgetMaster).options(selectinload(BudgetMaster.allocated_initiator)).where(and_(*filters))
+    query = (
+        select(BudgetMaster)
+        .options(
+            selectinload(BudgetMaster.allocated_initiator),
+            selectinload(BudgetMaster.department),
+            selectinload(BudgetMaster.financial_year)
+        )
+        .where(and_(*filters))
+    )
     result = await db.execute(query)
     entries = result.scalars().all()
     return [
@@ -98,6 +106,10 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "principal_investigator": b.principal_investigator,
             "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
             "source_of_fund": b.source_of_fund,
+            "expert1_id": b.expert1_id or (b.department.expert1_id if b.department else None),
+            "expert2_id": b.expert2_id or (b.department.expert2_id if b.department else None),
+            "department": b.department.name if b.department else None,
+            "financial_year": b.financial_year.label if b.financial_year else None,
         }
         for b in entries
     ]
@@ -316,10 +328,21 @@ async def get_all_faculties(db: AsyncSession = Depends(get_db), user: User = Dep
     result = await db.execute(
         select(User)
         .join(RoleManager, User.role_id == RoleManager.id)
+        .options(selectinload(User.department))
         .where(and_(RoleManager.group_key == "faculty", User.is_approved == True))
         .order_by(User.name)
     )
-    return [{"id": u.id, "name": u.name, "email": u.email, "department_id": u.department_id} for u in result.scalars().all()]
+    return [
+        {
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "department_id": u.department_id,
+            "department_name": u.department.name if u.department else "-",
+            "department_code": u.department.short_code if u.department else "-"
+        }
+        for u in result.scalars().all()
+    ]
 
 
 @router.post("/files/{budget_id}/committee")
@@ -342,29 +365,39 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     if b.department_id != user.department_id:
         raise HTTPException(status_code=403, detail="You can only configure committees for your own department's budget files")
 
-    expert1_id = body.get("expert1_id")
-    expert2_id = body.get("expert2_id")
     allocated_initiator_id = body.get("allocated_initiator_id")
+    nominee_ids = body.get("nominee_ids")
+    if nominee_ids is None or len(nominee_ids) == 0:
+        nominee_ids = []
+        if body.get("expert1_id"):
+            nominee_ids.append(body.get("expert1_id"))
+        if body.get("expert2_id"):
+            nominee_ids.append(body.get("expert2_id"))
 
-    if expert1_id:
-        u1_res = await db.execute(select(User).where(and_(User.id == expert1_id, User.department_id == user.department_id)))
-        if not u1_res.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Expert 1 must be a faculty member in your department")
-    if expert2_id:
-        u2_res = await db.execute(select(User).where(and_(User.id == expert2_id, User.department_id == user.department_id)))
-        if not u2_res.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Expert 2 must be a faculty member in your department")
     if allocated_initiator_id:
         u3_res = await db.execute(select(User).where(and_(User.id == allocated_initiator_id, User.department_id == user.department_id)))
         if not u3_res.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Allocated purchase initiator must be a faculty member in your department")
 
-    if expert1_id and expert2_id and expert1_id == expert2_id:
-        raise HTTPException(status_code=400, detail="Expert 1 and Expert 2 must be different faculty members")
+    if nominee_ids:
+        nom_users_res = await db.execute(
+            select(User).where(and_(User.id.in_(nominee_ids), User.is_approved == True))
+        )
+        nom_users = {u.id: u for u in nom_users_res.scalars().all()}
+        for nid in nominee_ids:
+            if nid not in nom_users:
+                raise HTTPException(status_code=400, detail=f"Invalid nominee user ID: {nid}")
+        if len(set(nominee_ids)) != len(nominee_ids):
+            raise HTTPException(status_code=400, detail="Nominees must be unique")
+
+    # Sync back to expert1_id / expert2_id for compatibility
+    expert1_id = nominee_ids[0] if len(nominee_ids) >= 1 else None
+    expert2_id = nominee_ids[1] if len(nominee_ids) >= 2 else None
 
     b.expert1_id = expert1_id
     b.expert2_id = expert2_id
     b.allocated_initiator_id = allocated_initiator_id
+    b.nominee_ids = nominee_ids
 
     # Sync committee to active PRs still in AA, Tendering, or TE step 1
     from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
@@ -381,7 +414,7 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
                 PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
                 or_(
                     PurchaseRequestFlow.id == None,
-                    PhaseManager.phase_name.in_(["Administrative Approval", "Tendering"]),
+                    PhaseManager.phase_name.in_(["Indent and Detailed Tech Specification", "Administrative Approval", "Tendering"]),
                     and_(
                         PhaseManager.phase_name == "Technical Evaluation",
                         PurchaseRequestFlow.step_order == 1,
@@ -393,6 +426,7 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     for pr_item in active_prs_res.scalars().all():
         pr_item.faculty1_id = expert1_id
         pr_item.faculty2_id = expert2_id
+        pr_item.committee_nominee_ids = nominee_ids
 
     await db.commit()
     return {"message": "Budget technical committee nominated successfully"}
@@ -437,7 +471,7 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
                 PurchaseRequest.current_status.notin_(["completed", "rejected", "cancelled"]),
                 or_(
                     PurchaseRequestFlow.id == None,
-                    PhaseManager.phase_name.in_(["Administrative Approval", "Tendering"]),
+                    PhaseManager.phase_name.in_(["Indent and Detailed Tech Specification", "Administrative Approval", "Tendering"]),
                     and_(
                         PhaseManager.phase_name == "Technical Evaluation",
                         PurchaseRequestFlow.step_order == 1,

@@ -289,6 +289,63 @@ class PDFService:
         hod_sig, hod_date = find_frozen_signature(hod_user.id if hod_user else None)
         aa_sig, aa_date = find_frozen_signature(pr.aa_approver_id)
 
+        nominees_serialized = []
+        if pr.committee_nominee_ids:
+            for idx, user_id in enumerate(pr.committee_nominee_ids):
+                nom_res = await self.db.execute(
+                    select(User)
+                    .options(selectinload(User.role), selectinload(User.department))
+                    .where(User.id == user_id)
+                )
+                nominee_user = nom_res.scalar_one_or_none()
+                if nominee_user:
+                    sig_url, sig_date = find_frozen_signature(user_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
+                    if not sig_url and nominee_user.signature_path:
+                        has_signed = any(
+                            h.current_approver_id == user_id 
+                            and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                            for h in pr.history
+                        )
+                        if has_signed:
+                            sig_url = get_valid_signature_url(nominee_user.signature_path)
+                    
+                    nominees_serialized.append({
+                        "name": nominee_user.name,
+                        "dept": nominee_user.department.short_code if nominee_user.department else "-",
+                        "step_order": idx + 1,
+                        "status": "Approved" if sig_url else "Pending",
+                        "signature_url": sig_url,
+                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y") if sig_date else "-"
+                    })
+        else:
+            experts = [
+                (pr.faculty1, pr.faculty1_id, "Expert 1"),
+                (pr.faculty2, pr.faculty2_id, "Expert 2"),
+                (pr.faculty3, pr.faculty3_id, "Director Nominee"),
+            ]
+            for idx, (expert, exp_id, role_name) in enumerate(experts):
+                if exp_id:
+                    sig_url, sig_date = find_frozen_signature(exp_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
+                    if not sig_url and expert and expert.signature_path:
+                        has_signed = any(
+                            h.current_approver_id == exp_id 
+                            and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                            for h in pr.history
+                        )
+                        if has_signed:
+                            sig_url = get_valid_signature_url(expert.signature_path)
+                    
+                    expert_name = expert.name if expert else f"Expert {exp_id}"
+                    expert_dept = expert.department.short_code if (expert and expert.department) else "-"
+                    nominees_serialized.append({
+                        "name": expert_name,
+                        "dept": expert_dept,
+                        "step_order": idx + 1,
+                        "status": "Approved" if sig_url else "Pending",
+                        "signature_url": sig_url,
+                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y") if sig_date else "-"
+                    })
+
         # Find Dean/Registrar/Director/Audit from history
         dean_sig = None
         dean_date = None
@@ -561,10 +618,388 @@ class PDFService:
             "sanction_authority_name": sanction_authority_name,
             "sanction_authority_sig": sanction_authority_sig,
             "sanction_authority_date_str": sanction_authority_date_str,
+            "nominees": nominees_serialized,
+            "committee_sigs": nominees_serialized,
         })
 
         filename_prefix = f"module_{module}" if module else "administrative_approval"
         filename = f"{filename_prefix}_pr_{pr.id}.pdf"
+
+        try:
+            pdf_bytes = weasyprint.HTML(string=html_content, base_url=settings.STORAGE_PATH).write_pdf()
+            return pdf_bytes, filename, False, html_content
+        except Exception as e:
+            import logging
+            logging.exception("WeasyPrint PDF generation failed, falling back to HTML representation")
+            return None, filename, True, html_content
+
+    async def generate_aa_pdf(
+        self, aa_id: int
+    ) -> Tuple[Optional[bytes], str, bool, str]:
+        """
+        Renders the administrative approval request using Jinja2 templates and compiles it to a PDF using WeasyPrint.
+        """
+        from app.models.administrative_approval import AdministrativeApproval, AdministrativeApprovalHistory, AdministrativeApprovalNominee
+        from app.models.user import User, RoleManager
+        from app.models.budget import BudgetMaster
+
+        stmt = (
+            select(AdministrativeApproval)
+            .options(
+                selectinload(AdministrativeApproval.pi).selectinload(User.department),
+                selectinload(AdministrativeApproval.budget_file).options(
+                    selectinload(BudgetMaster.financial_year),
+                    selectinload(BudgetMaster.expert1),
+                    selectinload(BudgetMaster.expert2),
+                    selectinload(BudgetMaster.director_faculty),
+                ),
+                selectinload(AdministrativeApproval.history).selectinload(AdministrativeApprovalHistory.approver).selectinload(User.role),
+                selectinload(AdministrativeApproval.nominees).selectinload(AdministrativeApprovalNominee.nominee).selectinload(User.role),
+            )
+            .where(AdministrativeApproval.id == aa_id)
+        )
+        res = await self.db.execute(stmt)
+        aa = res.scalar_one_or_none()
+        if not aa:
+            raise HTTPException(status_code=404, detail="Administrative Approval not found")
+
+        # Resolve HOD
+        hod_user = None
+        if aa.pi and aa.pi.department_id:
+            hod_res = await self.db.execute(
+                select(User)
+                .join(RoleManager, User.role_id == RoleManager.id)
+                .where(
+                    and_(
+                        User.department_id == aa.pi.department_id,
+                        RoleManager.group_key == "hod"
+                    )
+                )
+            )
+            hod_user = hod_res.scalars().first()
+
+        def to_file_url(rel_path):
+            if not rel_path:
+                return None
+            clean_path = rel_path
+            if clean_path.startswith("/storage/"):
+                clean_path = clean_path[9:]
+            elif clean_path.startswith("storage/"):
+                clean_path = clean_path[8:]
+            elif clean_path.startswith("/"):
+                clean_path = clean_path[1:]
+            
+            full_path = os.path.join(settings.STORAGE_PATH, clean_path)
+            return f"file://{urllib.parse.quote(full_path, safe='/')}"
+
+        def get_valid_signature_url(rel_path):
+            if not rel_path:
+                return None
+            clean_path = rel_path
+            if clean_path.startswith("/storage/"):
+                clean_path = clean_path[9:]
+            elif clean_path.startswith("storage/"):
+                clean_path = clean_path[8:]
+            elif clean_path.startswith("/"):
+                clean_path = clean_path[1:]
+            full_path = os.path.join(settings.STORAGE_PATH, clean_path)
+            if os.path.exists(full_path):
+                return to_file_url(clean_path)
+            return None
+
+        # Build Mock classes to adapt AdministrativeApproval to the Jinja2 template
+        class MockProcurement:
+            name = aa.mode_of_procurement
+
+        class MockItem:
+            def __init__(self, parent_aa):
+                self.quantity = parent_aa.quantity
+                self.estimated_total = parent_aa.total_cost - parent_aa.gst_amount
+                self.charges = parent_aa.gst_rate
+                self.item_description = parent_aa.item_description
+                self.budget_file = parent_aa.budget_file
+                self.availability = "No"
+                self.present_stock = "-"
+                self.previous_file_no_reference = "-"
+                self.justification_for_procurement = parent_aa.justification
+                self.warranty = 0
+                self.delivery_period = 0
+                self.tech_specs_text = "-"
+                self.budget_file_id = parent_aa.budget_file_id
+                self.requirement_type = "-"
+                self.installation_required = False
+                self.site_readiness = "-"
+                self.site_readiness_remarks = "-"
+
+        class MockHistory:
+            def __init__(self, h):
+                self.id = h.id
+                self.current_approver_id = h.approver_id
+                self.status = h.status
+                self.remarks = h.remarks
+                self.acted_at = h.acted_at
+                self.frozen_signature_path = h.approver.signature_path
+                self.frozen_actor_name = h.approver.name
+                self.frozen_designation = h.approver.designation or h.approver_role
+
+        class MockPR:
+            def __init__(self, parent_aa, items, history):
+                self.id = parent_aa.id
+                self.amount = parent_aa.total_cost
+                self.created_at = parent_aa.created_at
+                self.initiator_id = parent_aa.pi_id
+                self.initiator = parent_aa.pi
+                self.items = items
+                self.history = history
+                self.procurement = MockProcurement()
+                self.form_data = {
+                    "laboratory_office": "-",
+                    "source_of_fund": parent_aa.budget_file.source_of_fund,
+                    "source_of_fund_project_code": parent_aa.budget_file.project_code or "",
+                    "bog_resolution_no": "-",
+                    "fc_resolution_no": "-",
+                    "item_category": "-",
+                    "mii_clause": "Not Applicable",
+                    "mii_justification": "-",
+                    "purpose_justification": parent_aa.justification,
+                }
+                self.faculty1_id = None
+                self.faculty2_id = None
+                self.faculty3_id = None
+                self.faculty1 = None
+                self.faculty2 = None
+                self.faculty3 = None
+                self.aa_approver_id = None
+                self.aa_approver = None
+                self.fs_approved_at = None
+                self.te_initiated_at = None
+                self.te_approved_at = None
+                self.po_approved_at = None
+                self.documents = []
+                self.referrals = []
+                self.deliveries = []
+                self.bill_passing = None
+                self.commercial_evaluations = []
+                self.technical_evaluations = []
+                self.financial_evaluations = []
+                self.assignments = []
+                self.aa_approved_at = parent_aa.approved_at
+
+        mock_items = [MockItem(aa)]
+        mock_history = [MockHistory(h) for h in aa.history]
+        pr = MockPR(aa, mock_items, mock_history)
+
+        # Set aa_approver if approved
+        if aa.approved_at and aa.history:
+            approved_hist = [h for h in aa.history if h.status in ("Approved", "Forwarded", "Submitted")]
+            if approved_hist:
+                last_approve = sorted(approved_hist, key=lambda x: x.acted_at)[-1]
+                pr.aa_approver_id = last_approve.approver_id
+                pr.aa_approver = last_approve.approver
+
+        # Resolve signatures (frozen or fallback)
+        def find_frozen_signature(user_id: int, status_filter=None):
+            if not user_id:
+                return None, None
+            sorted_hist = sorted(pr.history, key=lambda x: x.acted_at or datetime.min, reverse=True)
+            for h in sorted_hist:
+                if h.current_approver_id == user_id:
+                    if status_filter is None or h.status in status_filter:
+                        sig_url = get_valid_signature_url(h.frozen_signature_path)
+                        if sig_url:
+                            return sig_url, h.acted_at
+            # Fallback to dynamic signatures
+            if user_id == pr.initiator_id and pr.initiator:
+                return get_valid_signature_url(pr.initiator.signature_path), None
+            if hod_user and user_id == hod_user.id:
+                return get_valid_signature_url(hod_user.signature_path), None
+            return None, None
+
+        initiator_sig, initiator_date = find_frozen_signature(pr.initiator_id)
+        hod_sig, hod_date = find_frozen_signature(hod_user.id if hod_user else None)
+        aa_sig, aa_date = find_frozen_signature(pr.aa_approver_id)
+
+        # Resolve other actors signatures
+        dean_sig = None
+        dean_date = None
+        director_sig = None
+        director_date = None
+        dr_ar_sp_sig = None
+        dr_ar_sp_date = None
+        dr_ar_fa_sig = None
+        dr_ar_fa_date = None
+        ia_sig = None
+        ia_date = None
+
+        for h in pr.history:
+            if h.current_approver_id:
+                actor_res = await self.db.execute(
+                    select(User)
+                    .options(selectinload(User.role))
+                    .where(User.id == h.current_approver_id)
+                )
+                actor = actor_res.scalar_one_or_none()
+                if actor and actor.role:
+                    sig_url = get_valid_signature_url(h.frozen_signature_path)
+                    if not sig_url and actor.signature_path:
+                        sig_url = get_valid_signature_url(actor.signature_path)
+                    if sig_url:
+                        if actor.role.group_key == "dean_approver":
+                            dean_sig = sig_url
+                            dean_date = h.acted_at
+                        elif actor.role.group_key == "apex_approver":
+                            director_sig = sig_url
+                            director_date = h.acted_at
+                        elif actor.role.value in ("superintendent", "consultant_sp") or actor.role.group_key == "verifier_sp":
+                            dr_ar_sp_sig = sig_url
+                            dr_ar_sp_date = h.acted_at
+                        elif actor.role.value in ("deputy_registrar", "assistant_registrar"):
+                            dr_ar_fa_sig = sig_url
+                            dr_ar_fa_date = h.acted_at
+                        elif actor.role.value == "internal_audit" or "audit" in actor.role.name.lower():
+                            ia_sig = sig_url
+                            ia_date = h.acted_at
+
+        history_serialized = []
+        for h in sorted(pr.history, key=lambda x: x.acted_at or datetime.min):
+            local_acted_at = to_local_time(h.acted_at)
+            history_serialized.append({
+                "actor_name": h.frozen_actor_name,
+                "designation": h.frozen_designation,
+                "status": h.status,
+                "remarks": h.remarks or "-",
+                "signature_url": get_valid_signature_url(h.frozen_signature_path),
+                "acted_at_str": local_acted_at.strftime("%d/%m/%Y %H:%M") if local_acted_at else "-"
+            })
+
+        local_created_at = to_local_time(pr.created_at)
+        local_aa_approved_at = to_local_time(pr.aa_approved_at)
+
+        pr_created_at_str = local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-"
+        pr_aa_approved_at_str = local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-"
+        initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y") if initiator_date else "-"
+        hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y") if hod_date else "-"
+        aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y") if aa_date else "-"
+        dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y") if dean_date else "-"
+        director_date_str = to_local_time(director_date).strftime("%d/%m/%Y") if director_date else "-"
+        dr_ar_sp_date_str = to_local_time(dr_ar_sp_date).strftime("%d/%m/%Y") if dr_ar_sp_date else "-"
+        dr_ar_fa_date_str = to_local_time(dr_ar_fa_date).strftime("%d/%m/%Y") if dr_ar_fa_date else "-"
+        ia_date_str = to_local_time(ia_date).strftime("%d/%m/%Y") if ia_date else "-"
+
+        items_details = []
+        calculated_grand_total = 0.0
+        for idx, item in enumerate(pr.items):
+            qty = item.quantity or 1
+            unit_cost = item.estimated_total / qty
+            gst_pct = item.charges or 0.0
+            gst_amount = item.estimated_total * gst_pct / 100.0
+            total_cost = item.estimated_total + gst_amount
+            calculated_grand_total += total_cost
+            items_details.append({
+                "s_no": idx + 1,
+                "description": item.item_description,
+                "qty": qty,
+                "unit_cost": unit_cost,
+                "gst_pct": gst_pct,
+                "gst_amount": gst_amount,
+                "total_cost": total_cost,
+                "availability": item.availability,
+                "present_stock": item.present_stock,
+                "previous_file_no_reference": item.previous_file_no_reference,
+                "justification_for_procurement": item.justification_for_procurement,
+                "warranty": item.warranty,
+                "delivery_period": item.delivery_period,
+                "tech_specs_text": item.tech_specs_text,
+                "budget_file_id": item.budget_file_id,
+                "budget_file": item.budget_file,
+                "requirement_type": item.requirement_type,
+                "installation_required": item.installation_required,
+                "site_readiness": item.site_readiness,
+                "site_readiness_remarks": item.site_readiness_remarks
+            })
+        grand_total_words = number_to_words_inr(calculated_grand_total)
+
+        sanction_authority_name = "Sanctioning Authority"
+        sanction_authority_sig = None
+        sanction_authority_date_str = None
+
+        if aa.status == "Approved":
+            if dean_sig:
+                sanction_authority_name = "Dean"
+                sanction_authority_sig = dean_sig
+                sanction_authority_date_str = dean_date_str
+            if director_sig:
+                sanction_authority_name = "Director"
+                sanction_authority_sig = director_sig
+                sanction_authority_date_str = director_date_str
+            if not sanction_authority_sig and aa_sig:
+                sanction_authority_name = "Sanctioning Authority"
+                sanction_authority_sig = aa_sig
+                sanction_authority_date_str = aa_date_str
+
+        file_nos_str = aa.budget_file.file_no if (aa.budget_file and aa.budget_file.file_no) else "-"
+
+        nominees_serialized = []
+        for nom in sorted(aa.nominees, key=lambda x: x.step_order):
+            nom_sig = get_valid_signature_url(nom.nominee.signature_path) if (nom.nominee and nom.nominee.signature_path and nom.status == "Approved") else None
+            nom_dept = nom.nominee.department.short_code if (nom.nominee and nom.nominee.department) else "-"
+            nom_name = nom.nominee.name if nom.nominee else "Unknown"
+            nominees_serialized.append({
+                "id": nom.id,
+                "name": nom_name,
+                "dept": nom_dept,
+                "step_order": nom.step_order,
+                "status": nom.status,
+                "signature_url": nom_sig,
+                "acted_at_str": to_local_time(nom.acted_at).strftime("%d/%m/%Y") if nom.acted_at else "-"
+            })
+
+        templates = Jinja2Templates(directory="app/templates")
+        templates.env.filters["format_inr"] = format_inr
+        html_content = templates.get_template("administrative_approval.html").render({
+            "pr": pr,
+            "file_nos_str": file_nos_str,
+            "module": "administrative_approval",
+            "aa": aa,
+            "history_serialized": history_serialized,
+            "referrals_serialized": [],
+            "documents_serialized": [],
+            "storage_dir": settings.STORAGE_PATH,
+            "pr_created_at_str": pr_created_at_str,
+            "pr_aa_approved_at_str": pr_aa_approved_at_str,
+            "initiator_sig": initiator_sig,
+            "initiator_date_str": initiator_date_str,
+            "faculty1_sig": None,
+            "faculty1_date_str": "-",
+            "faculty2_sig": None,
+            "faculty2_date_str": "-",
+            "faculty3_sig": None,
+            "faculty3_date_str": "-",
+            "hod_sig": hod_sig,
+            "hod_date_str": hod_date_str,
+            "aa_sig": aa_sig,
+            "aa_date_str": aa_date_str,
+            "dean_sig": dean_sig,
+            "dean_date_str": dean_date_str,
+            "director_sig": director_sig,
+            "director_date_str": director_date_str,
+            "dr_ar_sp_sig": dr_ar_sp_sig,
+            "dr_ar_sp_date_str": dr_ar_sp_date_str,
+            "dr_ar_fa_sig": dr_ar_fa_sig,
+            "dr_ar_fa_date_str": dr_ar_fa_date_str,
+            "ia_sig": ia_sig,
+            "ia_date_str": ia_date_str,
+            "hod_user": hod_user,
+            "items_details": items_details,
+            "grand_total": calculated_grand_total,
+            "grand_total_words": grand_total_words,
+            "sanction_authority_name": sanction_authority_name,
+            "sanction_authority_sig": sanction_authority_sig,
+            "sanction_authority_date_str": sanction_authority_date_str,
+            "nominees": nominees_serialized,
+        })
+
+        filename = f"administrative_approval_{aa.id}.pdf"
 
         try:
             pdf_bytes = weasyprint.HTML(string=html_content, base_url=settings.STORAGE_PATH).write_pdf()

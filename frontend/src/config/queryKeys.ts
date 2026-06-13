@@ -60,6 +60,7 @@ export const queryKeys = {
     procs: ['admin_procs'] as const,
     usersList: ['admin_users_list'] as const,
     financialYears: ['admin_financial_years'] as const,
+    aaWorkflows: ['admin_aa_workflows'] as const,
   },
   users: {
     deptFaculty: ['departmentFaculty'] as const,

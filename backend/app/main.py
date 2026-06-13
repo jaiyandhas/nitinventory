@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.routers import auth, purchase_requests, budget, inventory, assets, admin
+from app.routers import auth, purchase_requests, budget, inventory, assets, admin, administrative_approval, notifications
 from app.core.limiter import limiter
 
 request_id_contextvar = contextvars.ContextVar("request_id", default=None)
@@ -93,6 +93,16 @@ async def lifespan(app: FastAPI):
         import logging
         logging.exception("Failed to generate watermark or copy logo")
 
+    # Dynamically create any newly added models/tables on startup
+    try:
+        from app.core.database import engine, Base
+        import app.models
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        import logging
+        logging.exception("Failed to run create_all on startup")
+
     yield
 
 
@@ -138,6 +148,9 @@ app.include_router(budget.router)
 app.include_router(inventory.router)
 app.include_router(assets.router)
 app.include_router(admin.router)
+app.include_router(administrative_approval.router)
+app.include_router(notifications.router)
+
 
 
 @app.get("/health")

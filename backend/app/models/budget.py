@@ -87,6 +87,7 @@ class BudgetMaster(Base):
     expert2_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     director_faculty_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     allocated_initiator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    nominee_ids: Mapped[Optional[List[int]]] = mapped_column(JSON, nullable=True)
 
     department: Mapped[Optional["Department"]] = relationship("Department", back_populates="budget_entries")  # type: ignore
     financial_year: Mapped[FinancialYear] = relationship("FinancialYear", back_populates="budget_entries")

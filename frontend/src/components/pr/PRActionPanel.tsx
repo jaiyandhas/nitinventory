@@ -73,7 +73,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   const { data: allUsers = [] } = useQuery<any[]>({
     queryKey: queryKeys.users.directorNomination,
     queryFn: () => budgetApi.allUsers().then(r => r.data),
-    enabled: !!isDirector && pr.flow?.phase_name === 'Administrative Approval',
+    enabled: !!isDirector && pr.flow?.phase_name === 'Indent and Detailed Tech Specification',
   });
 
   // Send back states
@@ -101,7 +101,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to advance the Purchase Indent'); return; }
 
-    if (pr.flow?.phase_name === 'Administrative Approval') {
+    if (pr.flow?.phase_name === 'Indent and Detailed Tech Specification') {
       if (isHOD) {
         if (!expert1Id || !expert2Id) {
           toast.error('Both Expert 1 and Expert 2 must be nominated');
@@ -275,7 +275,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
   const renderStageAction = () => {
     switch (phaseName) {
-      case 'Administrative Approval':
+      case 'Indent and Detailed Tech Specification':
         return (
           <AAAction
             pr={pr}

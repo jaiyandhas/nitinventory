@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays } from 'lucide-react';
+import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays, X } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { queryKeys } from '../../config/queryKeys';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatFileNo } from '../../utils/format';
 import { toast } from 'react-hot-toast';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 
 export const BudgetPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -27,6 +28,7 @@ export const BudgetPage: React.FC = () => {
   const [selectedBudgetForCommittee, setSelectedBudgetForCommittee] = useState<any>(null);
   const [expert1Id, setExpert1Id] = useState<number | null>(null);
   const [expert2Id, setExpert2Id] = useState<number | null>(null);
+  const [nomineeIds, setNomineeIds] = useState<number[]>([]);
   const [allocatedInitiatorId, setAllocatedInitiatorId] = useState<number | null>(null);
 
   const [selectedBudgetForDirector, setSelectedBudgetForDirector] = useState<any>(null);
@@ -99,8 +101,8 @@ export const BudgetPage: React.FC = () => {
 
   // Committee assignment mutations
   const assignCommitteeMutation = useMutation({
-    mutationFn: ({ budgetId, expert1_id, expert2_id, allocated_initiator_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }) =>
-      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id, allocated_initiator_id }),
+    mutationFn: ({ budgetId, expert1_id, expert2_id, allocated_initiator_id, nominee_ids }: { budgetId: number; expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null; nominee_ids?: number[] }) =>
+      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id, allocated_initiator_id, nominee_ids }),
     onSuccess: () => {
       toast.success('Technical committee updated successfully');
       setSelectedBudgetForCommittee(null);
@@ -206,9 +208,19 @@ export const BudgetPage: React.FC = () => {
 
   const openCommitteeModal = (budget: any) => {
     setSelectedBudgetForCommittee(budget);
-    setExpert1Id(budget.expert1_id || null);
-    setExpert2Id(budget.expert2_id || null);
     setAllocatedInitiatorId(budget.allocated_initiator_id || null);
+    let initialNominees: number[] = [];
+    if (budget.nominee_ids && Array.isArray(budget.nominee_ids) && budget.nominee_ids.length > 0) {
+      initialNominees = [...budget.nominee_ids];
+    } else {
+      if (budget.expert1_id) initialNominees.push(budget.expert1_id);
+      if (budget.expert2_id) initialNominees.push(budget.expert2_id);
+    }
+    // Ensure we have at least two select inputs ready if empty, or just the list
+    if (initialNominees.length === 0) {
+      initialNominees = [null as any, null as any];
+    }
+    setNomineeIds(initialNominees);
   };
 
   const openDirectorModal = (budget: any) => {
@@ -218,15 +230,27 @@ export const BudgetPage: React.FC = () => {
 
   const submitCommittee = (e: React.FormEvent) => {
     e.preventDefault();
-    if (expert1Id && expert2Id && expert1Id === expert2Id) {
-      toast.error('Expert 1 and Expert 2 must be different faculty members');
+    // Filter out unselected slots
+    const validNominees = nomineeIds.filter(id => id !== null && id !== undefined);
+    if (validNominees.length === 0) {
+      toast.error('Please select at least one technical committee nominee');
       return;
     }
+    const uniqueNominees = new Set(validNominees);
+    if (uniqueNominees.size !== validNominees.length) {
+      toast.error('Nominees must be unique');
+      return;
+    }
+    
+    const exp1 = validNominees[0] || null;
+    const exp2 = validNominees[1] || null;
+
     assignCommitteeMutation.mutate({
       budgetId: selectedBudgetForCommittee.id,
-      expert1_id: expert1Id,
-      expert2_id: expert2Id,
+      expert1_id: exp1,
+      expert2_id: exp2,
       allocated_initiator_id: allocatedInitiatorId,
+      nominee_ids: validNominees,
     });
   };
 
@@ -713,56 +737,61 @@ export const BudgetPage: React.FC = () => {
               <p className="text-xs text-blue-200 mt-1">File No: {selectedBudgetForCommittee.file_no}</p>
             </div>
             
-            <form onSubmit={submitCommittee} className="p-6 space-y-4">
+            <form onSubmit={submitCommittee} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  value={allocatedInitiatorId || ''}
-                  onChange={e => setAllocatedInitiatorId(Number(e.target.value) || null)}
-                  required
-                  className="input-field w-full"
-                >
-                  <option value="">Select Purchase Initiator...</option>
-                  {deptFaculties.map((f: any) => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={deptFaculties}
+                  value={allocatedInitiatorId}
+                  onChange={(val) => setAllocatedInitiatorId(val)}
+                  placeholder="Select Purchase Initiator..."
+                />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Department Expert 1 <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={expert1Id || ''}
-                  onChange={e => setExpert1Id(Number(e.target.value) || null)}
-                  required
-                  className="input-field w-full"
-                >
-                  <option value="">Select Faculty Expert...</option>
-                  {deptFaculties.map((f: any) => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Department Expert 2 <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={expert2Id || ''}
-                  onChange={e => setExpert2Id(Number(e.target.value) || null)}
-                  required
-                  className="input-field w-full"
-                >
-                  <option value="">Select Faculty Expert...</option>
-                  {deptFaculties.map((f: any) => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                  ))}
-                </select>
+              <div className="space-y-3 pt-2">
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Technical Committee Nominees <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNomineeIds([...nomineeIds, null as any])}
+                    className="text-xs font-semibold text-[#1a3a6b] hover:text-blue-800 transition-colors"
+                  >
+                    + Add Nominee
+                  </button>
+                </div>
+                
+                {nomineeIds.map((nomineeId, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <div className="flex-1">
+                      <SearchableSelect
+                        options={faculties}
+                        value={nomineeId}
+                        onChange={(val) => {
+                          const updated = [...nomineeIds];
+                          updated[index] = val as number;
+                          setNomineeIds(updated);
+                        }}
+                        placeholder={`Select Nominee ${index + 1}...`}
+                      />
+                    </div>
+                    {nomineeIds.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = nomineeIds.filter((_, i) => i !== index);
+                          setNomineeIds(updated);
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">

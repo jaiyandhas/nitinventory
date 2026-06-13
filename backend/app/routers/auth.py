@@ -219,7 +219,7 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
         "department_id": user.department_id,
         "is_approved": user.is_approved,
         "signature_path": f"/storage/{user.signature_path}" if user.signature_path else None,
-        "role": {"group_key": user.role.group_key, "name": user.role.name} if user.role else None,
+        "role": {"group_key": user.role.group_key, "name": user.role.name, "value": user.role.value} if user.role else None,
         "department": {"id": user.department.id, "name": user.department.name, "short_code": user.department.short_code} if user.department else None,
     }
 

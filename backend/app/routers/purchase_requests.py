@@ -24,6 +24,8 @@ from app.services.flow_engine import FlowEngineService
 from app.services.budget_service import BudgetService
 from app.services.document_service import DocumentService
 from app.models.inventory import Delivery
+from app.models.administrative_approval import AdministrativeApproval
+
 from app.schemas.pr_create import PRCreatePayload, PRItemCreate
 from app.schemas.purchase_order import PurchaseOrderCreate
 
@@ -177,6 +179,7 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "parent_pr_id": pr.parent_pr_id,
         "parent_pr": parent_pr_data,
         "child_prs": child_prs_data,
+        "administrative_approval_id": pr.administrative_approval_id,
     }
 
 
@@ -218,6 +221,26 @@ async def _persist_pr(
 
     selected_file_ids = payload.selected_file_ids
 
+    # Validate administrative approval if provided
+    aa = None
+    if payload.administrative_approval_id:
+        aa_res = await db.execute(
+            select(AdministrativeApproval)
+            .options(selectinload(AdministrativeApproval.nominees))
+            .where(AdministrativeApproval.id == payload.administrative_approval_id)
+        )
+        aa = aa_res.scalar_one_or_none()
+        if not aa:
+            raise HTTPException(status_code=400, detail="Invalid Administrative Approval reference.")
+        if aa.status != "Administrative Approval Granted":
+            raise HTTPException(status_code=400, detail="Administrative Approval is not granted yet.")
+        if aa.budget_file_id not in selected_file_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected budget file does not match the budget file of the Administrative Approval."
+            )
+
+
     if not payload.items:
         payload = payload.model_copy(
             update={
@@ -258,19 +281,19 @@ async def _persist_pr(
         if not item_data:
             raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
             
-        # Enforce locked quantity to budget file quantity
-        if item_data.quantity is not None and item_data.quantity != bm.quantity:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Quantity for budget file {bm.file_no} ({item_data.quantity}) does not match the allocated budget quantity ({bm.quantity})."
-            )
-        item_qty = bm.quantity
+        # Allow override of locked quantity by user specified quantity
+        item_qty = item_data.quantity if (item_data and item_data.quantity is not None) else bm.quantity
         item_est_total = item_qty * bm.unit_cost
         
-        if item_est_total > bm.available_balance:
+        # If this budget file has a linked AA that has committed budget, add it back for validation
+        effective_available = bm.available_balance
+        if aa and aa.budget_file_id == fid:
+            effective_available += aa.total_cost
+
+        if item_est_total > effective_available:
             raise HTTPException(
                 status_code=422,
-                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{bm.available_balance:,.2f}."
+                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{effective_available:,.2f}."
             )
         total_amount += item_est_total
 
@@ -376,12 +399,19 @@ async def _persist_pr(
         faculty1_id = dept.expert1_id
         faculty2_id = dept.expert2_id
         faculty3_id = dept.director_faculty_id
+
+    committee_nominee_ids = None
+    if aa and aa.nominees:
+        committee_nominee_ids = [nom.nominee_id for nom in aa.nominees]
+
     if selected_file_ids:
         primary_budget = budget_by_id.get(selected_file_ids[0])
         if primary_budget:
             faculty1_id = primary_budget.expert1_id or faculty1_id
             faculty2_id = primary_budget.expert2_id or faculty2_id
             faculty3_id = primary_budget.director_faculty_id or faculty3_id
+            if not committee_nominee_ids and primary_budget.nominee_ids:
+                committee_nominee_ids = list(primary_budget.nominee_ids)
 
     merged_form_data = payload.form_data or {}
     merged_form_data.update({
@@ -435,6 +465,8 @@ async def _persist_pr(
         faculty1_id=faculty1_id,
         faculty2_id=faculty2_id,
         faculty3_id=faculty3_id,
+        administrative_approval_id=payload.administrative_approval_id,
+        committee_nominee_ids=committee_nominee_ids,
     )
     db.add(pr)
     await db.flush()
@@ -448,8 +480,8 @@ async def _persist_pr(
         if not item_data:
             raise HTTPException(status_code=400, detail=f"Missing item details for budget file {fid}")
 
-        # Enforce locked quantity to budget file quantity
-        item_qty = bm.quantity
+        # Allow override of locked quantity by user specified quantity
+        item_qty = item_data.quantity if (item_data and item_data.quantity is not None) else bm.quantity
         item_est_total = item_qty * bm.unit_cost
 
         item = PurchaseRequestItem(
@@ -1302,7 +1334,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                 await db.refresh(step, ["role"])
                 is_hod_step = (step.user_group == "hod") or (step.role and step.role.group_key == "hod")
                 
-            if phase and phase.phase_name == "Administrative Approval" and is_hod_step:
+            if phase and phase.phase_name in ("Indent and Detailed Tech Specification", "Administrative Approval") and is_hod_step:
                 # Prioritize overrides passed in the request body
                 body_faculty1 = body.get("faculty1_id")
                 body_faculty2 = body.get("faculty2_id")
@@ -1350,7 +1382,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
         if pr.flow:
             phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id))
             phase = phase_res.scalar_one_or_none()
-            if phase and phase.phase_name == "Administrative Approval":
+            if phase and phase.phase_name in ("Indent and Detailed Tech Specification", "Administrative Approval"):
                 body_faculty3 = body.get("faculty3_id")
                 if body_faculty3:
                     pr.faculty3_id = body_faculty3
@@ -1528,17 +1560,15 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         return
 
     elif step.user_type == "tech_evaluation":
-        from app.services.tech_committee import resolve_tech_committee_ids, sync_tech_committee_to_pr
+        from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids, sync_tech_committee_to_pr
         await sync_tech_committee_to_pr(db, pr)
-        _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
-
-        committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
-        if any(x is None for x in committee_ids):
+        if not await is_tech_committee_configured(db, pr):
             raise HTTPException(
                 status_code=400,
                 detail="The technical evaluation committee is not fully configured on the budget file. "
                        "Assign Expert 1, Expert 2, and Director nominee before proceeding.",
             )
+        committee_ids = await get_tech_committee_member_ids(db, pr)
 
         # Must be one of the committee members
         if user.id not in committee_ids:
@@ -1598,16 +1628,14 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         if step.user_type != "tech_evaluation":
             raise HTTPException(status_code=403, detail="Evaluator can only submit evaluation when it is their workflow step")
 
-        from app.services.tech_committee import resolve_tech_committee_ids, sync_tech_committee_to_pr
+        from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids, sync_tech_committee_to_pr
         await sync_tech_committee_to_pr(db, pr)
-        _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
-
-        committee_ids = [pr.initiator_id, expert1_id, expert2_id, director_faculty_id]
-        if any(x is None for x in committee_ids):
+        if not await is_tech_committee_configured(db, pr):
             raise HTTPException(
                 status_code=400,
                 detail="The technical evaluation committee is not fully configured on the budget file.",
             )
+        committee_ids = await get_tech_committee_member_ids(db, pr)
 
         if user.id not in committee_ids:
             raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
@@ -2067,13 +2095,12 @@ async def add_technical_eval(
 
     # Auto-advance when every committee member has signed (same request as /advance after submit)
     from app.services.flow_engine import FlowEngineService
-    from app.services.tech_committee import dedupe_committee_ids, resolve_tech_committee_ids, sync_tech_committee_to_pr
+    from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids, sync_tech_committee_to_pr
     await sync_tech_committee_to_pr(db, pr)
-    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
     since = pr.te_initiated_at or pr.created_at or datetime.min
     await db.refresh(pr, ["history", "flow"])
-    if not any(x is None for x in (expert1_id, expert2_id, director_faculty_id)):
-        required_ids = set(dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id))
+    if await is_tech_committee_configured(db, pr):
+        required_ids = set(await get_tech_committee_member_ids(db, pr))
         approved_ids = {
             h.current_approver_id for h in pr.history
             if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
