@@ -156,7 +156,7 @@ export const AdministrativeApprovalsListPage: React.FC = () => {
           { 
             key: 'pending', 
             label: 'Pending', 
-            count: approvals.filter((aa: any) => aa.status !== 'Administrative Approval Granted' && aa.status !== 'Rejected' && !aa.status.toLowerCase().includes('returned')).length,
+            count: approvals.filter((aa: any) => (aa.status || '') !== 'Administrative Approval Granted' && (aa.status || '') !== 'Rejected' && !(aa.status || '').toLowerCase().includes('returned')).length,
             color: 'border-blue-500 text-blue-700',
             bg: 'bg-blue-50 text-blue-700' 
           },
@@ -170,7 +170,7 @@ export const AdministrativeApprovalsListPage: React.FC = () => {
           { 
             key: 'returned', 
             label: 'Returned', 
-            count: approvals.filter((aa: any) => aa.status.toLowerCase().includes('returned')).length,
+            count: approvals.filter((aa: any) => (aa.status || '').toLowerCase().includes('returned')).length,
             color: 'border-amber-500 text-amber-700',
             bg: 'bg-amber-50 text-amber-800' 
           },
@@ -276,7 +276,7 @@ export const AdministrativeApprovalsListPage: React.FC = () => {
               ))}
               {filteredApprovals.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-slate-500 text-sm font-medium">
+                  <td colSpan={10} className="text-center py-10 text-slate-500 text-sm font-medium">
                     No Administrative Approval requests found.
                   </td>
                 </tr>

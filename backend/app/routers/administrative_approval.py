@@ -260,7 +260,8 @@ async def list_aas(
         .join(BudgetMaster, AdministrativeApproval.budget_file_id == BudgetMaster.id)
         .options(
             selectinload(AdministrativeApproval.pi).selectinload(User.department),
-            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year)
+            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
+            selectinload(AdministrativeApproval.nominees)
         )
     )
     
@@ -364,6 +365,12 @@ async def list_aas(
           'quantity': aa.quantity,
           'attachment_path': aa.attachment_path,
           'attachment_url': f"/static/uploads/{aa.attachment_path}" if aa.attachment_path else None,
+          'nominees': [{
+              'id': nom.id,
+              'nominee_id': nom.nominee_id,
+              'step_order': nom.step_order,
+              'status': nom.status
+          } for nom in aa.nominees] if aa.nominees else [],
       })
         
     return serialized

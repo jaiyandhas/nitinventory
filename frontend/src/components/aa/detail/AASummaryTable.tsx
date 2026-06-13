@@ -286,138 +286,254 @@ export const AASummaryTable: React.FC<AASummaryTableProps> = ({ aa, formatCurren
         </div>
       )}
 
-      {/* Signature Grid */}
-      <div className="bg-white border border-slate-300 rounded-xl p-6 space-y-6">
-        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2">
-          Approval Signatures & Sign-offs
-        </h3>
+      {/* Signature & Workflow Stage Tracker Table */}
+      {(() => {
+        const piAction = aa.history?.find((h: any) => h.approver_role === 'PI');
+        const hodAction = aa.history?.find((h: any) => h.approver_role.toLowerCase().includes('hod'));
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {/* 1. Initiator (PI) Signature */}
-          <div className="border border-slate-200 rounded p-4 flex flex-col justify-between h-40 bg-slate-50/50">
-            <div className="text-center">
-              {aa.pi_signature_url ? (
-                <img src={aa.pi_signature_url} alt="PI Signature" className="h-10 object-contain mx-auto mb-2" />
-              ) : (
-                <div className="h-10 flex items-center justify-center text-slate-400 text-xs italic mb-2">Signed Digitally</div>
-              )}
-              <div className="border-t border-slate-200 pt-1">
-                <p className="font-bold text-slate-800 text-xs">{aa.budget_info?.pi_name || '—'}</p>
-                <p className="text-[10px] text-slate-500 font-semibold">{aa.pi_designation || 'Faculty'}</p>
-                <p className="text-[10px] text-slate-400 font-medium">Dept: {aa.pi_dept || '-'}</p>
-              </div>
-            </div>
-            <div className="text-center text-[9px] text-slate-500 font-bold border-t border-slate-100 pt-1">
-              Initiated on: {aa.created_at ? new Date(aa.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+        const subsequentActions = aa.history?.filter((h: any) => 
+          !h.approver_role.toLowerCase().includes('hod') && 
+          h.approver_role !== 'PI' && 
+          !h.approver_role.toLowerCase().includes('nominee')
+        ) || [];
+
+        const rows: any[] = [];
+
+        // 1. PI
+        rows.push({
+          step: '1',
+          role: 'Purchase Indentor (PI)',
+          officer: aa.budget_info?.pi_name || aa.pi_name || '—',
+          status: 'Submitted',
+          signatureUrl: aa.pi_signature_url,
+          date: aa.created_at,
+          remarks: piAction?.remarks || 'Initiated procurement request',
+        });
+
+        // 2. HOD
+        let hodStatus = 'Awaiting';
+        if (hodAction) {
+          hodStatus = hodAction.status;
+        } else if (aa.pending_with?.toLowerCase() === 'hod') {
+          hodStatus = 'Pending';
+        }
+        rows.push({
+          step: '2',
+          role: 'Head of Department (HOD)',
+          officer: hodAction?.approver_name || (aa.pending_with?.toLowerCase() === 'hod' ? 'Pending Action' : 'Head of Department'),
+          status: hodStatus,
+          signatureUrl: hodAction?.signature_url,
+          date: hodAction?.acted_at,
+          remarks: hodAction?.remarks || '—',
+        });
+
+        // 3. Nominees
+        let nomineeOffset = 3;
+        if (aa.nominees && aa.nominees.length > 0) {
+          aa.nominees.forEach((nom: any, idx: number) => {
+            let nomStatus = nom.status;
+            if (nomStatus === 'Pending' && aa.pending_with?.toLowerCase() === `nominee ${nom.step_order}`) {
+              nomStatus = 'Pending';
+            } else if (nomStatus === 'Pending') {
+              nomStatus = 'Awaiting';
+            }
+            rows.push({
+              step: `${nomineeOffset + idx}`,
+              role: `Committee Nominee ${nom.step_order} (${nom.nominee_dept || '-'})`,
+              officer: nom.nominee_name || 'Nominee',
+              status: nomStatus,
+              signatureUrl: nom.signature_url,
+              date: nom.acted_at,
+              remarks: nom.remarks || '—',
+            });
+          });
+          nomineeOffset += aa.nominees.length;
+        }
+
+        // 4. Subsequent roles
+        const adpdAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('adpd') || h.approver_role.toLowerCase().includes('dean'));
+        const directorAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('director') || h.approver_role.toLowerCase().includes('apex'));
+        const spAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('sp') || h.approver_role.toLowerCase().includes('stores'));
+        const faAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('fa') || h.approver_role.toLowerCase().includes('finance'));
+        const iaAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('ia') || h.approver_role.toLowerCase().includes('audit'));
+
+        // ADPD Row
+        let adpdStatus = 'Awaiting';
+        if (adpdAction) {
+          adpdStatus = adpdAction.status;
+        } else if (aa.pending_with?.toLowerCase() === 'adpd') {
+          adpdStatus = 'Pending';
+        }
+        rows.push({
+          step: `${nomineeOffset}`,
+          role: 'Associate Dean (ADPD) / Dean',
+          officer: adpdAction?.approver_name || (aa.pending_with?.toLowerCase() === 'adpd' ? 'Pending Action' : 'ADPD / Dean'),
+          status: adpdStatus,
+          signatureUrl: adpdAction?.signature_url,
+          date: adpdAction?.acted_at,
+          remarks: adpdAction?.remarks || '—',
+        });
+        nomineeOffset += 1;
+
+        // Stores & Purchase
+        if (spAction || aa.pending_with?.toLowerCase() === 'sp' || aa.pending_with?.toLowerCase().includes('stores')) {
+          let spStatus = 'Awaiting';
+          if (spAction) spStatus = spAction.status;
+          else if (aa.pending_with?.toLowerCase() === 'sp' || aa.pending_with?.toLowerCase().includes('stores')) spStatus = 'Pending';
+          rows.push({
+            step: `${nomineeOffset}`,
+            role: 'DR/AR (Stores & Purchase)',
+            officer: spAction?.approver_name || 'Stores Section',
+            status: spStatus,
+            signatureUrl: spAction?.signature_url,
+            date: spAction?.acted_at,
+            remarks: spAction?.remarks || '—',
+          });
+          nomineeOffset += 1;
+        }
+
+        // Finance & Accounts
+        if (faAction || aa.pending_with?.toLowerCase() === 'fa' || aa.pending_with?.toLowerCase().includes('finance')) {
+          let faStatus = 'Awaiting';
+          if (faAction) faStatus = faAction.status;
+          else if (aa.pending_with?.toLowerCase() === 'fa' || aa.pending_with?.toLowerCase().includes('finance')) faStatus = 'Pending';
+          rows.push({
+            step: `${nomineeOffset}`,
+            role: 'DR/AR (Finance & Accounts)',
+            officer: faAction?.approver_name || 'Finance Section',
+            status: faStatus,
+            signatureUrl: faAction?.signature_url,
+            date: faAction?.acted_at,
+            remarks: faAction?.remarks || '—',
+          });
+          nomineeOffset += 1;
+        }
+
+        // Internal Audit
+        if (iaAction || aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) {
+          let iaStatus = 'Awaiting';
+          if (iaAction) iaStatus = iaAction.status;
+          else if (aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) iaStatus = 'Pending';
+          rows.push({
+            step: `${nomineeOffset}`,
+            role: 'Internal Auditor (IA)',
+            officer: iaAction?.approver_name || 'Audit Section',
+            status: iaStatus,
+            signatureUrl: iaAction?.signature_url,
+            date: iaAction?.acted_at,
+            remarks: iaAction?.remarks || '—',
+          });
+          nomineeOffset += 1;
+        }
+
+        // Director Row
+        let directorStatus = 'Awaiting';
+        if (directorAction) {
+          directorStatus = directorAction.status;
+        } else if (aa.pending_with?.toLowerCase() === 'director') {
+          directorStatus = 'Pending';
+        }
+        rows.push({
+          step: `${nomineeOffset}`,
+          role: 'Director (Competent Authority)',
+          officer: directorAction?.approver_name || (aa.pending_with?.toLowerCase() === 'director' ? 'Pending Action' : 'Director'),
+          status: directorStatus,
+          signatureUrl: directorAction?.signature_url,
+          date: directorAction?.acted_at,
+          remarks: directorAction?.remarks || '—',
+        });
+
+        const getStatusBadge = (status: string) => {
+          const s = status.toLowerCase();
+          if (s === 'approved' || s === 'submitted' || s === 'completed') {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-250">
+                Approved
+              </span>
+            );
+          }
+          if (s === 'pending') {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                Pending Action
+              </span>
+            );
+          }
+          if (s === 'returned') {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-250">
+                Returned
+              </span>
+            );
+          }
+          if (s === 'rejected') {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-950 border border-rose-300">
+                Rejected
+              </span>
+            );
+          }
+          return (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-400 border border-slate-200">
+              Awaiting
+            </span>
+          );
+        };
+
+        return (
+          <div className="bg-white border border-slate-300 rounded-xl p-6 space-y-4">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2">
+              Section (b) – Approval Signatures & Workflow Tracker
+            </h3>
+            
+            <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold uppercase tracking-wider text-[9px]">
+                    <th className="px-3 py-3 text-center w-12 border-r border-slate-200">Step</th>
+                    <th className="px-4 py-3 border-r border-slate-200">Authority / Role</th>
+                    <th className="px-4 py-3 border-r border-slate-200">Designated Officer</th>
+                    <th className="px-4 py-3 border-r border-slate-200">Action / Status</th>
+                    <th className="px-4 py-3 border-r border-slate-200 text-center w-36">Signature</th>
+                    <th className="px-4 py-3 border-r border-slate-200 text-center w-36">Date &amp; Time</th>
+                    <th className="px-4 py-3">Remarks / Comments</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {rows.map((row, idx) => (
+                    <tr key={idx} className={`${row.status === 'Pending' ? 'bg-amber-50/20 font-medium' : row.status === 'Awaiting' ? 'text-slate-400 bg-slate-50/10' : 'hover:bg-slate-50/30 text-slate-800'}`}>
+                      <td className="px-3 py-3 text-center font-bold text-slate-500 border-r border-slate-200">{row.step}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 border-r border-slate-200">{row.role}</td>
+                      <td className="px-4 py-3 border-r border-slate-200 font-semibold">{row.officer}</td>
+                      <td className="px-4 py-3 border-r border-slate-200">{getStatusBadge(row.status)}</td>
+                      <td className="px-4 py-3 border-r border-slate-200 text-center">
+                        {row.signatureUrl ? (
+                          <img 
+                            src={row.signatureUrl.startsWith('http') ? row.signatureUrl : `${window.location.origin}${row.signatureUrl}`} 
+                            alt="Signature" 
+                            className="h-8 object-contain mx-auto mix-blend-multiply" 
+                          />
+                        ) : (row.status === 'Approved' || row.status === 'Submitted' || row.status === 'Completed') ? (
+                          <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-250">
+                            Signed Digitally
+                          </span>
+                        ) : (
+                          <span className="text-slate-350 font-light">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 border-r border-slate-200 text-center font-mono text-[10px]">
+                        {row.date ? new Date(row.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-650 italic leading-relaxed whitespace-pre-wrap">{row.remarks}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-
-          {/* 2. HOD Signature */}
-          {(() => {
-            const hodAction = aa.history?.find((h: any) => h.approver_role.toLowerCase().includes('hod') && h.status === 'Approved');
-            const isPendingHOD = aa.pending_with?.toLowerCase() === 'hod';
-            return (
-              <div className="border border-slate-200 rounded p-4 flex flex-col justify-between h-40 bg-slate-50/50">
-                <div className="text-center">
-                  {hodAction?.signature_url ? (
-                    <img src={hodAction.signature_url} alt="HOD Signature" className="h-10 object-contain mx-auto mb-2" />
-                  ) : isPendingHOD ? (
-                    <div className="h-10 flex items-center justify-center text-amber-700 text-xs font-bold mb-2">Awaiting HOD Approval</div>
-                  ) : hodAction ? (
-                    <div className="h-10 flex items-center justify-center text-slate-400 text-xs italic mb-2">Signed Digitally</div>
-                  ) : (
-                    <div className="h-10 flex items-center justify-center text-slate-300 text-xs italic mb-2">—</div>
-                  )}
-                  <div className="border-t border-slate-200 pt-1">
-                    <p className="font-bold text-slate-800 text-xs">
-                      {hodAction ? hodAction.approver_name : isPendingHOD ? 'Pending Action' : 'Head of Department'}
-                    </p>
-                    <p className="text-[10px] text-slate-500 font-semibold">Head of Department</p>
-                    <p className="text-[10px] text-slate-400 font-medium">Dept: {aa.pi_dept || '-'}</p>
-                  </div>
-                </div>
-                <div className="text-center text-[9px] text-slate-500 font-bold border-t border-slate-100 pt-1">
-                  {hodAction?.acted_at ? `Approved on: ${new Date(hodAction.acted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : '—'}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* 3. Nominees Signatures */}
-          {aa.nominees?.map((nom: any) => {
-            const isPendingNom = nom.status === 'Pending';
-            return (
-              <div key={nom.id} className="border border-slate-200 rounded p-4 flex flex-col justify-between h-40 bg-slate-50/50">
-                <div className="text-center">
-                  {nom.signature_url ? (
-                    <img src={nom.signature_url} alt={`${nom.nominee_name} Signature`} className="h-10 object-contain mx-auto mb-2" />
-                  ) : isPendingNom ? (
-                    <div className="h-10 flex items-center justify-center text-amber-700 text-xs font-bold mb-2">Awaiting Nominee {nom.step_order} Action</div>
-                  ) : nom.status === 'Approved' ? (
-                    <div className="h-10 flex items-center justify-center text-slate-400 text-xs italic mb-2">Signed Digitally</div>
-                  ) : (
-                    <div className="h-10 flex items-center justify-center text-rose-700 text-xs font-bold mb-2">{nom.status}</div>
-                  )}
-                  <div className="border-t border-slate-200 pt-1">
-                    <p className="font-bold text-slate-800 text-xs">{nom.nominee_name}</p>
-                    <p className="text-[10px] text-slate-500 font-semibold">Committee Nominee {nom.step_order}</p>
-                    <p className="text-[10px] text-slate-400 font-medium">Dept: {nom.nominee_dept || '-'}</p>
-                  </div>
-                </div>
-                <div className="text-center text-[9px] text-slate-500 font-bold border-t border-slate-100 pt-1">
-                  {nom.acted_at ? `Approved on: ${new Date(nom.acted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : '—'}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* 4. Subsequent standard approvers (ADPD, Dean, Director etc.) */}
-          {aa.history?.filter((h: any) => 
-            !h.approver_role.toLowerCase().includes('hod') && 
-            h.approver_role !== 'PI' && 
-            !h.approver_role.toLowerCase().includes('nominee') &&
-            h.status === 'Approved'
-          ).map((h: any) => (
-            <div key={h.id} className="border border-slate-200 rounded p-4 flex flex-col justify-between h-40 bg-slate-50/50">
-              <div className="text-center">
-                {h.signature_url ? (
-                  <img src={h.signature_url} alt={`${h.approver_role} Signature`} className="h-10 object-contain mx-auto mb-2" />
-                ) : (
-                  <div className="h-10 flex items-center justify-center text-slate-400 text-xs italic mb-2">Signed Digitally</div>
-                )}
-                <div className="border-t border-slate-200 pt-1">
-                  <p className="font-bold text-slate-800 text-xs">{h.approver_name}</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">{h.approver_role}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">Office: {h.approver_dept || '-'}</p>
-                </div>
-              </div>
-              <div className="text-center text-[9px] text-slate-500 font-bold border-t border-slate-100 pt-1">
-                Approved on: {h.acted_at ? new Date(h.acted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-              </div>
-            </div>
-          ))}
-          
-          {/* 5. Awaiting subsequent standard roles */}
-          {(() => {
-            const currentPending = aa.pending_with?.toLowerCase();
-            if (currentPending && !currentPending.startsWith('nominee') && currentPending !== 'hod' && currentPending !== 'pi') {
-              return (
-                <div className="border border-slate-200 border-dashed rounded p-4 flex flex-col justify-between h-40 bg-slate-50/20">
-                  <div className="text-center">
-                    <div className="h-10 flex items-center justify-center text-slate-400 text-xs font-semibold mb-2">Awaiting {aa.pending_with} Action</div>
-                    <div className="border-t border-slate-200 pt-1">
-                      <p className="font-bold text-slate-400 text-xs">Pending Decision</p>
-                      <p className="text-[10px] text-slate-400 font-semibold">{aa.pending_with}</p>
-                    </div>
-                  </div>
-                  <div className="text-center text-[9px] text-slate-400 font-semibold">—</div>
-                </div>
-              );
-            }
-            return null;
-          })()}
-        </div>
-      </div>
+        );
+      })()}
     </div>
   );
 };
+
