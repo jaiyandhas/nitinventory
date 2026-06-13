@@ -80,6 +80,14 @@ async def create_aa(
     justification = body.get("justification")
     quantity = body.get("quantity", 1)
     
+    # Compliance fields
+    item_category = body.get("item_category")
+    stock_availability = body.get("stock_availability")
+    present_stock = body.get("present_stock")
+    prev_file_no = body.get("prev_file_no")
+    justification_procurement = body.get("justification_procurement")
+    generic_specification_declaration = body.get("generic_specification_declaration", False)
+    
     # Validation Rules
     if not budget_file_id:
         raise HTTPException(status_code=400, detail="Budget File is required.")
@@ -103,6 +111,21 @@ async def create_aa(
         raise HTTPException(status_code=400, detail="Mode of Procurement is mandatory.")
     if not justification or not justification.strip():
         raise HTTPException(status_code=400, detail="Justification for Purchase is mandatory.")
+        
+    # Compliance validation
+    if not item_category or item_category.strip() not in ("Assets", "Consumables"):
+        raise HTTPException(status_code=400, detail="Item Category (Assets/Consumables) is mandatory.")
+    if not stock_availability or stock_availability.strip() not in ("Yes", "No"):
+        raise HTTPException(status_code=400, detail="Stock availability (Yes/No) is mandatory.")
+    if stock_availability == "Yes":
+        if not present_stock or not present_stock.strip():
+            raise HTTPException(status_code=400, detail="Present stock is required when stock is available.")
+        if not prev_file_no or not prev_file_no.strip():
+            raise HTTPException(status_code=400, detail="Reference of previous file number is required when stock is available.")
+        if not justification_procurement or not justification_procurement.strip():
+            raise HTTPException(status_code=400, detail="Justification for present procurement is required when stock is available.")
+    if not generic_specification_declaration:
+        raise HTTPException(status_code=400, detail="You must check and confirm the generic specification declaration.")
         
     # Retrieve budget master with lock
     result = await db.execute(
@@ -172,7 +195,13 @@ async def create_aa(
         gst_amount=gst_amount,
         total_cost=total_cost,
         status="Submitted",
-        pending_with=None
+        pending_with=None,
+        item_category=item_category,
+        stock_availability=stock_availability,
+        present_stock=present_stock,
+        prev_file_no=prev_file_no,
+        justification_procurement=justification_procurement,
+        generic_specification_declaration=generic_specification_declaration
     )
     db.add(aa)
     await db.flush()
@@ -365,6 +394,22 @@ async def list_aas(
           'quantity': aa.quantity,
           'attachment_path': aa.attachment_path,
           'attachment_url': f"/static/uploads/{aa.attachment_path}" if aa.attachment_path else None,
+          'item_category': aa.item_category or '-',
+          'stock_availability': aa.stock_availability or '-',
+          'present_stock': aa.present_stock or '-',
+          'prev_file_no': aa.prev_file_no or '-',
+          'justification_procurement': aa.justification_procurement or '-',
+          'basis_of_estimation_path': aa.basis_of_estimation_path,
+          'basis_of_estimation_url': f"/static/uploads/{aa.basis_of_estimation_path}" if aa.basis_of_estimation_path else None,
+          'gem_non_availability_path': aa.gem_non_availability_path,
+          'gem_non_availability_url': f"/static/uploads/{aa.gem_non_availability_path}" if aa.gem_non_availability_path else None,
+          'authority_approval_path': aa.authority_approval_path,
+          'authority_approval_url': f"/static/uploads/{aa.authority_approval_path}" if aa.authority_approval_path else None,
+          'pac_dept_cert_path': aa.pac_dept_cert_path,
+          'pac_dept_cert_url': f"/static/uploads/{aa.pac_dept_cert_path}" if aa.pac_dept_cert_path else None,
+          'pac_vendor_cert_path': aa.pac_vendor_cert_path,
+          'pac_vendor_cert_url': f"/static/uploads/{aa.pac_vendor_cert_path}" if aa.pac_vendor_cert_path else None,
+          'generic_specification_declaration': aa.generic_specification_declaration,
           'nominees': [{
               'id': nom.id,
               'nominee_id': nom.nominee_id,
@@ -451,6 +496,24 @@ async def get_aa_detail(
         "pi_signature_url": f"/static/uploads/{aa.pi.signature_path}" if aa.pi.signature_path else None,
         "pi_dept": aa.pi.department.short_code if aa.pi.department else "-",
         "pi_designation": aa.pi.designation or "-",
+        
+        # Compliance properties
+        "item_category": aa.item_category or "-",
+        "stock_availability": aa.stock_availability or "-",
+        "present_stock": aa.present_stock or "-",
+        "prev_file_no": aa.prev_file_no or "-",
+        "justification_procurement": aa.justification_procurement or "-",
+        "basis_of_estimation_path": aa.basis_of_estimation_path,
+        "basis_of_estimation_url": f"/static/uploads/{aa.basis_of_estimation_path}" if aa.basis_of_estimation_path else None,
+        "gem_non_availability_path": aa.gem_non_availability_path,
+        "gem_non_availability_url": f"/static/uploads/{aa.gem_non_availability_path}" if aa.gem_non_availability_path else None,
+        "authority_approval_path": aa.authority_approval_path,
+        "authority_approval_url": f"/static/uploads/{aa.authority_approval_path}" if aa.authority_approval_path else None,
+        "pac_dept_cert_path": aa.pac_dept_cert_path,
+        "pac_dept_cert_url": f"/static/uploads/{aa.pac_dept_cert_path}" if aa.pac_dept_cert_path else None,
+        "pac_vendor_cert_path": aa.pac_vendor_cert_path,
+        "pac_vendor_cert_url": f"/static/uploads/{aa.pac_vendor_cert_path}" if aa.pac_vendor_cert_path else None,
+        "generic_specification_declaration": aa.generic_specification_declaration,
         
         # Section 1: Budget Information
         "budget_info": {
@@ -1058,6 +1121,7 @@ async def action_aa(
 async def upload_aa_attachment(
     aa_id: int,
     file: UploadFile = File(...),
+    doc_type: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1105,7 +1169,19 @@ async def upload_aa_attachment(
     with open(abs_path, "wb") as fh:
         fh.write(content)
         
-    aa.attachment_path = rel_path
+    if doc_type == "basis_of_estimation":
+        aa.basis_of_estimation_path = rel_path
+    elif doc_type == "gem_non_availability":
+        aa.gem_non_availability_path = rel_path
+    elif doc_type == "authority_approval":
+        aa.authority_approval_path = rel_path
+    elif doc_type == "pac_dept_cert":
+        aa.pac_dept_cert_path = rel_path
+    elif doc_type == "pac_vendor_cert":
+        aa.pac_vendor_cert_path = rel_path
+    else:
+        aa.attachment_path = rel_path
+
     db.add(aa)
     await db.commit()
     

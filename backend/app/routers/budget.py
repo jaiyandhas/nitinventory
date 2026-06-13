@@ -399,6 +399,28 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
     b.allocated_initiator_id = allocated_initiator_id
     b.nominee_ids = nominee_ids
 
+    # Trigger notifications for assigned roles
+    from app.models.notification import Notification
+    
+    if allocated_initiator_id:
+        notif_init = Notification(
+            user_id=allocated_initiator_id,
+            title="Assigned as Purchase Initiator",
+            message=f"You have been assigned as the Purchase Initiator for budget file {b.file_no} ({b.item_name}).",
+            link="/budget"
+        )
+        db.add(notif_init)
+        
+    if nominee_ids:
+        for nid in nominee_ids:
+            notif_nom = Notification(
+                user_id=nid,
+                title="Nominated to Technical Committee",
+                message=f"You have been nominated as a Technical Committee member for budget file {b.file_no} ({b.item_name}).",
+                link="/budget"
+            )
+            db.add(notif_nom)
+
     # Sync committee to active PRs still in AA, Tendering, or TE step 1
     from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
     from app.models.budget import PhaseManager
@@ -456,6 +478,16 @@ async def assign_budget_director_committee(budget_id: int, body: dict, db: Async
             raise HTTPException(status_code=400, detail="Nominated user not found")
 
     b.director_faculty_id = director_faculty_id
+
+    if director_faculty_id:
+        from app.models.notification import Notification
+        notif_dir = Notification(
+            user_id=director_faculty_id,
+            title="Nominated as Director Nominee",
+            message=f"You have been nominated as the Director Nominee for budget file {b.file_no} ({b.item_name}).",
+            link="/budget"
+        )
+        db.add(notif_dir)
 
     from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow
     from app.models.budget import PhaseManager

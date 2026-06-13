@@ -718,15 +718,15 @@ class PDFService:
                 self.charges = parent_aa.gst_rate
                 self.item_description = parent_aa.item_description
                 self.budget_file = parent_aa.budget_file
-                self.availability = "No"
-                self.present_stock = "-"
-                self.previous_file_no_reference = "-"
-                self.justification_for_procurement = parent_aa.justification
+                self.availability = parent_aa.stock_availability or "No"
+                self.present_stock = parent_aa.present_stock or "-"
+                self.previous_file_no_reference = parent_aa.prev_file_no or "-"
+                self.justification_for_procurement = parent_aa.justification_procurement or parent_aa.justification
                 self.warranty = 0
                 self.delivery_period = 0
                 self.tech_specs_text = "-"
                 self.budget_file_id = parent_aa.budget_file_id
-                self.requirement_type = "-"
+                self.requirement_type = parent_aa.item_category or "-"
                 self.installation_required = False
                 self.site_readiness = "-"
                 self.site_readiness_remarks = "-"
@@ -752,13 +752,14 @@ class PDFService:
                 self.items = items
                 self.history = history
                 self.procurement = MockProcurement()
+                self.basis_of_estimate_details = "Attached" if parent_aa.basis_of_estimation_path else "Budgetary Quote/previous purchase/Market survey"
                 self.form_data = {
                     "laboratory_office": "-",
                     "source_of_fund": parent_aa.budget_file.source_of_fund,
                     "source_of_fund_project_code": parent_aa.budget_file.project_code or "",
                     "bog_resolution_no": "-",
                     "fc_resolution_no": "-",
-                    "item_category": "-",
+                    "item_category": parent_aa.item_category or "-",
                     "mii_clause": "Not Applicable",
                     "mii_justification": "-",
                     "purpose_justification": parent_aa.justification,

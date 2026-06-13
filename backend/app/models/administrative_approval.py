@@ -32,6 +32,18 @@ class AdministrativeApproval(Base):
     pending_with: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # "HOD", "ADPD", "Director", or None
     attachment_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     
+    item_category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    stock_availability: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    present_stock: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    prev_file_no: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    justification_procurement: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    basis_of_estimation_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    gem_non_availability_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    authority_approval_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    pac_dept_cert_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    pac_vendor_cert_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    generic_specification_declaration: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     

@@ -23,8 +23,8 @@ export const BudgetFormPage: React.FC = () => {
   const [expenditureCategory, setExpenditureCategory] = useState<string>('CAPEX');
   const [category, setCategory] = useState<string>('computer');
   const [itemName, setItemName] = useState<string>('');
-  const [unitCost, setUnitCost] = useState<number>(0);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [unitCost, setUnitCost] = useState<number | string>(0);
+  const [quantity, setQuantity] = useState<number | string>(1);
   const [fileNo, setFileNo] = useState<string>('');
   const [isAutoRolling, setIsAutoRolling] = useState<boolean>(!isEdit);
   // isTemporary: HODs always create temporary budget files; Dean/Admin can opt-in
@@ -323,7 +323,7 @@ export const BudgetFormPage: React.FC = () => {
     }
   };
 
-  const totalCost = unitCost * quantity;
+  const totalCost = Number(unitCost || 0) * Number(quantity || 0);
 
   if (authLoading || loadingDepts || loadingFys || loadingCats || (isEdit && loadingDetail)) {
     return (
@@ -575,7 +575,11 @@ export const BudgetFormPage: React.FC = () => {
                   min="0"
                   step="0.01"
                   value={unitCost}
-                  onChange={(e) => setUnitCost(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setUnitCost(val === '' ? '' : Number(val));
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   required
                   className="input-field w-full font-mono text-sm"
                 />
@@ -590,7 +594,11 @@ export const BudgetFormPage: React.FC = () => {
                   min="1"
                   step="1"
                   value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setQuantity(val === '' ? '' : Number(val));
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   required
                   className="input-field w-full font-mono text-sm"
                 />

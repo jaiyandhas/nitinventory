@@ -20,6 +20,25 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
   const [justification, setJustification] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
+  // Compliance states
+  const [itemCategory, setItemCategory] = useState<'Assets' | 'Consumables'>('Assets');
+  const [stockAvailable, setStockAvailable] = useState<'Yes' | 'No'>('No');
+  const [presentStock, setPresentStock] = useState('');
+  const [prevFileNo, setPrevFileNo] = useState('');
+  const [justificationProcurement, setJustificationProcurement] = useState('');
+  
+  // Files
+  const [basisOfEstimationFile, setBasisOfEstimationFile] = useState<File | null>(null);
+  const [gemNonAvailabilityFile, setGemNonAvailabilityFile] = useState<File | null>(null);
+  const [authorityApprovalFile, setAuthorityApprovalFile] = useState<File | null>(null);
+  const [pacDeptCertFile, setPacDeptCertFile] = useState<File | null>(null);
+  const [pacVendorCertFile, setPacVendorCertFile] = useState<File | null>(null);
+
+  // Declarations
+  const [declGeneric, setDeclGeneric] = useState(false);
+  const [declSpecifications, setDeclSpecifications] = useState(false);
+  const [declMii, setDeclMii] = useState(false);
+
   // Fetch PI budget allocations
   const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
     queryKey: ['pi-budget-files'],
@@ -87,6 +106,49 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
       return;
     }
 
+    // Compliance validation
+    if (stockAvailable === 'Yes') {
+      if (!presentStock.trim()) {
+        toast.error('Present stock quantity is mandatory.');
+        return;
+      }
+      if (!prevFileNo.trim()) {
+        toast.error('Reference of previous file number is mandatory.');
+        return;
+      }
+      if (!justificationProcurement.trim()) {
+        toast.error('Justification for present procurement is mandatory.');
+        return;
+      }
+    }
+
+    // Attachment validation
+    if (!basisOfEstimationFile) {
+      toast.error('Basis of estimation file must be attached.');
+      return;
+    }
+    if (modeOfProcurement !== 'GeM' && !gemNonAvailabilityFile) {
+      toast.error('GeM Non-Availability report is required for procurement outside GeM.');
+      return;
+    }
+    const needsAuthorityApproval = ['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)'].includes(modeOfProcurement);
+    if (needsAuthorityApproval && !authorityApprovalFile) {
+      toast.error('Basic approval from competent authority must be attached.');
+      return;
+    }
+    if (modeOfProcurement === 'PAC') {
+      if (!pacDeptCertFile || !pacVendorCertFile) {
+        toast.error('Both department and vendor PAC certificates must be attached.');
+        return;
+      }
+    }
+
+    // Declarations validation
+    if (!declGeneric || !declSpecifications || !declMii) {
+      toast.error('You must read and check all compliance declarations.');
+      return;
+    }
+
     if (!nomineeSelectionCompleted) {
       toast.error('HOD Nominee selection is not completed. Please contact your HOD.');
       return;
@@ -106,10 +168,34 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
         gst_rate: gstRate,
         mode_of_procurement: modeOfProcurement,
         justification,
+        item_category: itemCategory,
+        stock_availability: stockAvailable,
+        present_stock: stockAvailable === 'Yes' ? presentStock : null,
+        prev_file_no: stockAvailable === 'Yes' ? prevFileNo : null,
+        justification_procurement: stockAvailable === 'Yes' ? justificationProcurement : null,
+        generic_specification_declaration: declGeneric && declSpecifications && declMii,
       });
       const newAaId = response.data.id;
-      if (attachmentFile && newAaId) {
-        await aaApi.uploadAttachment(newAaId, attachmentFile);
+      if (newAaId) {
+        // Sequentially upload all files
+        if (attachmentFile) {
+          await aaApi.uploadAttachment(newAaId, attachmentFile);
+        }
+        if (basisOfEstimationFile) {
+          await aaApi.uploadAttachment(newAaId, basisOfEstimationFile, 'basis_of_estimation');
+        }
+        if (gemNonAvailabilityFile) {
+          await aaApi.uploadAttachment(newAaId, gemNonAvailabilityFile, 'gem_non_availability');
+        }
+        if (authorityApprovalFile) {
+          await aaApi.uploadAttachment(newAaId, authorityApprovalFile, 'authority_approval');
+        }
+        if (pacDeptCertFile) {
+          await aaApi.uploadAttachment(newAaId, pacDeptCertFile, 'pac_dept_cert');
+        }
+        if (pacVendorCertFile) {
+          await aaApi.uploadAttachment(newAaId, pacVendorCertFile, 'pac_vendor_cert');
+        }
       }
       toast.success('Administrative Approval request submitted successfully.');
       queryClient.invalidateQueries({ queryKey: ['administrative-approvals'] });
@@ -229,9 +315,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   <span className="font-bold text-slate-800">{formatCurrency(selectedBudget.available_amount)}</span>
                 </div>
               </div>
-            </div>
-
-            {/* Section 2 - Item Information */}
+            </div>            {/* Section 2 - Item Information */}
             <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
                 Section 2 – Item Information
@@ -284,14 +368,113 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <span className="text-xs font-semibold text-slate-500 block mb-1">GST Amount (Auto Calculated)</span>
+                    <span className="text-xs font-semibold text-slate-505 block mb-1">GST Amount (Auto Calculated)</span>
                     <span className="font-bold text-slate-800 text-sm block pt-2">{formatCurrency(calculatedValues.gstAmount)}</span>
                   </div>
                   <div>
-                    <span className="text-xs font-semibold text-slate-500 block mb-1">Total Cost (Auto Calculated)</span>
+                    <span className="text-xs font-semibold text-slate-505 block mb-1">Total Cost (Auto Calculated)</span>
                     <span className="font-bold text-slate-800 text-sm block pt-2">{formatCurrency(calculatedValues.totalCost)}</span>
                   </div>
                 </div>
+
+                {/* Compliance additions under Section 2 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-2">Category of Item <span className="text-rose-500">*</span></label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="itemCategory"
+                          value="Assets"
+                          checked={itemCategory === 'Assets'}
+                          onChange={() => setItemCategory('Assets')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Assets
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="itemCategory"
+                          value="Consumables"
+                          checked={itemCategory === 'Consumables'}
+                          onChange={() => setItemCategory('Consumables')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Consumables
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-2">Availability of Item in the Department? <span className="text-rose-500">*</span></label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="stockAvailable"
+                          value="Yes"
+                          checked={stockAvailable === 'Yes'}
+                          onChange={() => setStockAvailable('Yes')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Yes
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="stockAvailable"
+                          value="No"
+                          checked={stockAvailable === 'No'}
+                          onChange={() => setStockAvailable('No')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        No
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {stockAvailable === 'Yes' && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Present Stock Quantity <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 5 units, 10 liters"
+                          value={presentStock}
+                          onChange={(e) => setPresentStock(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
+                          required={stockAvailable === 'Yes'}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Reference of Previous File No. <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. NITT/F.No.025/CS/2025-26"
+                          value={prevFileNo}
+                          onChange={(e) => setPrevFileNo(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
+                          required={stockAvailable === 'Yes'}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Justification for Present Procurement <span className="text-rose-500">*</span></label>
+                      <textarea
+                        rows={2}
+                        placeholder="Enter reasoning why additional procurement is required despite existing stock..."
+                        value={justificationProcurement}
+                        onChange={(e) => setJustificationProcurement(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
+                        required={stockAvailable === 'Yes'}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -310,13 +493,13 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                     required
                   >
                     <option value="GeM">GeM</option>
-                    <option value="Open Tender">Open Tender</option>
-                    <option value="Limited Tender">Limited Tender</option>
-                    <option value="Proprietary Purchase">Proprietary Purchase</option>
-                    <option value="Single Tender">Single Tender</option>
-                    <option value="Rate Contract">Rate Contract</option>
-                    <option value="Local Purchase">Local Purchase</option>
-                    <option value="Other">Other</option>
+                    <option value="CPPP">CPPP</option>
+                    <option value="Direct Purchase (GFR 154)">Direct Purchase (GFR 154)</option>
+                    <option value="Committee purchase (GFR 155)">Committee purchase (GFR 155)</option>
+                    <option value="PAC">PAC</option>
+                    <option value="Limited Tender Enquiry">Limited Tender Enquiry</option>
+                    <option value="Nomination">Nomination</option>
+                    <option value="Global Tender Enquiry">Global Tender Enquiry</option>
                   </select>
                 </div>
                 <div>
@@ -333,35 +516,158 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 4 – Supporting Attachment */}
+            {/* Section 4 – Compliance Documents Upload */}
             <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
-                Section 4 – Supporting Attachment (Optional)
+                Section 4 – Compliance Documents Upload
               </h2>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Upload Supporting Document (PDF, PNG, JPG, JPEG under 10MB)
-                </label>
-                <input
-                  type="file"
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      const file = e.target.files[0];
-                      if (file.size > 10 * 1024 * 1024) {
-                        toast.error('File size must be under 10MB.');
-                        e.target.value = '';
-                      } else {
-                        setAttachmentFile(file);
-                      }
-                    } else {
-                      setAttachmentFile(null);
-                    }
-                  }}
-                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                />
+              <div className="space-y-4">
+                {/* Basis of Estimation */}
+                <div className="border border-slate-100 rounded-lg p-3 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-800">Basis of Estimation <span className="text-rose-500">*</span></label>
+                    <p className="text-xs text-slate-500">Please attach a budgetary quote, previous purchase reference, or market survey.</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    onChange={(e) => setBasisOfEstimationFile(e.target.files?.[0] || null)}
+                    className="text-xs text-slate-600"
+                    required
+                  />
+                </div>
+
+                {/* GeM Non-Availability (Required for non-GeM) */}
+                {modeOfProcurement !== 'GeM' && (
+                  <div className="border border-rose-100 rounded-lg p-3 bg-rose-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-800">GeM Non-Availability Report <span className="text-rose-500">*</span></label>
+                      <p className="text-xs text-rose-600/90 font-medium">Mandatory. Please enclose the GeM Non-Availability report for procurement outside GeM.</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => setGemNonAvailabilityFile(e.target.files?.[0] || null)}
+                      className="text-xs text-slate-600"
+                      required={modeOfProcurement !== 'GeM'}
+                    />
+                  </div>
+                )}
+
+                {/* Competent Authority Approval (for PAC, Nomination, Committee, Direct Purchase) */}
+                {['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)'].includes(modeOfProcurement) && (
+                  <div className="border border-amber-100 rounded-lg p-3 bg-amber-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-800">Competent Authority Basic Approval <span className="text-rose-500">*</span></label>
+                      <p className="text-xs text-amber-800/90 font-medium">Mandatory. A separate basic approval from the competent authority has to be attached.</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => setAuthorityApprovalFile(e.target.files?.[0] || null)}
+                      className="text-xs text-slate-600"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* PAC Certificates */}
+                {modeOfProcurement === 'PAC' && (
+                  <div className="border border-indigo-100 rounded-lg p-4 bg-indigo-50/20 space-y-3">
+                    <span className="block text-xs font-bold text-indigo-800 uppercase tracking-wider">PAC Compliance Certificates</span>
+                    
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-3 border-indigo-100/50">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-800">PAC Certificate from Department <span className="text-rose-500">*</span></label>
+                        <p className="text-xs text-slate-500">Enclose the official PAC certificate from the indenting department.</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onChange={(e) => setPacDeptCertFile(e.target.files?.[0] || null)}
+                        className="text-xs text-slate-600"
+                        required={modeOfProcurement === 'PAC'}
+                      />
+                    </div>
+
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-1">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-800">PAC Certificate from Vendor <span className="text-rose-500">*</span></label>
+                        <p className="text-xs text-slate-500">Enclose the proprietary certificate supplied by the OEM/Vendor.</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onChange={(e) => setPacVendorCertFile(e.target.files?.[0] || null)}
+                        className="text-xs text-slate-600"
+                        required={modeOfProcurement === 'PAC'}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Supporting Attachment */}
+                <div className="border border-slate-100 rounded-lg p-3 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-800 font-normal">Other Supporting Attachment (Optional)</label>
+                    <p className="text-xs text-slate-500">Any other brochure, spec sheet, or document.</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    className="text-xs text-slate-600"
+                  />
+                </div>
               </div>
             </div>
+
+            {/* Section 5 – Compliance Declarations */}
+            <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
+                Section 5 – Compliance Declarations
+              </h2>
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
+                  <input
+                    type="checkbox"
+                    checked={declGeneric}
+                    onChange={(e) => setDeclGeneric(e.target.checked)}
+                    className="mt-1 accent-[#1a3a6b] shrink-0"
+                    required
+                  />
+                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
+                    Certified that the description of the item/equipment/service indented is generic and does not indicate any particular trade mark, trade name and brand. The specifications are generic and broad based without having any restrictive parameters.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
+                  <input
+                    type="checkbox"
+                    checked={declSpecifications}
+                    onChange={(e) => setDeclSpecifications(e.target.checked)}
+                    className="mt-1 accent-[#1a3a6b] shrink-0"
+                    required
+                  />
+                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
+                    Certified that the technical specifications of the item/equipment/service are generic and broad based and are enclosed herewith.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
+                  <input
+                    type="checkbox"
+                    checked={declMii}
+                    onChange={(e) => setDeclMii(e.target.checked)}
+                    className="mt-1 accent-[#1a3a6b] shrink-0"
+                    required
+                  />
+                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
+                    Certified that the item/equipment/service conforms to GFR provisions and local content requirements under Make In India policy.
+                  </span>
+                </label>
+              </div>
+            </div>    </div>
 
             {/* Submission Controls */}
             <div className="flex gap-4 items-center justify-end">

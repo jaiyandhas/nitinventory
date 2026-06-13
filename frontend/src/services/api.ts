@@ -221,14 +221,29 @@ export const aaApi = {
   list: (params?: { status?: string; source_of_fund?: string; search?: string; sort_by?: string; sort_order?: string }) =>
     api.get('/administrative-approvals', { params }),
   get: (id: number) => api.get(`/administrative-approvals/${id}`),
-  create: (data: { budget_file_id: number; quantity: number; item_description: string; gst_rate: number; mode_of_procurement: string; justification: string }) =>
-    api.post('/administrative-approvals', data),
+  create: (data: {
+    budget_file_id: number;
+    quantity: number;
+    item_description: string;
+    gst_rate: number;
+    mode_of_procurement: string;
+    justification: string;
+    item_category: string;
+    stock_availability: string;
+    present_stock?: string | null;
+    prev_file_no?: string | null;
+    justification_procurement?: string | null;
+    generic_specification_declaration: boolean;
+  }) => api.post('/administrative-approvals', data),
   action: (id: number, action: 'Approve' | 'Send Back' | 'Reject', remarks: string, extraData?: any) =>
     api.post(`/administrative-approvals/${id}/action`, { action, remarks, ...extraData }),
-  uploadAttachment: (id: number, file: File) => {
+  uploadAttachment: (id: number, file: File, docType?: string) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post(`/administrative-approvals/${id}/attachment`, formData, {
+    const url = docType 
+      ? `/administrative-approvals/${id}/attachment?doc_type=${docType}`
+      : `/administrative-approvals/${id}/attachment`;
+    return api.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
