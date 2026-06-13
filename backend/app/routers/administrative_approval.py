@@ -59,6 +59,79 @@ async def resolve_next_step(db: AsyncSession, aa: AdministrativeApproval, steps:
     return None
 
 
+async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_procurement: str) -> list:
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    from app.models.budget import PurchaseCategory, ProcurementManager
+    from sqlalchemy import select, and_
+    from sqlalchemy.orm import selectinload
+    
+    mop_res = await db.execute(select(ProcurementManager))
+    mops = mop_res.scalars().all()
+    matching_mop = None
+    for m in mops:
+        if m.name.lower() in mode_of_procurement.lower() or mode_of_procurement.lower() in m.name.lower():
+            matching_mop = m
+            break
+            
+    proc_id = matching_mop.id if matching_mop else (mops[0].id if mops else None)
+    
+    cat = None
+    if proc_id:
+        cat_stmt = select(PurchaseCategory).where(
+            and_(
+                PurchaseCategory.procurement_id == proc_id,
+                PurchaseCategory.min_amount <= total_cost,
+                PurchaseCategory.max_amount >= total_cost,
+                PurchaseCategory.is_active == True,
+            )
+        )
+        cat_res = await db.execute(cat_stmt)
+        cat = cat_res.scalars().first()
+        
+    steps = []
+    if cat and proc_id:
+        steps_res = await db.execute(
+            select(AdministrativeApprovalWorkflow)
+            .options(selectinload(AdministrativeApprovalWorkflow.role))
+            .where(
+                and_(
+                    AdministrativeApprovalWorkflow.category_id == cat.id,
+                    AdministrativeApprovalWorkflow.procurement_id == proc_id,
+                    AdministrativeApprovalWorkflow.purchase_type == "department",
+                    AdministrativeApprovalWorkflow.is_enabled == True,
+                )
+            )
+            .order_by(AdministrativeApprovalWorkflow.step_order)
+        )
+        steps = steps_res.scalars().all()
+        
+    if not steps:
+        steps_res = await db.execute(
+            select(AdministrativeApprovalWorkflow)
+            .options(selectinload(AdministrativeApprovalWorkflow.role))
+            .where(
+                and_(
+                    AdministrativeApprovalWorkflow.category_id == None,
+                    AdministrativeApprovalWorkflow.is_enabled == True,
+                )
+            )
+            .order_by(AdministrativeApprovalWorkflow.step_order)
+        )
+        steps = steps_res.scalars().all()
+        
+    if not steps:
+        from app.models.user import RoleManager
+        roles_res = await db.execute(select(RoleManager).where(RoleManager.value.in_(["hod", "adpd", "director"])))
+        roles_dict = {r.value: r for r in roles_res.scalars()}
+        steps = [
+            AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles_dict.get("hod").id if roles_dict.get("hod") else None, role=roles_dict.get("hod")),
+            AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles_dict.get("adpd").id if roles_dict.get("adpd") else None, role=roles_dict.get("adpd")),
+            AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles_dict.get("director").id if roles_dict.get("director") else None, role=roles_dict.get("director")),
+        ]
+        
+    return steps
+
+
 @router.post("")
 async def create_aa(
     body: dict,
@@ -172,16 +245,7 @@ async def create_aa(
         )
         
     # Query workflow steps to set initial status and pending_with
-    from app.models.administrative_approval import AdministrativeApprovalWorkflow
-    steps_res = await db.execute(
-        select(AdministrativeApprovalWorkflow)
-        .options(selectinload(AdministrativeApprovalWorkflow.role))
-        .where(AdministrativeApprovalWorkflow.is_enabled == True)
-        .order_by(AdministrativeApprovalWorkflow.step_order)
-    )
-    steps = steps_res.scalars().all()
-    if not steps:
-        raise HTTPException(status_code=400, detail="Administrative Approval workflow has no configured steps.")
+    steps = await _get_aa_workflow_steps(db, total_cost, mode_of_procurement)
 
     # Create the AdministrativeApproval request
     aa = AdministrativeApproval(
@@ -589,16 +653,7 @@ async def action_aa(
         raise HTTPException(status_code=400, detail="This request has already been finalized and locked.")
         
     # Validate authorization based on status and pending_with using database configured steps
-    from app.models.administrative_approval import AdministrativeApprovalWorkflow
-    steps_res = await db.execute(
-        select(AdministrativeApprovalWorkflow)
-        .options(selectinload(AdministrativeApprovalWorkflow.role))
-        .where(AdministrativeApprovalWorkflow.is_enabled == True)
-        .order_by(AdministrativeApprovalWorkflow.step_order)
-    )
-    steps = steps_res.scalars().all()
-    if not steps:
-        raise HTTPException(status_code=400, detail="Administrative Approval workflow has no configured steps.")
+    steps = await _get_aa_workflow_steps(db, aa.total_cost, aa.mode_of_procurement)
 
     current_idx = -1
     if aa.pending_with:

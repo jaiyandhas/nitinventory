@@ -221,24 +221,27 @@ async def _persist_pr(
 
     selected_file_ids = payload.selected_file_ids
 
-    # Validate administrative approval if provided
-    aa = None
-    if payload.administrative_approval_id:
-        aa_res = await db.execute(
-            select(AdministrativeApproval)
-            .options(selectinload(AdministrativeApproval.nominees))
-            .where(AdministrativeApproval.id == payload.administrative_approval_id)
+    # Validate administrative approval (mandatory)
+    if not payload.administrative_approval_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Administrative Approval is mandatory before creating a Purchase Request."
         )
-        aa = aa_res.scalar_one_or_none()
-        if not aa:
-            raise HTTPException(status_code=400, detail="Invalid Administrative Approval reference.")
-        if aa.status != "Administrative Approval Granted":
-            raise HTTPException(status_code=400, detail="Administrative Approval is not granted yet.")
-        if aa.budget_file_id not in selected_file_ids:
-            raise HTTPException(
-                status_code=400,
-                detail="Selected budget file does not match the budget file of the Administrative Approval."
-            )
+    aa_res = await db.execute(
+        select(AdministrativeApproval)
+        .options(selectinload(AdministrativeApproval.nominees))
+        .where(AdministrativeApproval.id == payload.administrative_approval_id)
+    )
+    aa = aa_res.scalar_one_or_none()
+    if not aa:
+        raise HTTPException(status_code=400, detail="Invalid Administrative Approval reference.")
+    if aa.status != "Administrative Approval Granted":
+        raise HTTPException(status_code=400, detail="Administrative Approval is not granted yet.")
+    if aa.budget_file_id not in selected_file_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Selected budget file does not match the budget file of the Administrative Approval."
+        )
 
 
     if not payload.items:
@@ -360,6 +363,16 @@ async def _persist_pr(
     procurement = proc_result.scalar_one_or_none()
     if not procurement:
         raise HTTPException(status_code=400, detail="Invalid procurement method")
+
+    # Ensure AA mode of procurement matches the selected procurement method (mop)
+    if aa:
+        mopName = aa.mode_of_procurement.lower()
+        procName = procurement.name.lower()
+        if not (mopName in procName or procName in mopName):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Selected Procurement Method '{procurement.name}' does not match the Administrative Approval's Mode of Procurement '{aa.mode_of_procurement}'."
+            )
 
     # Validate dynamic form_data if procurement method has a schema
     if procurement.form_schema:

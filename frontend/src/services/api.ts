@@ -213,7 +213,7 @@ export const adminApi = {
   deleteAaWorkflow: (id: number) => api.delete(`/admin/aa-workflows/${id}`),
   toggleAaWorkflow: (id: number) => api.patch(`/admin/aa-workflows/${id}/toggle`, {}),
   reorderAaWorkflows: (data: object) => api.post('/admin/aa-workflows/reorder', data),
-  resetAaWorkflow: () => api.post('/admin/aa-workflows/reset-defaults'),
+  resetAaWorkflow: (data: { category_id: number; procurement_id: number; purchase_type: string }) => api.post('/admin/aa-workflows/reset-defaults', data),
 };
 
 // Administrative Approvals

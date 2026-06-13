@@ -181,6 +181,9 @@ async def create_tables():
         # Dynamic Nominees and workflows migrations
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS nominee_ids JSONB;"))
         await conn.execute(text("ALTER TABLE administrative_approval_workflows ADD COLUMN IF NOT EXISTS skip_condition VARCHAR(500);"))
+        await conn.execute(text("ALTER TABLE administrative_approval_workflows ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES purchase_categories(id) ON DELETE CASCADE;"))
+        await conn.execute(text("ALTER TABLE administrative_approval_workflows ADD COLUMN IF NOT EXISTS procurement_id INTEGER REFERENCES procurement_managers(id) ON DELETE CASCADE;"))
+        await conn.execute(text("ALTER TABLE administrative_approval_workflows ADD COLUMN IF NOT EXISTS purchase_type VARCHAR(50);"))
         await conn.execute(text("ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS committee_nominee_ids JSONB;"))
 
         # Create notifications table
@@ -213,17 +216,52 @@ async def seed():
         if has_users and not RESET_DEMO_DATA:
             aa_wf_check = await db.execute(select(AdministrativeApprovalWorkflow).limit(1))
             if aa_wf_check.scalar_one_or_none() is None:
+                print("  Seeding default category-specific Administrative Approval workflow steps...")
                 roles_res = await db.execute(select(RoleManager))
                 roles = {r.value: r for r in roles_res.scalars()}
-                default_aa_steps = [
-                    AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
-                    AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
-                    AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
-                ]
-                for s in default_aa_steps:
-                    db.add(s)
-                await db.commit()
-                print("  Seeded 3 default Administrative Approval workflow steps in already populated DB.")
+                from app.models.budget import PurchaseCategory, ProcurementManager
+                proc_res = await db.execute(select(ProcurementManager))
+                procs = proc_res.scalars().all()
+                cat_res = await db.execute(select(PurchaseCategory))
+                cats = cat_res.scalars().all()
+                seeded_aa_count = 0
+                for ptype in ("department", "office"):
+                    for proc in procs:
+                        for cat in cats:
+                            if cat.procurement_id != proc.id:
+                                continue
+                            default_aa_steps = [
+                                AdministrativeApprovalWorkflow(
+                                    category_id=cat.id,
+                                    procurement_id=proc.id,
+                                    purchase_type=ptype,
+                                    step_order=1,
+                                    user_group="HOD",
+                                    role_id=roles["hod"].id
+                                ),
+                                AdministrativeApprovalWorkflow(
+                                    category_id=cat.id,
+                                    procurement_id=proc.id,
+                                    purchase_type=ptype,
+                                    step_order=2,
+                                    user_group="ADPD",
+                                    role_id=roles["adpd"].id
+                                ),
+                                AdministrativeApprovalWorkflow(
+                                    category_id=cat.id,
+                                    procurement_id=proc.id,
+                                    purchase_type=ptype,
+                                    step_order=3,
+                                    user_group="Director",
+                                    role_id=roles["director"].id
+                                ),
+                            ]
+                            for s in default_aa_steps:
+                                db.add(s)
+                            seeded_aa_count += len(default_aa_steps)
+                if seeded_aa_count:
+                    await db.commit()
+                    print(f"  Seeded {seeded_aa_count} default category-specific Administrative Approval workflow steps in already populated DB.")
             print("✓ Database is already populated. Skipping seeding to preserve user data.")
             return
 
@@ -839,18 +877,48 @@ async def seed():
             print("  All workflow hierarchies are already present.")
 
         # 8.5. Seed Administrative Approval Workflow
-        aa_wf_check = await db.execute(select(AdministrativeApprovalWorkflow).limit(1))
-        if aa_wf_check.scalar_one_or_none() is None:
-            print("  Seeding default Administrative Approval workflow...")
-            default_aa_steps = [
-                AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
-                AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
-                AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
-            ]
-            for s in default_aa_steps:
-                db.add(s)
+        await db.execute(text("DELETE FROM administrative_approval_workflows;"))
+        print("  Seeding default category-specific Administrative Approval workflow steps...")
+        seeded_aa_count = 0
+        for ptype in ("department", "office"):
+            for proc in procs:
+                proc_cats = categories.get(proc.id, categories)
+                for cat_key in ("cat1", "cat2", "cat3"):
+                    cat = proc_cats.get(cat_key) if isinstance(proc_cats, dict) else None
+                    if not cat:
+                        continue
+                    default_aa_steps = [
+                        AdministrativeApprovalWorkflow(
+                            category_id=cat.id,
+                            procurement_id=proc.id,
+                            purchase_type=ptype,
+                            step_order=1,
+                            user_group="HOD",
+                            role_id=roles["hod"].id
+                        ),
+                        AdministrativeApprovalWorkflow(
+                            category_id=cat.id,
+                            procurement_id=proc.id,
+                            purchase_type=ptype,
+                            step_order=2,
+                            user_group="ADPD",
+                            role_id=roles["adpd"].id
+                        ),
+                        AdministrativeApprovalWorkflow(
+                            category_id=cat.id,
+                            procurement_id=proc.id,
+                            purchase_type=ptype,
+                            step_order=3,
+                            user_group="Director",
+                            role_id=roles["director"].id
+                        ),
+                    ]
+                    for s in default_aa_steps:
+                        db.add(s)
+                    seeded_aa_count += len(default_aa_steps)
+        if seeded_aa_count:
             await db.flush()
-            print("  Seeded 3 default Administrative Approval workflow steps.")
+            print(f"  Seeded {seeded_aa_count} default Administrative Approval workflow steps.")
 
         # 9. Clear and Reseed Transactional & Budget Data
         if RESET_DEMO_DATA:

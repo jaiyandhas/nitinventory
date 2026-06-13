@@ -74,6 +74,12 @@ export const SettingsPage: React.FC = () => {
     w.purchase_type === selectedPurchaseType
   ).sort((a: any, b: any) => a.step_order - b.step_order);
 
+  const filteredAaWfs = aaWorkflows.filter((w: any) => 
+    w.category_id === selectedCat && 
+    w.procurement_id === selectedProc &&
+    w.purchase_type === selectedPurchaseType
+  ).sort((a: any, b: any) => a.step_order - b.step_order);
+
   React.useEffect(() => {
     if (procs.length > 0 && selectedProc === null) {
       setSelectedProc(procs[0].id);
@@ -168,7 +174,16 @@ export const SettingsPage: React.FC = () => {
   });
 
   const resetAaWfMutation = useMutation({
-    mutationFn: () => adminApi.resetAaWorkflow(),
+    mutationFn: () => {
+      if (!selectedCat || !selectedProc || !selectedPurchaseType) {
+        throw new Error('Please select category, procurement method, and purchase type first.');
+      }
+      return adminApi.resetAaWorkflow({
+        category_id: selectedCat,
+        procurement_id: selectedProc,
+        purchase_type: selectedPurchaseType
+      });
+    },
     onSuccess: () => {
       toast.success('AA Workflows reset to default');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
@@ -409,10 +424,10 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleMoveAa = async (stepId: number, direction: 'up' | 'down') => {
-    const step = aaWorkflows.find((w: any) => w.id === stepId);
+    const step = filteredAaWfs.find((w: any) => w.id === stepId);
     if (!step) return;
 
-    const sortedSteps = [...aaWorkflows].sort((a: any, b: any) => a.step_order - b.step_order);
+    const sortedSteps = [...filteredAaWfs].sort((a: any, b: any) => a.step_order - b.step_order);
     const index = sortedSteps.findIndex((w: any) => w.id === stepId);
     if (index === -1) return;
 
@@ -598,7 +613,36 @@ export const SettingsPage: React.FC = () => {
 
       {activeTab === 'workflows' && (
         <div className="space-y-6">
-          {/* Standalone Administrative Approval Workflow - Common for All */}
+          {/* Purchase Constraints Selector */}
+          <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Procurement Method</label>
+                <select value={selectedProc || ''} onChange={(e) => setSelectedProc(Number(e.target.value))} className="input-field w-full">
+                  {procs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Category</label>
+                <div className="flex flex-wrap gap-2">
+                  {categories.filter((c: any) => c.procurement_id === selectedProc).map((c: any) => (
+                    <button key={c.id} onClick={() => setSelectedCat(c.id)} className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${selectedCat === c.id ? 'bg-[#1a3a6b] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      {c.title} {c.requirement_type ? `(${c.requirement_type})` : '(Any Requirement)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Type</label>
+                <select value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'department' | 'office')} className="input-field w-full">
+                  <option value="department">Departmental Purchase</option>
+                  <option value="office">Office Purchase</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Standalone Administrative Approval Workflow */}
           <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl animate-fadeIn">
             <div className="flex justify-between items-center mb-4">
               <div>
@@ -618,10 +662,13 @@ export const SettingsPage: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    const nextOrder = aaWorkflows.length > 0 ? Math.max(...aaWorkflows.map((w: any) => w.step_order)) + 1 : 1;
+                    const nextOrder = filteredAaWfs.length > 0 ? Math.max(...filteredAaWfs.map((w: any) => w.step_order)) + 1 : 1;
                     createAaWfMutation.mutate({
                       user_group: 'Dean',
-                      step_order: nextOrder
+                      step_order: nextOrder,
+                      category_id: selectedCat,
+                      procurement_id: selectedProc,
+                      purchase_type: selectedPurchaseType
                     });
                   }}
                   className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 font-semibold"
@@ -632,12 +679,12 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="space-y-3 mt-6">
-              {aaWorkflows.length === 0 ? (
+              {filteredAaWfs.length === 0 ? (
                 <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-300 rounded">
-                  No administrative approval steps configured. Please click "Reset to Default" or "Add Step".
+                  No administrative approval steps configured for this combination. Please click "Reset to Default" or "Add Step".
                 </p>
               ) : (
-                [...aaWorkflows].sort((a: any, b: any) => a.step_order - b.step_order).map((wf: any, idx: number) => (
+                [...filteredAaWfs].sort((a: any, b: any) => a.step_order - b.step_order).map((wf: any, idx: number) => (
                   <div key={wf.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-xs hover:shadow-sm transition-all duration-200">
                     <div className="flex items-center gap-4 flex-1">
                       <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${wf.is_enabled ? 'bg-[#1a3a6b] text-white' : 'bg-slate-300 text-slate-600'}`}>
@@ -705,7 +752,7 @@ export const SettingsPage: React.FC = () => {
                                 });
                               }
                             }}
-                            className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:border-[#1a3a6b] font-mono text-slate-705"
+                            className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:border-[#1a3a6b] font-mono text-slate-700"
                           />
                         </div>
                       </div>
@@ -732,7 +779,7 @@ export const SettingsPage: React.FC = () => {
                         </button>
                         <button
                           onClick={() => handleMoveAa(wf.id, 'down')}
-                          disabled={idx === aaWorkflows.length - 1}
+                          disabled={idx === filteredAaWfs.length - 1}
                           className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30 disabled:hover:text-slate-400"
                           title="Move Down"
                         >
@@ -758,48 +805,21 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Category</label>
-                <div className="flex flex-wrap gap-2">
-                  {categories.filter((c: any) => c.procurement_id === selectedProc).map((c: any) => (
-                    <button key={c.id} onClick={() => setSelectedCat(c.id)} className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${selectedCat === c.id ? 'bg-[#1a3a6b] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                      {c.title} {c.requirement_type ? `(${c.requirement_type})` : '(Any Requirement)'}
-                    </button>
-                  ))}
+            {/* Approval Steps - full width */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-lg font-bold text-slate-800">Approval Steps</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => { if(confirm('Reset all steps for this combination to default?')) resetWfMutation.mutate(); }} className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 px-3">
+                    Reset to Default
+                  </button>
+                  <button onClick={() => { setWfAssigneeType('role'); setIsWfModalOpen(true); }} className="btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3">
+                    <Plus size={16} /> Add Step
+                  </button>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Procurement Method</label>
-                <select value={selectedProc || ''} onChange={(e) => setSelectedProc(Number(e.target.value))} className="input-field w-full">
-                  {procs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Type</label>
-                <select value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'department' | 'office')} className="input-field w-full">
-                  <option value="department">Departmental Purchase</option>
-                  <option value="office">Office Purchase</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="border-t border-slate-200 pt-6">
-              {/* Approval Steps - full width */}
               <div className="space-y-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-lg font-bold text-slate-800">Approval Steps</h3>
-                  <div className="flex gap-2">
-                    <button onClick={() => { if(confirm('Reset all steps for this combination to default?')) resetWfMutation.mutate(); }} className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 px-3">
-                      Reset to Default
-                    </button>
-                    <button onClick={() => { setWfAssigneeType('role'); setIsWfModalOpen(true); }} className="btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3">
-                      <Plus size={16} /> Add Step
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
                   {filteredWfs.length === 0 ? (
                     <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-300 rounded">No workflow defined for this combination.</p>
                   ) : (

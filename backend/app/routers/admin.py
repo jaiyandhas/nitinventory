@@ -2240,17 +2240,26 @@ async def list_aa_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
     result = await db.execute(
         select(AdministrativeApprovalWorkflow)
         .options(selectinload(AdministrativeApprovalWorkflow.role))
-        .order_by(AdministrativeApprovalWorkflow.step_order)
+        .order_by(
+            AdministrativeApprovalWorkflow.category_id,
+            AdministrativeApprovalWorkflow.procurement_id,
+            AdministrativeApprovalWorkflow.purchase_type,
+            AdministrativeApprovalWorkflow.step_order,
+        )
     )
     steps = result.scalars().all()
     return [
         {
             "id": s.id,
+            "category_id": s.category_id,
+            "procurement_id": s.procurement_id,
+            "purchase_type": s.purchase_type,
             "step_order": s.step_order,
             "role_id": s.role_id,
             "role_name": s.role.name if s.role else None,
             "user_group": s.user_group,
             "is_enabled": s.is_enabled,
+            "skip_condition": s.skip_condition,
         }
         for s in steps
     ]
@@ -2263,12 +2272,25 @@ async def create_aa_workflow(body: dict, db: AsyncSession = Depends(get_db), _=A
     role_id = body.get("role_id")
     user_group = body.get("user_group")
     step_order = body.get("step_order")
+    category_id = body.get("category_id")
+    procurement_id = body.get("procurement_id")
+    purchase_type = body.get("purchase_type")
+    skip_condition = body.get("skip_condition")
     
     if not user_group:
         raise HTTPException(status_code=400, detail="user_group is required")
         
     if step_order is None:
-        res = await db.execute(select(func.max(AdministrativeApprovalWorkflow.step_order)))
+        res = await db.execute(
+            select(func.max(AdministrativeApprovalWorkflow.step_order))
+            .where(
+                and_(
+                    AdministrativeApprovalWorkflow.category_id == category_id,
+                    AdministrativeApprovalWorkflow.procurement_id == procurement_id,
+                    AdministrativeApprovalWorkflow.purchase_type == purchase_type,
+                )
+            )
+        )
         max_order = res.scalar() or 0
         step_order = max_order + 1
         
@@ -2277,6 +2299,10 @@ async def create_aa_workflow(body: dict, db: AsyncSession = Depends(get_db), _=A
         user_group=user_group,
         step_order=step_order,
         is_enabled=True,
+        category_id=category_id,
+        procurement_id=procurement_id,
+        purchase_type=purchase_type,
+        skip_condition=skip_condition,
     )
     db.add(s)
     await db.commit()
@@ -2299,6 +2325,14 @@ async def update_aa_workflow(step_id: int, body: dict, db: AsyncSession = Depend
         s.step_order = body["step_order"]
     if "is_enabled" in body:
         s.is_enabled = body["is_enabled"]
+    if "category_id" in body:
+        s.category_id = body["category_id"]
+    if "procurement_id" in body:
+        s.procurement_id = body["procurement_id"]
+    if "purchase_type" in body:
+        s.purchase_type = body["purchase_type"]
+    if "skip_condition" in body:
+        s.skip_condition = body["skip_condition"]
         
     await db.commit()
     return {"message": "Workflow step updated"}
@@ -2312,11 +2346,22 @@ async def delete_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _
     if not s:
         raise HTTPException(status_code=404, detail="Step not found")
         
+    cat_id = s.category_id
+    proc_id = s.procurement_id
+    p_type = s.purchase_type
+    
     await db.delete(s)
     
     # Re-normalize step orders
     remaining_res = await db.execute(
         select(AdministrativeApprovalWorkflow)
+        .where(
+            and_(
+                AdministrativeApprovalWorkflow.category_id == cat_id,
+                AdministrativeApprovalWorkflow.procurement_id == proc_id,
+                AdministrativeApprovalWorkflow.purchase_type == p_type,
+            )
+        )
         .order_by(AdministrativeApprovalWorkflow.step_order)
     )
     remaining = remaining_res.scalars().all()
@@ -2357,17 +2402,55 @@ async def reorder_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _
 
 
 @router.post("/aa-workflows/reset-defaults")
-async def reset_aa_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
+async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
     from app.models.administrative_approval import AdministrativeApprovalWorkflow
     from app.models.user import RoleManager
-    await db.execute(text("DELETE FROM administrative_approval_workflows;"))
+    from sqlalchemy import delete
+    
+    category_id = body.get("category_id")
+    procurement_id = body.get("procurement_id")
+    purchase_type = body.get("purchase_type")
+    
+    if not category_id or not procurement_id or not purchase_type:
+        raise HTTPException(status_code=400, detail="category_id, procurement_id, and purchase_type are required")
+        
+    await db.execute(
+        delete(AdministrativeApprovalWorkflow).where(
+            and_(
+                AdministrativeApprovalWorkflow.category_id == category_id,
+                AdministrativeApprovalWorkflow.procurement_id == procurement_id,
+                AdministrativeApprovalWorkflow.purchase_type == purchase_type,
+            )
+        )
+    )
     
     roles_res = await db.execute(select(RoleManager))
     roles = {r.value: r for r in roles_res.scalars()}
     default_aa_steps = [
-        AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles["hod"].id),
-        AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles["adpd"].id),
-        AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles["director"].id),
+        AdministrativeApprovalWorkflow(
+            category_id=category_id,
+            procurement_id=procurement_id,
+            purchase_type=purchase_type,
+            step_order=1,
+            user_group="HOD",
+            role_id=roles["hod"].id
+        ),
+        AdministrativeApprovalWorkflow(
+            category_id=category_id,
+            procurement_id=procurement_id,
+            purchase_type=purchase_type,
+            step_order=2,
+            user_group="ADPD",
+            role_id=roles["adpd"].id
+        ),
+        AdministrativeApprovalWorkflow(
+            category_id=category_id,
+            procurement_id=procurement_id,
+            purchase_type=purchase_type,
+            step_order=3,
+            user_group="Director",
+            role_id=roles["director"].id
+        ),
     ]
     for s in default_aa_steps:
         db.add(s)

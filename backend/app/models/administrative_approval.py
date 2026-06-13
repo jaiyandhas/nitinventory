@@ -96,6 +96,9 @@ class AdministrativeApprovalWorkflow(Base):
     __tablename__ = "administrative_approval_workflows"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("purchase_categories.id", ondelete="CASCADE"), nullable=True)
+    procurement_id: Mapped[Optional[int]] = mapped_column(ForeignKey("procurement_managers.id", ondelete="CASCADE"), nullable=True)
+    purchase_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     step_order: Mapped[int] = mapped_column(Integer, nullable=False)
     role_id: Mapped[Optional[int]] = mapped_column(ForeignKey("role_managers.id"), nullable=True)
     user_group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
