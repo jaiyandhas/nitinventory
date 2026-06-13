@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays, X } from 'lucide-react';
 import { adminApi, budgetApi } from '../../services/api';
 import { queryKeys } from '../../config/queryKeys';
@@ -12,6 +12,8 @@ import { SearchableSelect } from '../../components/common/SearchableSelect';
 export const BudgetPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const setupCommitteeIdParam = searchParams.get('setup_committee_id');
   const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -222,6 +224,16 @@ export const BudgetPage: React.FC = () => {
     }
     setNomineeIds(initialNominees);
   };
+
+  React.useEffect(() => {
+    if (setupCommitteeIdParam && budgets.length > 0) {
+      const budgetId = Number(setupCommitteeIdParam);
+      const budget = budgets.find((b: any) => b.id === budgetId);
+      if (budget) {
+        openCommitteeModal(budget);
+      }
+    }
+  }, [setupCommitteeIdParam, budgets]);
 
   const openDirectorModal = (budget: any) => {
     setSelectedBudgetForDirector(budget);
@@ -463,12 +475,21 @@ export const BudgetPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-3 py-3">
-                        <div className="text-[10px] leading-tight space-y-0.5 max-w-[160px] bg-slate-50 border border-slate-200/60 p-1.5 rounded-md">
+                        <div className={`text-[10px] leading-tight space-y-0.5 max-w-[160px] p-1.5 rounded-md border ${
+                          isHOD && matchesDept && (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id)
+                            ? 'bg-amber-50 border-amber-200/60'
+                            : 'bg-slate-50 border-slate-200/60'
+                        }`}>
                           <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Init:</span> {b.allocated_initiator?.name || '—'}</p>
                           <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 1:</span> {b.expert1?.name || '—'}</p>
                           <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 2:</span> {b.expert2?.name || '—'}</p>
                           <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Dir:</span> {b.director_faculty?.name || '—'}</p>
                         </div>
+                        {isHOD && matchesDept && (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id) && (
+                          <span className="inline-block mt-1 text-[9px] font-bold text-amber-700 bg-amber-100/70 border border-amber-300/60 px-1.5 py-0.5 rounded animate-pulse">
+                            ⚠️ SETUP REQUIRED
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
@@ -490,10 +511,12 @@ export const BudgetPage: React.FC = () => {
                             <button
                               onClick={() => openCommitteeModal(b)}
                               disabled={isFyClosed}
-                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
+                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-all ${
                                 isFyClosed
                                   ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                  : 'text-indigo-650 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
+                                  : (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id)
+                                    ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 border-amber-300 ring-2 ring-amber-150/40 shadow-sm'
+                                    : 'text-indigo-655 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
                               }`}
                               title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
                             >

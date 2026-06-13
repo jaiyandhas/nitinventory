@@ -15,7 +15,7 @@ interface PendingActionItem {
   id: number;
   number: string;
   title: string;
-  type: 'AA' | 'PR';
+  type: 'AA' | 'PR' | 'BUDGET';
   badgeText: string;
   badgeColor: string;
   amount: number;
@@ -63,6 +63,12 @@ export const DashboardPage: React.FC = () => {
     queryKey: queryKeys.inventory.discrepancies,
     queryFn: () => inventoryApi.listDiscrepancies().then(r => r.data),
     enabled: isRole('admin', 'verifier_sp', 'apex_approver'),
+  });
+
+  const { data: budgetFiles = [] } = useQuery({
+    queryKey: queryKeys.budgets.files(),
+    queryFn: () => budgetApi.files().then(r => r.data),
+    enabled: isRole('hod'),
   });
 
   const safeBudget = {
@@ -526,6 +532,31 @@ export const DashboardPage: React.FC = () => {
         });
       }
     });
+
+    // HOD Budget Committee Setup pending actions:
+    if (isRole('hod') && Array.isArray(budgetFiles)) {
+      budgetFiles.forEach((bf: any) => {
+        const needsInitiator = !bf.allocated_initiator_id;
+        const needsCommittee = !bf.expert1_id || !bf.expert2_id;
+        if (needsInitiator || needsCommittee) {
+          actions.push({
+            id: bf.id,
+            number: bf.file_no || `#BUDGET-${bf.id}`,
+            title: `Setup Committee: ${bf.item_name || 'Budget File'}`,
+            type: 'BUDGET',
+            badgeText: 'Committee Setup',
+            badgeColor: 'bg-amber-100 text-amber-800 border border-amber-250',
+            amount: bf.total_allocation,
+            link: `/budget?setup_committee_id=${bf.id}`,
+            actionRequired: needsInitiator && needsCommittee 
+              ? 'Assign a Purchase Initiator and Technical Committee nominees.' 
+              : needsInitiator 
+                ? 'Assign a Purchase Initiator.' 
+                : 'Assign Technical Committee nominees.'
+          });
+        }
+      });
+    }
 
     // Deduplicate
     const seen = new Set();
