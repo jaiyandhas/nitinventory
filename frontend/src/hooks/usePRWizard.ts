@@ -183,19 +183,40 @@ export function usePRWizard() {
   const dismissFileWarning = useCallback(() => setFilesNeedReupload(false), []);
 
   // ── Core state updaters ─────────────────────────────────────────────────────
-  const initItemsFromSelection = useCallback((fileIds: number[], budgetFiles?: BudgetFile[]) => {
+  const initItemsFromSelection = useCallback((fileIds: number[], budgetFiles?: BudgetFile[], approvedAAs?: any[]) => {
     setItems((prev) => {
       const next: Record<number, PRItemFormState> = {};
       for (const id of fileIds) {
+        const existing = prev[id] ?? createEmptyItemState(id);
         let defaultQty = '1';
+        let defaultCharges = existing.charges || '18';
+        let defaultTechSpecs = existing.tech_specs_text || '';
+        let defaultJustification = existing.justification_for_procurement || '';
+
         if (budgetFiles) {
           const file = budgetFiles.find((f) => f.id === id);
           if (file) {
             defaultQty = String(file.quantity || 1);
           }
         }
-        const existing = prev[id] ?? createEmptyItemState(id);
-        next[id] = { ...existing, quantity: defaultQty };
+
+        if (selection.administrativeApprovalId && approvedAAs) {
+          const aa = approvedAAs.find((a) => a.id === selection.administrativeApprovalId && a.budget_file_id === id);
+          if (aa) {
+            defaultQty = String(aa.quantity || 1);
+            defaultCharges = String(aa.gst_rate ?? 18);
+            defaultTechSpecs = aa.item_description || '';
+            defaultJustification = aa.justification || '';
+          }
+        }
+
+        next[id] = {
+          ...existing,
+          quantity: defaultQty,
+          charges: defaultCharges,
+          tech_specs_text: defaultTechSpecs,
+          justification_for_procurement: defaultJustification,
+        };
       }
       return next;
     });
@@ -232,7 +253,7 @@ export function usePRWizard() {
         }));
       }
     }
-  }, []);
+  }, [selection.administrativeApprovalId]);
 
   const updateItem = useCallback((fileId: number, patch: Partial<PRItemFormState>) => {
     setItems((prev) => ({

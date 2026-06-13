@@ -455,6 +455,7 @@ async def get_aa_detail(
             "financial_year": aa.budget_file.financial_year.label,
             "allocated_budget": aa.budget_file.total_allocation,
             "available_budget_balance": aa.budget_file.available_balance,
+            "file_no": aa.budget_file.file_no if aa.budget_file else "-",
             "attachment_path": aa.budget_file.attachment_path,
             "attachment_url": f"/static/uploads/{aa.budget_file.attachment_path}" if aa.budget_file.attachment_path else None,
         },

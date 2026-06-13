@@ -194,6 +194,31 @@ export const DashboardPage: React.FC = () => {
       }
     });
 
+    if (stageKey === 'indent_specs') {
+      const approvedAAsWithNoPR = scopedAAs.filter((aa: any) => {
+        const fileNo = aa.budget_info?.file_no || aa.budget_file?.file_no || aa.file_no || '';
+        const isTemp = fileNo.toUpperCase().startsWith('TEMP');
+        if (isTemp || aa.status !== 'Administrative Approval Granted') return false;
+        const hasPR = scopedPRs.some((pr: any) => pr.administrative_approval_id === aa.id || pr.administrative_approval?.id === aa.id);
+        return !hasPR;
+      });
+      approvedAAsWithNoPR.forEach((aa: any) => {
+        items.push({
+          id: aa.id,
+          number: aa.aa_number !== '-' ? aa.aa_number : `#AA-${aa.id}`,
+          department: aa.pi_department_name || aa.pi_department?.name || 'Central Office',
+          description: aa.item_name || 'Administrative Approval Request',
+          pendingWith: aa.pi_name || 'Faculty (PI)',
+          status: 'AWAITING INDENT',
+          type: 'AA',
+          amount: aa.total_cost,
+          currentStage: 'Indent & Specs (Pending)',
+          pendingSince: formatDate(aa.updated_at || aa.created_at),
+          link: `/pr/create?aa_id=${aa.id}`
+        });
+      });
+    }
+
     scopedPRs.forEach((pr: any) => {
       if (getRequestStage(pr) === stageKey) {
         items.push({
@@ -788,7 +813,7 @@ export const DashboardPage: React.FC = () => {
                         to={item.link}
                         className="inline-flex items-center gap-1 text-[#1a3a6b] hover:text-[#244b8f] font-extrabold hover:underline"
                       >
-                        View Request <ChevronRight size={13} />
+                        {item.type === 'AA' && item.status === 'AWAITING INDENT' ? 'Initiate Indent' : 'View Request'} <ChevronRight size={13} />
                       </Link>
                     </td>
                   </tr>

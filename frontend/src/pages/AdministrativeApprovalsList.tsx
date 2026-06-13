@@ -210,6 +210,7 @@ export const AdministrativeApprovalsListPage: React.FC = () => {
             <thead>
               <tr className="text-xs text-slate-500 border-b border-slate-200 bg-slate-50 uppercase tracking-wider">
                 <th className="text-left px-5 py-4 font-bold">Request / AA No</th>
+                <th className="text-left px-5 py-4 font-bold">File No</th>
                 <th
                   className="text-left px-5 py-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors"
                   onClick={() => handleSort('pi_name')}
@@ -249,6 +250,7 @@ export const AdministrativeApprovalsListPage: React.FC = () => {
                       {aa.aa_number !== '-' ? aa.aa_number : `REQ-${aa.id.toString().padStart(4, '0')}`}
                     </Link>
                   </td>
+                  <td className="px-5 py-4 text-slate-700 font-mono text-xs">{aa.file_no || '—'}</td>
                   <td className="px-5 py-4 text-slate-700 font-semibold">{aa.pi_name}</td>
                   <td className="px-5 py-4 text-slate-600">{aa.department}</td>
                   <td className="px-5 py-4 text-slate-600">

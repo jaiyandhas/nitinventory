@@ -87,9 +87,10 @@ export const StepItemDetails: React.FC<Props> = ({
                   type="number"
                   min={1}
                   required
-                  className="input-field font-medium text-slate-750"
+                  className="input-field font-medium text-slate-750 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-100/50"
                   value={item.quantity || ''}
                   onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
+                  disabled={!!administrativeApprovalId}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
                   Base Cost: <span className="text-slate-700 font-bold">{formatCurrency((Number(item.quantity) || 0) * file.unit_cost)}</span>
@@ -106,9 +107,10 @@ export const StepItemDetails: React.FC<Props> = ({
                   max={100}
                   step={0.01}
                   required
-                  className="input-field"
+                  className="input-field disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-100/50"
                   value={item.charges}
                   onChange={(e) => onUpdate(fid, { charges: e.target.value })}
+                  disabled={!!administrativeApprovalId}
                 />
                 <span className="text-xs text-slate-500 mt-1 block font-medium">
                   GST Amount: <span className="text-slate-700 font-bold">{formatCurrency(((Number(item.quantity) || 0) * file.unit_cost) * (Number(item.charges) || 0) / 100)}</span>

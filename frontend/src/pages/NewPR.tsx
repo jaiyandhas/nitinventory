@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { budgetApi, prApi, aaApi } from '../services/api';
 import { queryKeys } from '../config/queryKeys';
@@ -14,11 +14,13 @@ import { StepReviewSubmit } from '../components/pr-creation/steps/StepReviewSubm
 import { buildPRCreateFormData } from '../utils/prPayload';
 import { AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
+ 
 export const NewPRPage: React.FC = () => {
   const { user } = useAuth();
   const isHod = user?.role?.group_key === 'hod';
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const aaIdParam = searchParams.get('aa_id');
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const wizard = usePRWizard();
@@ -77,6 +79,28 @@ export const NewPRPage: React.FC = () => {
       }
     }
   }, [loadingBudgets, loadingMethods, budgetFiles, procurementMethods, wizard.selection.selectedFileIds, wizard.selection.procurementMethodId, wizard.setSelection]);
+
+  // Auto-select Administrative Approval if passed via query param (e.g. from Active Work Queue)
+  React.useEffect(() => {
+    if (aaIdParam && approvedAAs.length > 0 && procurementMethods.length > 0) {
+      const aaId = Number(aaIdParam);
+      const aa = approvedAAs.find((a: any) => a.id === aaId);
+      if (aa && wizard.selection.administrativeApprovalId !== aaId) {
+        const mopName = aa.mode_of_procurement;
+        const method = procurementMethods.find(
+          (m: any) =>
+            m.name.toLowerCase().includes(mopName.toLowerCase()) ||
+            mopName.toLowerCase().includes(m.name.toLowerCase())
+        );
+        wizard.setSelection({
+          administrativeApprovalId: aaId,
+          selectedFileIds: [aa.budget_file_id],
+          fileCount: 1,
+          procurementMethodId: method ? method.id : null,
+        });
+      }
+    }
+  }, [aaIdParam, approvedAAs, procurementMethods, wizard.selection.administrativeApprovalId, wizard.setSelection]);
 
   // Auto-sync source of fund from selected budget files (including draft restore & async loading)
   React.useEffect(() => {
@@ -138,19 +162,7 @@ export const NewPRPage: React.FC = () => {
         toast.error(err);
         return;
       }
-      wizard.initItemsFromSelection(wizard.selection.selectedFileIds, budgetFiles);
-      if (wizard.selection.administrativeApprovalId) {
-        const aa = approvedAAs.find((a: any) => a.id === wizard.selection.administrativeApprovalId);
-        if (aa) {
-          const budgetFileId = aa.budget_file_id;
-          wizard.updateItem(budgetFileId, {
-            tech_specs_text: aa.item_description,
-            justification_for_procurement: aa.justification,
-            charges: String(aa.gst_rate),
-            quantity: String(aa.quantity || 1),
-          });
-        }
-      }
+      wizard.initItemsFromSelection(wizard.selection.selectedFileIds, budgetFiles, approvedAAs);
     }
     if (wizard.stepId === 'items' && procurementMethod) {
       const err = wizard.validateItems(procurementMethod.name, budgetFiles, approvedAAs);
