@@ -21,6 +21,9 @@ interface PendingActionItem {
   amount: number;
   link: string;
   actionRequired: string;
+  department?: string;
+  initiator?: string;
+  date?: string;
 }
 
 export const DashboardPage: React.FC = () => {
@@ -118,10 +121,6 @@ export const DashboardPage: React.FC = () => {
       return 'assets';
     } else {
       // It's an AA
-      const fileNo = item.budget_info?.file_no || item.budget_file?.file_no || item.file_no || '';
-      if (fileNo.toUpperCase().startsWith('TEMP')) {
-        return 'budget_alloc';
-      }
       return 'admin_approval';
     }
   };
@@ -278,28 +277,13 @@ export const DashboardPage: React.FC = () => {
     }
 
     scopedAAs.forEach((aa: any) => {
-      const fileNo = aa.budget_info?.file_no || aa.budget_file?.file_no || aa.file_no || '';
-      const isTemp = fileNo.toUpperCase().startsWith('TEMP');
-
-      if (stageKey === 'budget_alloc') {
-        if (isTemp) {
-          if (aa.status === 'Returned' || aa.pending_with === 'PI') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else {
+      if (stageKey === 'admin_approval') {
+        if (aa.status === 'Administrative Approval Granted' || aa.status === 'Rejected') {
           completed++;
-        }
-      } else if (stageKey === 'admin_approval') {
-        if (!isTemp) {
-          if (aa.status === 'Administrative Approval Granted' || aa.status === 'Rejected') {
-            completed++;
-          } else if (aa.status === 'Returned' || aa.pending_with === 'PI') {
-            returned++;
-          } else {
-            pending++;
-          }
+        } else if (aa.status === 'Returned' || aa.pending_with === 'PI') {
+          returned++;
+        } else {
+          pending++;
         }
       }
     });
@@ -308,7 +292,7 @@ export const DashboardPage: React.FC = () => {
       const phase = pr.flow?.phase_name;
       const status = pr.current_status;
 
-      if (stageKey === 'budget_alloc' || stageKey === 'admin_approval') {
+      if (stageKey === 'admin_approval') {
         completed++;
       } else if (stageKey === 'indent_specs') {
         if (phase === 'Indent and Detailed Tech Specification' || phase === 'Administrative Approval') {
@@ -387,9 +371,8 @@ export const DashboardPage: React.FC = () => {
     return { total, pending, returned, completed };
   };
 
-  // 9 Lifecycle stages definition
+  // 8 Lifecycle stages definition
   const LIFECYCLE_STAGES = [
-    { key: 'budget_alloc', label: 'Budget Allocation', icon: Wallet, desc: 'Allocating funds & ledger files' },
     { key: 'admin_approval', label: 'Administrative Approval', icon: CheckCircle, desc: 'AA workflow & nominee checks' },
     { key: 'indent_specs', label: 'Indent & Specs', icon: FileText, desc: 'Technical specifications review' },
     { key: 'tendering', label: 'Tendering Process', icon: Layers, desc: 'LPC minutes & vendor bidding' },
@@ -457,7 +440,10 @@ export const DashboardPage: React.FC = () => {
           badgeColor,
           amount: aa.total_cost,
           link: `/administrative-approvals/${aa.id}`,
-          actionRequired
+          actionRequired,
+          department: aa.pi_department_name || aa.pi_department?.name || 'Central Office',
+          initiator: aa.pi_name || 'Purchase Initiator',
+          date: formatDate(aa.updated_at || aa.created_at)
         });
       }
     });
@@ -508,7 +494,10 @@ export const DashboardPage: React.FC = () => {
           badgeColor,
           amount: pr.amount,
           link: `/pr/${pr.id}`,
-          actionRequired
+          actionRequired,
+          department: pr.initiator?.department?.name || 'Central Office',
+          initiator: pr.initiator?.name || 'Faculty',
+          date: formatDate(pr.updated_at || pr.created_at)
         });
       }
     });
@@ -528,7 +517,10 @@ export const DashboardPage: React.FC = () => {
           badgeColor: 'bg-orange-100 text-orange-850 border border-orange-200',
           amount: pr.amount,
           link: `/pr/${pr.id}`,
-          actionRequired: `Referral Query: "${activeReferral.query_text || 'Awaiting response'}"`
+          actionRequired: `Referral Query: "${activeReferral.query_text || 'Awaiting response'}"`,
+          department: pr.initiator?.department?.name || 'Central Office',
+          initiator: pr.initiator?.name || 'Faculty',
+          date: formatDate(activeReferral.created_at || pr.updated_at)
         });
       }
     });
@@ -552,7 +544,10 @@ export const DashboardPage: React.FC = () => {
               ? 'Assign a Purchase Initiator and Technical Committee nominees.' 
               : needsInitiator 
                 ? 'Assign a Purchase Initiator.' 
-                : 'Assign Technical Committee nominees.'
+                : 'Assign Technical Committee nominees.',
+            department: bf.department?.name || user?.department?.name || 'Department',
+            initiator: bf.hod_name || 'HOD',
+            date: formatDate(bf.updated_at || bf.created_at)
           });
         }
       });
@@ -702,35 +697,58 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {myPendingActionsList.map((item) => (
-              <div 
-                key={`${item.type}-${item.id}`} 
-                className="p-4 bg-white border border-slate-200 hover:border-[#1a3a6b] transition-all flex flex-col justify-between rounded-xl shadow-sm hover:shadow-md relative overflow-hidden group"
-              >
-                <div className="space-y-2">
-                  <div className="flex justify-between items-start">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-450 border-b border-slate-200 bg-slate-50/50 uppercase tracking-wider font-bold">
+                  <th className="px-5 py-3.5">Ref No</th>
+                  <th className="px-5 py-3.5">Title / Item</th>
+                  <th className="px-5 py-3.5">Dept / Initiator</th>
+                  <th className="px-5 py-3.5">Amount</th>
+                  <th className="px-5 py-3.5">Date</th>
+                  <th className="px-5 py-3.5">Action Status</th>
+                  <th className="px-5 py-3.5">Instructions</th>
+                  <th className="px-5 py-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-150">
+                {myPendingActionsList.map((item) => (
+                  <tr key={`${item.type}-${item.id}`} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-5 py-4 font-bold text-slate-800">
+                      <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px] font-bold mr-1.5">
+                        {item.type}
+                      </span>
                       {item.number}
-                    </span>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${item.badgeColor}`}>
-                      {item.badgeText}
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-800 uppercase line-clamp-1 group-hover:text-[#1a3a6b] transition-colors">{item.title}</h4>
-                  <div className="text-[11px] text-slate-500 space-y-1 mt-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                    <p><span className="font-semibold text-slate-400">Total:</span> <span className="font-bold text-slate-700">{formatCurrency(item.amount)}</span></p>
-                    <p><span className="font-semibold text-slate-400">Task:</span> <span className="font-semibold text-slate-655 italic">"{item.actionRequired}"</span></p>
-                  </div>
-                </div>
-                <Link 
-                  to={item.link} 
-                  className="text-[11px] font-bold text-[#1a3a6b] group-hover:text-[#244b8f] hover:underline mt-4 inline-flex items-center gap-1 self-start transition-colors"
-                >
-                  Go to Action Desk <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                </Link>
-              </div>
-            ))}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-800">{item.title}</td>
+                    <td className="px-5 py-4 text-slate-605 font-medium">
+                      <div>{item.department}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                        <User size={10} className="text-slate-400" /> {item.initiator}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 font-bold text-slate-700 font-mono">{formatCurrency(item.amount)}</td>
+                    <td className="px-5 py-4 text-slate-500 font-mono">{item.date}</td>
+                    <td className="px-5 py-4">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${item.badgeColor}`}>
+                        {item.badgeText}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-600 italic max-w-xs truncate" title={item.actionRequired}>
+                      "{item.actionRequired}"
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <Link
+                        to={item.link}
+                        className="inline-flex items-center gap-1 bg-[#1a3a6b] hover:bg-[#244b8f] text-white font-bold px-3 py-1.5 rounded-lg text-[10px] shadow-sm hover:shadow transition"
+                      >
+                        Action <ChevronRight size={10} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

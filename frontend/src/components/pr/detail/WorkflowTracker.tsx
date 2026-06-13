@@ -53,20 +53,8 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ aa, pr }) => {
   // ==========================================
   const level1Stages: Stage[] = [];
 
-  // Stage 1: Budget Allocation
-  const isBudgetTemp = activeAA?.budget_info?.file_no?.toUpperCase().startsWith('TEMP') || 
-                       activeAA?.budget_file?.file_no?.toUpperCase().startsWith('TEMP') ||
-                       activePR?.budget_file?.file_no?.toUpperCase().startsWith('TEMP');
-  const budgetAllocatedAt = activeAA?.created_at || activePR?.created_at;
-  level1Stages.push({
-    name: 'Budget Allocation',
-    description: 'HOD requests and Dean Budget finalizes budget file code allocation.',
-    status: isBudgetTemp ? 'current' : 'completed',
-    date: isBudgetTemp ? undefined : formatDate(budgetAllocatedAt),
-    actor: 'Dean Budget / Finance',
-  });
+  // Stage 1: Administrative Approval
 
-  // Stage 2: Administrative Approval
   let aaStatus: Stage['status'] = 'pending';
   let aaDate: string | undefined;
   let aaActor: string | undefined;
@@ -367,7 +355,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ aa, pr }) => {
   // METADATA SUMMARY BLOCK
   // ==========================================
   const getMetadata = () => {
-    let currentStage = 'Budget Allocation';
+    let currentStage = 'Administrative Approval';
     let pendingWithUser = '-';
     let pendingWithRole = '-';
     let approvalDate = '-';
