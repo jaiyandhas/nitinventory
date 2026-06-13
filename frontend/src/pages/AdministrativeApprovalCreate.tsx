@@ -667,7 +667,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   </span>
                 </label>
               </div>
-            </div>    </div>
+            </div>
 
             {/* Submission Controls */}
             <div className="flex gap-4 items-center justify-end">
