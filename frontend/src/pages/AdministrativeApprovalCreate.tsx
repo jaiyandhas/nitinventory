@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Loader2, Info } from 'lucide-react';
@@ -8,11 +8,21 @@ import { formatCurrency } from '../utils/format';
 
 export const AdministrativeApprovalCreatePage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryBudgetId = searchParams.get('budget_id');
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
 
   // Form states
-  const [selectedBudgetId, setSelectedBudgetId] = useState<number | ''>('');
+  const [selectedBudgetId, setSelectedBudgetId] = useState<number | ''>(
+    queryBudgetId ? Number(queryBudgetId) : ''
+  );
+
+  useEffect(() => {
+    if (queryBudgetId) {
+      setSelectedBudgetId(Number(queryBudgetId));
+    }
+  }, [queryBudgetId]);
   const [itemDescription, setItemDescription] = useState('');
   const [quantity, setQuantity] = useState<number>(1);
   const [gstRate, setGstRate] = useState<number>(18); // Default 18%

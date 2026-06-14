@@ -17,7 +17,12 @@ from app.models.purchase_request import WorkFlowHierarchy, PurchaseRequest, Purc
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
 DeanOrAdminDep = Depends(require_roles("admin", "dean_approver", "apex_approver"))
-DeanBudgetDep = Depends(require_roles("dean_approver"))
+async def check_dean_budget_write(user=Depends(get_current_user)):
+    if user.role.group_key not in ("dean_approver", "admin"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return user
+
+DeanBudgetDep = Depends(check_dean_budget_write)
 BudgetViewDep = Depends(require_roles("admin", "dean_approver", "hod", "faculty", "apex_approver"))
 
 
@@ -262,7 +267,7 @@ async def create_financial_year(body: dict, db: AsyncSession = Depends(get_db), 
 
 
 @router.get("/financial-years/rollover-candidates")
-async def get_rollover_candidates(db: AsyncSession = Depends(get_db), _=AdminDep):
+async def get_rollover_candidates(db: AsyncSession = Depends(get_db), _=DeanBudgetDep):
     """
     Returns all unused budget files from the currently active financial year.
     Unused = committed_amount == 0 AND utilized_amount == 0 (no PRs have touched them).
@@ -309,7 +314,7 @@ async def get_rollover_candidates(db: AsyncSession = Depends(get_db), _=AdminDep
 async def financial_year_rollover(
     body: dict = {},
     db: AsyncSession = Depends(get_db),
-    _=AdminDep
+    _=DeanBudgetDep
 ):
     """
     Rolls the active financial year to the next one.
@@ -1320,6 +1325,8 @@ async def create_budget(
     if group_key not in ("dean_approver", "admin", "hod"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
+    # Allow Dean P&D (Budget) to create budgets
+
     if group_key == "hod" and user.department_id != department_id:
         raise HTTPException(status_code=403, detail="HOD can only create budget files for their own department")
 
@@ -1419,6 +1426,9 @@ async def update_budget(b_id: int, body: dict, db: AsyncSession = Depends(get_db
     
     if group_key not in ("dean_approver", "admin", "hod"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if user.designation == "Dean P&D (Budget)":
+        raise HTTPException(status_code=403, detail="Dean P&D (Budget) is not authorized to create/modify budgets")
 
     result = await db.execute(select(BudgetMaster).where(BudgetMaster.id == b_id))
     b = result.scalar_one_or_none()

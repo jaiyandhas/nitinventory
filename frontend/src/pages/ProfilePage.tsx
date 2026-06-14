@@ -172,6 +172,7 @@ export const ProfilePage: React.FC = () => {
       formData.append('name', name);
       formData.append('designation', designation);
       formData.append('title', title);
+      formData.append('gender', user?.gender || 'Male');
 
       if (imageObj) {
         const blob = await getCanvasBlob();

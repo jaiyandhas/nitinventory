@@ -147,7 +147,7 @@ class PDFService:
                     selectinload(BudgetMaster.expert2),
                     selectinload(BudgetMaster.director_faculty),
                 ),
-                selectinload(PurchaseRequest.history),
+                selectinload(PurchaseRequest.history).selectinload(PurchaseRequestHistory.current_approver),
                 selectinload(PurchaseRequest.commercial_evaluations),
                 selectinload(PurchaseRequest.technical_evaluations),
                 selectinload(PurchaseRequest.financial_evaluations),
@@ -251,34 +251,39 @@ class PDFService:
                     continue
                 if h.current_approver_id == user_id:
                     if status_filter is None or h.status in status_filter:
-                        sig_url = get_valid_signature_url(h.frozen_signature_path)
-                        if sig_url:
-                            return sig_url, h.acted_at
-                        # Fallback to dynamic for legacy entries or missing files
-                        if user_id == pr.initiator_id and pr.initiator:
+                        # Prioritize active signature of the user if available
+                        if h.current_approver and h.current_approver.signature_path:
+                            sig_url = get_valid_signature_url(h.current_approver.signature_path)
+                            if sig_url:
+                                return sig_url, h.acted_at
+                        if user_id == pr.initiator_id and pr.initiator and pr.initiator.signature_path:
                             sig_url = get_valid_signature_url(pr.initiator.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
-                        elif user_id == pr.faculty1_id and pr.faculty1:
+                        elif user_id == pr.faculty1_id and pr.faculty1 and pr.faculty1.signature_path:
                             sig_url = get_valid_signature_url(pr.faculty1.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
-                        elif user_id == pr.faculty2_id and pr.faculty2:
+                        elif user_id == pr.faculty2_id and pr.faculty2 and pr.faculty2.signature_path:
                             sig_url = get_valid_signature_url(pr.faculty2.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
-                        elif user_id == pr.faculty3_id and pr.faculty3:
+                        elif user_id == pr.faculty3_id and pr.faculty3 and pr.faculty3.signature_path:
                             sig_url = get_valid_signature_url(pr.faculty3.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
-                        elif user_id == pr.aa_approver_id and pr.aa_approver:
+                        elif user_id == pr.aa_approver_id and pr.aa_approver and pr.aa_approver.signature_path:
                             sig_url = get_valid_signature_url(pr.aa_approver.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
-                        elif hod_user and user_id == hod_user.id:
+                        elif hod_user and user_id == hod_user.id and hod_user.signature_path:
                             sig_url = get_valid_signature_url(hod_user.signature_path)
                             if sig_url:
                                 return sig_url, h.acted_at
+                        # Fallback to historical frozen signature
+                        sig_url = get_valid_signature_url(h.frozen_signature_path)
+                        if sig_url:
+                            return sig_url, h.acted_at
             return None, None
 
         # Resolve signatures (frozen or fallback)
@@ -299,15 +304,16 @@ class PDFService:
                 )
                 nominee_user = nom_res.scalar_one_or_none()
                 if nominee_user:
-                    sig_url, sig_date = find_frozen_signature(user_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
-                    if not sig_url and nominee_user.signature_path:
-                        has_signed = any(
-                            h.current_approver_id == user_id 
-                            and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
-                            for h in pr.history
-                        )
-                        if has_signed:
-                            sig_url = get_valid_signature_url(nominee_user.signature_path)
+                    sig_url = None
+                    has_signed = any(
+                        h.current_approver_id == user_id 
+                        and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                        for h in pr.history
+                    )
+                    if has_signed and nominee_user.signature_path:
+                        sig_url = get_valid_signature_url(nominee_user.signature_path)
+                    if not sig_url:
+                        sig_url, sig_date = find_frozen_signature(user_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
                     
                     nominees_serialized.append({
                         "name": nominee_user.name,
@@ -315,7 +321,7 @@ class PDFService:
                         "step_order": idx + 1,
                         "status": "Approved" if sig_url else "Pending",
                         "signature_url": sig_url,
-                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y") if sig_date else "-"
+                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y %H:%M") if sig_date else "-"
                     })
         else:
             experts = [
@@ -325,15 +331,16 @@ class PDFService:
             ]
             for idx, (expert, exp_id, role_name) in enumerate(experts):
                 if exp_id:
-                    sig_url, sig_date = find_frozen_signature(exp_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
-                    if not sig_url and expert and expert.signature_path:
-                        has_signed = any(
-                            h.current_approver_id == exp_id 
-                            and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
-                            for h in pr.history
-                        )
-                        if has_signed:
-                            sig_url = get_valid_signature_url(expert.signature_path)
+                    sig_url = None
+                    has_signed = any(
+                        h.current_approver_id == exp_id 
+                        and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                        for h in pr.history
+                    )
+                    if has_signed and expert and expert.signature_path:
+                        sig_url = get_valid_signature_url(expert.signature_path)
+                    if not sig_url:
+                        sig_url, sig_date = find_frozen_signature(exp_id, ["Technical Evaluation Approved", "Technical Evaluation Completed"])
                     
                     expert_name = expert.name if expert else f"Expert {exp_id}"
                     expert_dept = expert.department.short_code if (expert and expert.department) else "-"
@@ -343,7 +350,7 @@ class PDFService:
                         "step_order": idx + 1,
                         "status": "Approved" if sig_url else "Pending",
                         "signature_url": sig_url,
-                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y") if sig_date else "-"
+                        "acted_at_str": to_local_time(sig_date).strftime("%d/%m/%Y %H:%M") if sig_date else "-"
                     })
 
         # Find Dean/Registrar/Director/Audit from history
@@ -385,7 +392,7 @@ class PDFService:
                         elif actor.role.value in ("deputy_registrar", "assistant_registrar"):
                             dr_ar_fa_sig = sig_url
                             dr_ar_fa_date = h.acted_at
-                        elif actor.role.value == "internal_audit" or "audit" in actor.role.name.lower():
+                        elif actor.role.value in ("internal_audit", "ia") or actor.role.group_key == "internal_audit" or "audit" in actor.role.name.lower():
                             ia_sig = sig_url
                             ia_date = h.acted_at
 
@@ -434,17 +441,17 @@ class PDFService:
         # Date formatted strings
         pr_created_at_str = local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-"
         pr_aa_approved_at_str = local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-"
-        initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y") if initiator_date else "-"
-        faculty1_date_str = to_local_time(faculty1_date).strftime("%d/%m/%Y") if faculty1_date else "-"
-        faculty2_date_str = to_local_time(faculty2_date).strftime("%d/%m/%Y") if faculty2_date else "-"
-        faculty3_date_str = to_local_time(faculty3_date).strftime("%d/%m/%Y") if faculty3_date else "-"
-        hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y") if hod_date else "-"
-        aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y") if aa_date else "-"
-        dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y") if dean_date else "-"
-        director_date_str = to_local_time(director_date).strftime("%d/%m/%Y") if director_date else "-"
-        dr_ar_sp_date_str = to_local_time(dr_ar_sp_date).strftime("%d/%m/%Y") if dr_ar_sp_date else "-"
-        dr_ar_fa_date_str = to_local_time(dr_ar_fa_date).strftime("%d/%m/%Y") if dr_ar_fa_date else "-"
-        ia_date_str = to_local_time(ia_date).strftime("%d/%m/%Y") if ia_date else "-"
+        initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y %H:%M") if initiator_date else "-"
+        faculty1_date_str = to_local_time(faculty1_date).strftime("%d/%m/%Y %H:%M") if faculty1_date else "-"
+        faculty2_date_str = to_local_time(faculty2_date).strftime("%d/%m/%Y %H:%M") if faculty2_date else "-"
+        faculty3_date_str = to_local_time(faculty3_date).strftime("%d/%m/%Y %H:%M") if faculty3_date else "-"
+        hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y %H:%M") if hod_date else "-"
+        aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y %H:%M") if aa_date else "-"
+        dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y %H:%M") if dean_date else "-"
+        director_date_str = to_local_time(director_date).strftime("%d/%m/%Y %H:%M") if director_date else "-"
+        dr_ar_sp_date_str = to_local_time(dr_ar_sp_date).strftime("%d/%m/%Y %H:%M") if dr_ar_sp_date else "-"
+        dr_ar_fa_date_str = to_local_time(dr_ar_fa_date).strftime("%d/%m/%Y %H:%M") if dr_ar_fa_date else "-"
+        ia_date_str = to_local_time(ia_date).strftime("%d/%m/%Y %H:%M") if ia_date else "-"
 
         # Pre-calculate item details with unit cost, GST amount, and total cost
         items_details = []
@@ -809,11 +816,6 @@ class PDFService:
                         sig_url = get_valid_signature_url(h.frozen_signature_path)
                         if sig_url:
                             return sig_url, h.acted_at
-            # Fallback to dynamic signatures
-            if user_id == pr.initiator_id and pr.initiator:
-                return get_valid_signature_url(pr.initiator.signature_path), None
-            if hod_user and user_id == hod_user.id:
-                return get_valid_signature_url(hod_user.signature_path), None
             return None, None
 
         initiator_sig, initiator_date = find_frozen_signature(pr.initiator_id)
@@ -857,7 +859,7 @@ class PDFService:
                         elif actor.role.value in ("deputy_registrar", "assistant_registrar"):
                             dr_ar_fa_sig = sig_url
                             dr_ar_fa_date = h.acted_at
-                        elif actor.role.value == "internal_audit" or "audit" in actor.role.name.lower():
+                        elif actor.role.value in ("internal_audit", "ia") or actor.role.group_key == "internal_audit" or "audit" in actor.role.name.lower():
                             ia_sig = sig_url
                             ia_date = h.acted_at
 
@@ -878,14 +880,14 @@ class PDFService:
 
         pr_created_at_str = local_created_at.strftime("%d/%m/%Y %H:%M") if local_created_at else "-"
         pr_aa_approved_at_str = local_aa_approved_at.strftime("%d/%m/%Y %H:%M") if local_aa_approved_at else "-"
-        initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y") if initiator_date else "-"
-        hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y") if hod_date else "-"
-        aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y") if aa_date else "-"
-        dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y") if dean_date else "-"
-        director_date_str = to_local_time(director_date).strftime("%d/%m/%Y") if director_date else "-"
-        dr_ar_sp_date_str = to_local_time(dr_ar_sp_date).strftime("%d/%m/%Y") if dr_ar_sp_date else "-"
-        dr_ar_fa_date_str = to_local_time(dr_ar_fa_date).strftime("%d/%m/%Y") if dr_ar_fa_date else "-"
-        ia_date_str = to_local_time(ia_date).strftime("%d/%m/%Y") if ia_date else "-"
+        initiator_date_str = to_local_time(initiator_date).strftime("%d/%m/%Y %H:%M") if initiator_date else "-"
+        hod_date_str = to_local_time(hod_date).strftime("%d/%m/%Y %H:%M") if hod_date else "-"
+        aa_date_str = to_local_time(aa_date).strftime("%d/%m/%Y %H:%M") if aa_date else "-"
+        dean_date_str = to_local_time(dean_date).strftime("%d/%m/%Y %H:%M") if dean_date else "-"
+        director_date_str = to_local_time(director_date).strftime("%d/%m/%Y %H:%M") if director_date else "-"
+        dr_ar_sp_date_str = to_local_time(dr_ar_sp_date).strftime("%d/%m/%Y %H:%M") if dr_ar_sp_date else "-"
+        dr_ar_fa_date_str = to_local_time(dr_ar_fa_date).strftime("%d/%m/%Y %H:%M") if dr_ar_fa_date else "-"
+        ia_date_str = to_local_time(ia_date).strftime("%d/%m/%Y %H:%M") if ia_date else "-"
 
         items_details = []
         calculated_grand_total = 0.0
@@ -952,7 +954,7 @@ class PDFService:
                 "step_order": nom.step_order,
                 "status": nom.status,
                 "signature_url": nom_sig,
-                "acted_at_str": to_local_time(nom.acted_at).strftime("%d/%m/%Y") if nom.acted_at else "-"
+                "acted_at_str": to_local_time(nom.acted_at).strftime("%d/%m/%Y %H:%M") if nom.acted_at else "-"
             })
 
         templates = Jinja2Templates(directory="app/templates")

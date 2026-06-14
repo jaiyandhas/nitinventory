@@ -7,6 +7,7 @@ import { budgetApi } from '../../services/api';
 import toast from 'react-hot-toast';
 import { formatFileNo } from '../../utils/format';
 import { queryKeys } from '../../config/queryKeys';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 interface PRHeaderProps {
   pr: PurchaseRequest;
@@ -540,7 +541,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
       {/* Nomination / Committee Edit Modal */}
       {showNominationModal && pr.budget_file && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 text-left">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-fadeIn">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-visible animate-fadeIn">
             <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Configure Purchase Committee</h2>
@@ -555,44 +556,34 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
               </button>
             </div>
             
-            <form onSubmit={handleNominateSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleNominateSubmit} className="p-6 space-y-4 overflow-visible">
               {isHOD && (
                 <>
                   <div className="p-3 bg-indigo-50 text-indigo-800 text-xs font-semibold rounded border border-indigo-200 leading-relaxed mb-2">
                     As HOD, configure the two department experts who will serve on the 5-member purchase committee for technical evaluation.
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                       Department Expert 1 <span className="text-rose-500">*</span>
                     </label>
-                    <select
-                      value={expert1Id}
-                      onChange={e => setExpert1Id(e.target.value === '' ? '' : Number(e.target.value))}
-                      required
-                      className="input-field w-full bg-white text-sm"
-                    >
-                      <option value="">Select Faculty Expert...</option>
-                      {deptFaculties.map((f: any) => (
-                        <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={deptFaculties}
+                      value={expert1Id === '' ? null : Number(expert1Id)}
+                      onChange={(val) => setExpert1Id(val === null ? '' : val)}
+                      placeholder="Select Department Expert 1..."
+                    />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                       Department Expert 2 <span className="text-rose-500">*</span>
                     </label>
-                    <select
-                      value={expert2Id}
-                      onChange={e => setExpert2Id(e.target.value === '' ? '' : Number(e.target.value))}
-                      required
-                      className="input-field w-full bg-white text-sm"
-                    >
-                      <option value="">Select Faculty Expert...</option>
-                      {deptFaculties.map((f: any) => (
-                        <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={deptFaculties}
+                      value={expert2Id === '' ? null : Number(expert2Id)}
+                      onChange={(val) => setExpert2Id(val === null ? '' : val)}
+                      placeholder="Select Department Expert 2..."
+                    />
                   </div>
                 </>
               )}
@@ -603,20 +594,15 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                     As Director / Admin, configure the Director Nominee who will serve on the 5-member purchase committee for technical evaluation.
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                       Director Nominee <span className="text-rose-500">*</span>
                     </label>
-                    <select
-                      value={directorFacultyId}
-                      onChange={e => setDirectorFacultyId(e.target.value === '' ? '' : Number(e.target.value))}
-                      required
-                      className="input-field w-full bg-white text-sm"
-                    >
-                      <option value="">Select Director Nominee...</option>
-                      {allUsers.map((u: any) => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={allUsers}
+                      value={directorFacultyId === '' ? null : Number(directorFacultyId)}
+                      onChange={(val) => setDirectorFacultyId(val === null ? '' : val)}
+                      placeholder="Select Director Nominee..."
+                    />
                   </div>
                 </>
               )}

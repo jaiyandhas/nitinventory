@@ -102,6 +102,16 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
         roleNameNorm.includes('apex')
       );
     }
+    if (pendingNorm === 'ia' || pendingNorm.includes('audit')) {
+      return (
+        roleValueNorm.includes('ia') ||
+        groupKeyNorm.includes('ia') ||
+        roleNameNorm.includes('ia') ||
+        roleValueNorm.includes('audit') ||
+        groupKeyNorm.includes('audit') ||
+        roleNameNorm.includes('audit')
+      );
+    }
 
     return false;
   }, [aa, user]);

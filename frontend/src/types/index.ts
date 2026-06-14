@@ -180,6 +180,24 @@ export interface PurchaseRequest {
   }[];
   assignments?: any[];
   documents?: any[];
+  administrative_approval_id?: number | null;
+  administrative_approval?: {
+    id: number;
+    aa_number?: string | null;
+    status: string;
+    attachment_path?: string | null;
+    attachment_url?: string | null;
+    basis_of_estimation_path?: string | null;
+    basis_of_estimation_url?: string | null;
+    gem_non_availability_path?: string | null;
+    gem_non_availability_url?: string | null;
+    authority_approval_path?: string | null;
+    authority_approval_url?: string | null;
+    pac_dept_cert_path?: string | null;
+    pac_dept_cert_url?: string | null;
+    pac_vendor_cert_path?: string | null;
+    pac_vendor_cert_url?: string | null;
+  } | null;
   lpc_remarks?: string | null;
   lpc_committee_members?: string | null;
   lpc_minutes_reference?: string | null;

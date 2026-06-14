@@ -351,7 +351,8 @@ export const AASummaryTable: React.FC<AASummaryTableProps> = ({ aa, formatCurren
         }
 
         // 4. Subsequent roles
-        const adpdAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('adpd') || h.approver_role.toLowerCase().includes('dean'));
+        const adpdAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('adpd'));
+        const deanAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('dean') && !h.approver_role.toLowerCase().includes('adpd'));
         const directorAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('director') || h.approver_role.toLowerCase().includes('apex'));
         const spAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('sp') || h.approver_role.toLowerCase().includes('stores'));
         const faAction = subsequentActions.find((h: any) => h.approver_role.toLowerCase().includes('fa') || h.approver_role.toLowerCase().includes('finance'));
@@ -366,12 +367,30 @@ export const AASummaryTable: React.FC<AASummaryTableProps> = ({ aa, formatCurren
         }
         rows.push({
           step: `${nomineeOffset}`,
-          role: 'Associate Dean (ADPD) / Dean',
-          officer: adpdAction?.approver_name || (aa.pending_with?.toLowerCase() === 'adpd' ? 'Pending Action' : 'ADPD / Dean'),
+          role: 'Associate Dean (ADPD)',
+          officer: adpdAction?.approver_name || (aa.pending_with?.toLowerCase() === 'adpd' ? 'Pending Action' : 'Associate Dean (ADPD)'),
           status: adpdStatus,
           signatureUrl: adpdAction?.signature_url,
           date: adpdAction?.acted_at,
           remarks: adpdAction?.remarks || '—',
+        });
+        nomineeOffset += 1;
+
+        // Dean Row
+        let deanStatus = 'Awaiting';
+        if (deanAction) {
+          deanStatus = deanAction.status;
+        } else if (aa.pending_with?.toLowerCase() === 'dean_pd' || aa.pending_with?.toLowerCase() === 'dean') {
+          deanStatus = 'Pending';
+        }
+        rows.push({
+          step: `${nomineeOffset}`,
+          role: 'Dean',
+          officer: deanAction?.approver_name || ((aa.pending_with?.toLowerCase() === 'dean_pd' || aa.pending_with?.toLowerCase() === 'dean') ? 'Pending Action' : 'Dean'),
+          status: deanStatus,
+          signatureUrl: deanAction?.signature_url,
+          date: deanAction?.acted_at,
+          remarks: deanAction?.remarks || '—',
         });
         nomineeOffset += 1;
 
@@ -409,22 +428,23 @@ export const AASummaryTable: React.FC<AASummaryTableProps> = ({ aa, formatCurren
           nomineeOffset += 1;
         }
 
-        // Internal Audit
-        if (iaAction || aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) {
-          let iaStatus = 'Awaiting';
-          if (iaAction) iaStatus = iaAction.status;
-          else if (aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) iaStatus = 'Pending';
-          rows.push({
-            step: `${nomineeOffset}`,
-            role: 'Internal Auditor (IA)',
-            officer: iaAction?.approver_name || 'Audit Section',
-            status: iaStatus,
-            signatureUrl: iaAction?.signature_url,
-            date: iaAction?.acted_at,
-            remarks: iaAction?.remarks || '—',
-          });
-          nomineeOffset += 1;
+        // Internal Audit (Unconditional)
+        let iaStatus = 'Awaiting';
+        if (iaAction) {
+          iaStatus = iaAction.status;
+        } else if (aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) {
+          iaStatus = 'Pending';
         }
+        rows.push({
+          step: `${nomineeOffset}`,
+          role: 'Internal Auditor (IA)',
+          officer: iaAction?.approver_name || ((aa.pending_with?.toLowerCase() === 'ia' || aa.pending_with?.toLowerCase().includes('audit')) ? 'Pending Action' : 'Internal Auditor (IA)'),
+          status: iaStatus,
+          signatureUrl: iaAction?.signature_url,
+          date: iaAction?.acted_at,
+          remarks: iaAction?.remarks || '—',
+        });
+        nomineeOffset += 1;
 
         // Director Row
         let directorStatus = 'Awaiting';

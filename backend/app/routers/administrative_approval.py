@@ -121,12 +121,14 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
         
     if not steps:
         from app.models.user import RoleManager
-        roles_res = await db.execute(select(RoleManager).where(RoleManager.value.in_(["hod", "adpd", "director"])))
+        roles_res = await db.execute(select(RoleManager).where(RoleManager.value.in_(["hod", "adpd", "dean_pd", "ia", "director"])))
         roles_dict = {r.value: r for r in roles_res.scalars()}
         steps = [
             AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles_dict.get("hod").id if roles_dict.get("hod") else None, role=roles_dict.get("hod")),
             AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles_dict.get("adpd").id if roles_dict.get("adpd") else None, role=roles_dict.get("adpd")),
-            AdministrativeApprovalWorkflow(step_order=3, user_group="Director", role_id=roles_dict.get("director").id if roles_dict.get("director") else None, role=roles_dict.get("director")),
+            AdministrativeApprovalWorkflow(step_order=3, user_group="Dean", role_id=roles_dict.get("dean_pd").id if roles_dict.get("dean_pd") else None, role=roles_dict.get("dean_pd")),
+            AdministrativeApprovalWorkflow(step_order=4, user_group="IA", role_id=roles_dict.get("ia").id if roles_dict.get("ia") else None, role=roles_dict.get("ia")),
+            AdministrativeApprovalWorkflow(step_order=5, user_group="Director", role_id=roles_dict.get("director").id if roles_dict.get("director") else None, role=roles_dict.get("director")),
         ]
         
     return steps
@@ -962,6 +964,8 @@ async def action_aa(
                 return "director" in u_group_norm or "director" in u_value_norm or "director" in u_name_norm or "apex" in u_group_norm or "apex" in u_value_norm or "apex" in u_name_norm
             if "hod" in tg_norm:
                 return "hod" in u_group_norm or "hod" in u_value_norm or "hod" in u_name_norm
+            if tg_norm == "ia" or "auditor" in tg_norm:
+                return "auditor" in u_group_norm or "auditor" in u_value_norm or "auditor" in u_name_norm or "ia" in u_group_norm or "ia" in u_value_norm or "ia" in u_name_norm
                 
             return False
 
@@ -1034,7 +1038,7 @@ async def action_aa(
                     next_step = next_step_data["step"]
                     next_role = next_step.user_group
                     aa.status = f"Pending with {next_role}"
-                    aa.pending_with = next_step.user_group
+                    aa.pending_with = next_role
                     hist_status = "Approved"
                     
                     # Notify next role group

@@ -219,7 +219,6 @@ async def seed():
                 print("  Seeding default category-specific Administrative Approval workflow steps...")
                 roles_res = await db.execute(select(RoleManager))
                 roles = {r.value: r for r in roles_res.scalars()}
-                from app.models.budget import PurchaseCategory, ProcurementManager
                 proc_res = await db.execute(select(ProcurementManager))
                 procs = proc_res.scalars().all()
                 cat_res = await db.execute(select(PurchaseCategory))
@@ -374,6 +373,7 @@ async def seed():
                 ("Assistant Registrar", "assistant_registrar", "verifier_sp"),
                 ("Deputy Registrar", "deputy_registrar", "verifier_sp"),
                 ("Dean P&D", "dean_pd", "dean_approver"),
+                ("Internal Auditor", "ia", "internal_audit"),
                 ("Director", "director", "apex_approver"),
                 ("Registrar", "registrar", "apex_approver"),
             ]
@@ -391,6 +391,11 @@ async def seed():
                 db.add(r)
                 await db.flush()
                 roles["registrar"] = r
+            if "ia" not in roles:
+                r = RoleManager(name="Internal Auditor", value="ia", group_key="internal_audit")
+                db.add(r)
+                await db.flush()
+                roles["ia"] = r
 
         # 3. Seed Users
         # Seed system/test accounts
@@ -408,6 +413,7 @@ async def seed():
             ("Dr.", "C. Singh", "faculty2.cse@nitt.edu", "Assistant Professor", "male", "faculty", cse),
             ("Prof.", "D. Rajan", "hod.cse@nitt.edu", "Head of Department", "male", "hod", cse),
             ("Prof.", "H. Dean", "dean.pd@nitt.edu", "Dean P&D", "male", "dean_pd", None),
+            ("Mr.", "I. Auditor", "ia@nitt.edu", "Internal Auditor", "male", "ia", None),
         ]
         
         users = {}
@@ -909,6 +915,22 @@ async def seed():
                             procurement_id=proc.id,
                             purchase_type=ptype,
                             step_order=3,
+                            user_group="Dean",
+                            role_id=roles["dean_pd"].id
+                        ),
+                        AdministrativeApprovalWorkflow(
+                            category_id=cat.id,
+                            procurement_id=proc.id,
+                            purchase_type=ptype,
+                            step_order=4,
+                            user_group="IA",
+                            role_id=roles["ia"].id
+                        ),
+                        AdministrativeApprovalWorkflow(
+                            category_id=cat.id,
+                            procurement_id=proc.id,
+                            purchase_type=ptype,
+                            step_order=5,
                             user_group="Director",
                             role_id=roles["director"].id
                         ),

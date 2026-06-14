@@ -818,7 +818,69 @@
         </tbody>
     </table>
 
-    <div class="section-title" style="margin-top: 25px;">b) <u>Approval and Signatures:</u></div>
+    <div class="section-title" style="margin-top: 20px;">b) <u>Procurement Inventory &amp; Stock Status:</u></div>
+    <table class="details-table" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">Item Category / Requirement Type</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">{{ aa.item_category or '-' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Stock Availability Check</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.stock_availability or 'No' }}</td>
+        </tr>
+        {% if aa.stock_availability == 'Yes' or aa.present_stock %}
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Present Stock Quantity</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.present_stock or '-' }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Previous File Reference Number</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.prev_file_no or '-' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px; vertical-align: top;">Justification for Procurement</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ aa.justification_procurement or '-' }}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">c) <u>Compliance, Declarations &amp; Attachments Checklist:</u></div>
+    <table class="details-table" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 35%; font-weight: bold; border: 1px solid #333; padding: 6px;">Generic Spec Declaration (Clause 4 Compliance)</td>
+            <td style="width: 65%; border: 1px solid #333; padding: 6px;">
+                {% if aa.generic_specification_declaration %}
+                    Confirmed: Specifications are generic and do not favor any particular supplier.
+                {% else %}
+                    Not Confirmed / Not Applicable
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Basis of Estimation</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ 'Yes (Uploaded)' if aa.basis_of_estimation_path else 'No' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">GeM Non-Availability Report (GeM ARpt)</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ 'Yes (Uploaded)' if aa.gem_non_availability_path else 'No' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">Competent Authority Approval</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ 'Yes (Uploaded)' if aa.authority_approval_path else 'No' }}</td>
+        </tr>
+        {% if aa.mode_of_procurement == 'PAC' or aa.pac_dept_cert_path or aa.pac_vendor_cert_path %}
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">PAC Department Certificate</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ 'Yes (Uploaded)' if aa.pac_dept_cert_path else 'No' }}</td>
+        </tr>
+        <tr>
+            <td style="font-weight: bold; border: 1px solid #333; padding: 6px;">PAC Vendor Certificate</td>
+            <td style="border: 1px solid #333; padding: 6px;">{{ 'Yes (Uploaded)' if aa.pac_vendor_cert_path else 'No' }}</td>
+        </tr>
+        {% endif %}
+    </table>
+
+    <div class="section-title" style="margin-top: 25px;">d) <u>Approval and Signatures:</u></div>
     <table style="width: 100%; border: none; border-collapse: collapse; margin-top: 15px; font-size: 10pt; page-break-inside: avoid;">
         <!-- Row 1: PI (Left) and HoD (Right) -->
         <tr style="border: none;">
@@ -884,51 +946,52 @@
         {% endif %}
         
         <!-- Standard Roles: Dean, Director, DR/AR S&P, DR/AR F&A, IA -->
-        {% if dean_sig or director_sig or dr_ar_sp_sig or dr_ar_fa_sig or ia_sig %}
         <tr style="border: none; height: 25px;"><td colspan="3" style="border: none;"></td></tr>
         <tr style="border: none;">
             <td colspan="3" style="border: none; padding: 0;">
                 <div style="font-weight: bold; font-size: 9pt; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 3px;">
-                    Administrative Approvals & Scrutiny
+                    Administrative Scrutiny &amp; Approvals
                 </div>
                 <table style="width: 100%; border: none; border-collapse: collapse;">
+                    {% set show_sp = dr_ar_sp_sig is not none %}
+                    {% set show_fa = dr_ar_fa_sig is not none %}
+                    {% set col_count = 1 + (1 if show_sp else 0) + (1 if show_fa else 0) %}
+                    {% set col_width = (100 / col_count)|int %}
                     <tr style="border: none;">
-                        {% if dr_ar_sp_sig %}
-                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                        {% if show_sp %}
+                        <td style="width: {{ col_width }}%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
                             <img src="{{ dr_ar_sp_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
                         </td>
                         {% endif %}
-                        {% if dr_ar_fa_sig %}
-                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
-                            <img src="{{ dr_ar_fa_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        <td style="width: {{ col_width }}%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            {% if ia_sig %}
+                                <img src="{{ ia_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% endif %}
                         </td>
-                        {% endif %}
-                        {% if ia_sig %}
-                        <td style="width: 33%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
-                            <img src="{{ ia_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                        {% if show_fa %}
+                        <td style="width: {{ col_width }}%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
+                            <img src="{{ dr_ar_fa_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
                         </td>
                         {% endif %}
                     </tr>
                     <tr style="border: none;">
-                        {% if dr_ar_sp_sig %}
-                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                        {% if show_sp %}
+                        <td style="width: {{ col_width }}%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
                             <div style="font-weight: bold; font-size: 9pt;">Stores &amp; Purchase</div>
                             <div style="font-size: 8pt; color: #555;">DR/AR (S&amp;P)</div>
-                            {% if dr_ar_sp_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_sp_date_str }}</div>{% endif %}
+                            <div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_sp_date_str if (dr_ar_sp_date_str and dr_ar_sp_date_str != '-') else '____________' }}</div>
                         </td>
                         {% endif %}
-                        {% if dr_ar_fa_sig %}
-                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
-                            <div style="font-weight: bold; font-size: 9pt;">Finance &amp; Accounts</div>
-                            <div style="font-size: 8pt; color: #555;">DR/AR (F&amp;A)</div>
-                            {% if dr_ar_fa_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_fa_date_str }}</div>{% endif %}
-                        </td>
-                        {% endif %}
-                        {% if ia_sig %}
-                        <td style="width: 33%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                        <td style="width: {{ col_width }}%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
                             <div style="font-weight: bold; font-size: 9pt;">Internal Audit</div>
                             <div style="font-size: 8pt; color: #555;">Internal Auditor</div>
-                            {% if ia_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ ia_date_str }}</div>{% endif %}
+                            <div style="font-size: 8pt; color: #777;">Date: {{ ia_date_str if (ia_date_str and ia_date_str != '-') else '____________' }}</div>
+                        </td>
+                        {% if show_fa %}
+                        <td style="width: {{ col_width }}%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
+                            <div style="font-weight: bold; font-size: 9pt;">Finance &amp; Accounts</div>
+                            <div style="font-size: 8pt; color: #555;">DR/AR (F&amp;A)</div>
+                            <div style="font-size: 8pt; color: #777;">Date: {{ dr_ar_fa_date_str if (dr_ar_fa_date_str and dr_ar_fa_date_str != '-') else '____________' }}</div>
                         </td>
                         {% endif %}
                     </tr>
@@ -936,37 +999,32 @@
                     <tr style="border: none; height: 25px;"><td colspan="3" style="border: none;"></td></tr>
 
                     <tr style="border: none;">
-                        {% if dean_sig %}
                         <td style="width: 50%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
-                            <img src="{{ dean_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% if dean_sig %}
+                                <img src="{{ dean_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% endif %}
                         </td>
-                        {% endif %}
-                        {% if director_sig %}
                         <td style="width: 50%; text-align: center; border: none; vertical-align: bottom; height: 60px; padding-bottom: 5px;">
-                            <img src="{{ director_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% if director_sig %}
+                                <img src="{{ director_sig }}" style="max-height: 40px; display: block; margin: 0 auto;" />
+                            {% endif %}
                         </td>
-                        {% endif %}
                     </tr>
                     <tr style="border: none;">
-                        {% if dean_sig %}
                         <td style="width: 50%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
                             <div style="font-weight: bold; font-size: 9pt;">Dean</div>
                             <div style="font-size: 8pt; color: #555;">Dean P&amp;D/Dean R&amp;C/Dean SW/Registrar</div>
-                            {% if dean_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ dean_date_str }}</div>{% endif %}
+                            <div style="font-size: 8pt; color: #777;">Date: {{ dean_date_str if (dean_date_str and dean_date_str != '-') else '____________' }}</div>
                         </td>
-                        {% endif %}
-                        {% if director_sig %}
                         <td style="width: 50%; text-align: center; border-top: 1px solid #333; padding-top: 5px; vertical-align: top;">
                             <div style="font-weight: bold; font-size: 9pt;">Director</div>
                             <div style="font-size: 8pt; color: #555;">Competent Authority</div>
-                            {% if director_date_str %}<div style="font-size: 8pt; color: #777;">Date: {{ director_date_str }}</div>{% endif %}
+                            <div style="font-size: 8pt; color: #777;">Date: {{ director_date_str if (director_date_str and director_date_str != '-') else '____________' }}</div>
                         </td>
-                        {% endif %}
                     </tr>
                 </table>
             </td>
         </tr>
-        {% endif %}
     </table>
 
     {% elif module == 'specs' %}

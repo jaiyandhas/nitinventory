@@ -4,9 +4,23 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+import socket
+
+def get_db_host():
+    try:
+        socket.gethostbyname("db")
+        return "db"
+    except socket.gaierror:
+        try:
+            socket.gethostbyname("nitinventory-db")
+            return "nitinventory-db"
+        except socket.gaierror:
+            return "localhost"
+
+db_host = get_db_host()
 
 # Force DATABASE_URL to point to test database before importing any app models or settings
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory_test"
+os.environ["DATABASE_URL"] = f"postgresql+asyncpg://nitinventory:nitinventory_secret@{db_host}:5432/nitinventory_test"
 
 # Import database module to monkeypatch
 import app.core.database
@@ -23,7 +37,7 @@ def event_loop():
 async def setup_test_database():
     """Create tables and run seed script once for the test session."""
     # Ensure test database exists
-    default_url = "postgresql+asyncpg://nitinventory:nitinventory_secret@nitinventory-db:5432/nitinventory"
+    default_url = f"postgresql+asyncpg://nitinventory:nitinventory_secret@{db_host}:5432/nitinventory"
     temp_engine = create_async_engine(default_url, isolation_level="AUTOCOMMIT")
     async with temp_engine.connect() as conn:
         try:

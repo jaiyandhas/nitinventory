@@ -161,6 +161,27 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
     if "child_prs" in pr.__dict__ and pr.child_prs:
         child_prs_data = [{"id": c.id, "icr_number": c.icr_number} for c in pr.child_prs]
 
+    aa_data = None
+    if "administrative_approval" in pr.__dict__ and pr.administrative_approval:
+        aa = pr.administrative_approval
+        aa_data = {
+            "id": aa.id,
+            "aa_number": aa.aa_number,
+            "status": aa.status,
+            "attachment_path": aa.attachment_path,
+            "attachment_url": f"/static/uploads/{aa.attachment_path}" if aa.attachment_path else None,
+            "basis_of_estimation_path": aa.basis_of_estimation_path,
+            "basis_of_estimation_url": f"/static/uploads/{aa.basis_of_estimation_path}" if aa.basis_of_estimation_path else None,
+            "gem_non_availability_path": aa.gem_non_availability_path,
+            "gem_non_availability_url": f"/static/uploads/{aa.gem_non_availability_path}" if aa.gem_non_availability_path else None,
+            "authority_approval_path": aa.authority_approval_path,
+            "authority_approval_url": f"/static/uploads/{aa.authority_approval_path}" if aa.authority_approval_path else None,
+            "pac_dept_cert_path": aa.pac_dept_cert_path,
+            "pac_dept_cert_url": f"/static/uploads/{aa.pac_dept_cert_path}" if aa.pac_dept_cert_path else None,
+            "pac_vendor_cert_path": aa.pac_vendor_cert_path,
+            "pac_vendor_cert_url": f"/static/uploads/{aa.pac_vendor_cert_path}" if aa.pac_vendor_cert_path else None,
+        }
+
     return {
         "id": pr.id,
         "icr_number": pr.icr_number,
@@ -180,6 +201,7 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "parent_pr": parent_pr_data,
         "child_prs": child_prs_data,
         "administrative_approval_id": pr.administrative_approval_id,
+        "administrative_approval": aa_data,
     }
 
 
@@ -833,7 +855,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
             selectinload(PurchaseRequest.parent_pr),
             selectinload(PurchaseRequest.child_prs),
-            selectinload(PurchaseRequest.purchase_order)
+            selectinload(PurchaseRequest.purchase_order),
+            selectinload(PurchaseRequest.administrative_approval)
         )
         .where(PurchaseRequest.id == pr_id)
     )
@@ -968,10 +991,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         actor_name = h.frozen_actor_name or ""
         actor_role_name = h.frozen_designation or ""
         actor_dept_name = h.frozen_department or ""
-        frozen_sig = h.frozen_signature_path
-        if frozen_sig and not frozen_sig.startswith("/storage/") and not frozen_sig.startswith("http"):
-            frozen_sig = f"/storage/{frozen_sig}"
-            
+        frozen_sig = None
+        
         if h.current_approver_id:
             actor = users_by_id.get(h.current_approver_id)
             if actor:
@@ -981,8 +1002,13 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                     actor_role_name = actor.role.name if actor.role else ""
                 if not actor_dept_name:
                     actor_dept_name = actor.department.name if actor.department else ""
-                if not frozen_sig and actor.signature_path:
+                if actor.signature_path:
                     frozen_sig = f"/storage/{actor.signature_path}"
+                    
+        if not frozen_sig:
+            frozen_sig = h.frozen_signature_path
+            if frozen_sig and not frozen_sig.startswith("/storage/") and not frozen_sig.startswith("http"):
+                frozen_sig = f"/storage/{frozen_sig}"
                     
         history.append({
             "id": h.id,
@@ -2720,6 +2746,8 @@ async def allocate_budget_file(
     group_key = user.role.group_key if user.role else None
     if group_key not in ("dean_approver", "admin"):
         raise HTTPException(status_code=403, detail="Only Dean Budget/Finance or Admin can allocate a budget file number")
+
+    # Allow Dean P&D (Budget) to allocate budget files
 
     result = await db.execute(
         select(PurchaseRequest)

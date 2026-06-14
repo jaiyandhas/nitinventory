@@ -316,11 +316,11 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ aa, pr }) => {
     // Step 4: ADPD Signoff
     let adpdStepStatus: Stage['status'] = 'pending';
     let adpdStepDate: string | undefined;
+    const adpdHist = activeAA.history?.find((h: any) => h.approver_role?.toLowerCase().includes('adpd'));
     if (activeAA.pending_with === 'ADPD') {
       adpdStepStatus = 'current';
-    } else if (['Director', 'Administrative Approval Granted'].includes(activeAA.status) || (activeAA.pending_with && !['HOD', 'ADPD', 'PI'].includes(activeAA.pending_with))) {
+    } else if (adpdHist || ['Director', 'Administrative Approval Granted'].includes(activeAA.status) || (activeAA.pending_with && !['HOD', 'ADPD', 'PI'].includes(activeAA.pending_with))) {
       adpdStepStatus = 'completed';
-      const adpdHist = activeAA.history?.find((h: any) => h.approver_role?.toLowerCase().includes('adpd') || h.approver_role?.toLowerCase().includes('dean'));
       adpdStepDate = formatDate(adpdHist?.acted_at);
     }
     level2Steps.push({
@@ -328,6 +328,40 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ aa, pr }) => {
       description: 'Associate Dean P&D budget verification.',
       status: adpdStepStatus,
       date: adpdStepDate,
+    });
+
+    // Step 4.5: Dean Approval
+    let deanStepStatus: Stage['status'] = 'pending';
+    let deanStepDate: string | undefined;
+    const deanHist = activeAA.history?.find((h: any) => h.approver_role?.toLowerCase().includes('dean') && !h.approver_role?.toLowerCase().includes('adpd'));
+    if (activeAA.pending_with?.toLowerCase() === 'dean_pd' || activeAA.pending_with?.toLowerCase() === 'dean') {
+      deanStepStatus = 'current';
+    } else if (deanHist || ['Director', 'Administrative Approval Granted'].includes(activeAA.status) || (activeAA.pending_with && !['HOD', 'ADPD', 'PI', 'Dean'].includes(activeAA.pending_with))) {
+      deanStepStatus = 'completed';
+      deanStepDate = formatDate(deanHist?.acted_at);
+    }
+    level2Steps.push({
+      name: 'Dean Approval',
+      description: 'Dean P&D policy compliance review.',
+      status: deanStepStatus,
+      date: deanStepDate,
+    });
+
+    // Step 4.6: Internal Auditor Signoff
+    let iaStepStatus: Stage['status'] = 'pending';
+    let iaStepDate: string | undefined;
+    const iaHist = activeAA.history?.find((h: any) => h.approver_role?.toLowerCase().includes('ia') || h.approver_role?.toLowerCase().includes('audit'));
+    if (activeAA.pending_with?.toLowerCase() === 'ia' || activeAA.pending_with?.toLowerCase().includes('audit')) {
+      iaStepStatus = 'current';
+    } else if (iaHist || ['Director', 'Administrative Approval Granted'].includes(activeAA.status) || (activeAA.pending_with && !['HOD', 'ADPD', 'PI', 'Dean', 'IA', 'Audit'].includes(activeAA.pending_with))) {
+      iaStepStatus = 'completed';
+      iaStepDate = formatDate(iaHist?.acted_at);
+    }
+    level2Steps.push({
+      name: 'Internal Auditor Signoff',
+      description: 'Internal Audit (IA) pre-audit scrutiny.',
+      status: iaStepStatus,
+      date: iaStepDate,
     });
 
     // Step 5: Director Approval

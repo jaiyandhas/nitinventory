@@ -97,9 +97,10 @@ export const BudgetPage: React.FC = () => {
     return acc;
   }, {});
 
-  const isWriteAllowed = user && user.role?.group_key === 'dean_approver';
+  const isWriteAllowed = user && (user.role?.group_key === 'admin' || user.role?.group_key === 'dean_approver');
   const isHOD = user && user.role?.group_key === 'hod';
   const isDirectorOrAdmin = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
+  const showActionsColumn = !(user?.designation === 'Dean P&D (Budget)');
 
   // Committee assignment mutations
   const assignCommitteeMutation = useMutation({
@@ -275,7 +276,9 @@ export const BudgetPage: React.FC = () => {
   };
 
   // Filter department faculties for HOD select dropdowns
-  const deptFaculties = faculties.filter((f: any) => Number(f.department_id) === Number(user?.department_id || user?.department?.id));
+  const deptFaculties = selectedBudgetForCommittee
+    ? faculties.filter((f: any) => Number(f.department_id) === Number(selectedBudgetForCommittee.department_id))
+    : [];
 
   return (
     <div className="space-y-6">
@@ -393,14 +396,14 @@ export const BudgetPage: React.FC = () => {
                 <th className="px-3 py-2 text-xs">Item Name</th>
                 <th className="px-3 py-2 text-xs">Funds (Total / Locked / Utilized / Avail)</th>
                 <th className="px-3 py-2 text-xs">Technical Committee</th>
-                <th className="px-3 py-2 text-xs">Actions</th>
+                {showActionsColumn && <th className="px-3 py-2 text-xs">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loadingBudgets ? (
-                <tr><td colSpan={6} className="text-center py-8">Loading budget data...</td></tr>
+                <tr><td colSpan={showActionsColumn ? 6 : 5} className="text-center py-8">Loading budget data...</td></tr>
               ) : displayBudgets.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
+                <tr><td colSpan={showActionsColumn ? 6 : 5} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
               ) : (
                 displayBudgets.map((b: any) => {
                   const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
@@ -453,6 +456,18 @@ export const BudgetPage: React.FC = () => {
                             Remarks: {b.remarks}
                           </div>
                         )}
+                        {b.attachment_path && b.attachment_url && (
+                          <div className="mt-1 flex items-center gap-1">
+                            <a
+                              href={b.attachment_url.startsWith('http') ? b.attachment_url : `${window.location.origin}${b.attachment_url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                            >
+                              <Paperclip size={10} /> View Attachment
+                            </a>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-xs space-y-0.5 font-sans">
@@ -491,57 +506,69 @@ export const BudgetPage: React.FC = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1.5">
-                          {(isWriteAllowed || (isHOD && matchesDept)) && (
-                            <button
-                              onClick={() => navigate(`/budget/edit/${b.id}`)}
-                              disabled={isFyClosed}
-                              className={`p-1 rounded transition-colors ${
-                                isFyClosed 
-                                  ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
-                                  : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-                              }`}
-                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
-                            >
-                              <Edit2 size={15} />
-                            </button>
-                          )}
-                          {isHOD && matchesDept && (
-                            <button
-                              onClick={() => openCommitteeModal(b)}
-                              disabled={isFyClosed}
-                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-all ${
-                                isFyClosed
-                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                  : (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id)
-                                    ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 border-amber-300 ring-2 ring-amber-150/40 shadow-sm'
-                                    : 'text-indigo-655 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
-                              }`}
-                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
-                            >
-                              <Users size={12} /> Nominate
-                            </button>
-                          )}
-                          {isDirectorOrAdmin && (
-                            <button
-                              onClick={() => openDirectorModal(b)}
-                              disabled={isFyClosed}
-                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
-                                isFyClosed
-                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
-                                  : 'text-emerald-650 hover:text-emerald-850 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30'
-                              }`}
-                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
-                            >
-                              <Award size={12} /> Nominee
-                            </button>
-                          )}
-                          {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
-                            <span className="text-xs text-slate-400 italic">No Actions</span>
-                          )}
-                        </div>
-                      </td>
+                      {showActionsColumn && (
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-1.5">
+                            {((isWriteAllowed && user?.designation !== 'Dean P&D (Budget)') || (isHOD && matchesDept)) && (
+                              <button
+                                onClick={() => navigate(`/budget/edit/${b.id}`)}
+                                disabled={isFyClosed}
+                                className={`p-1 rounded transition-colors ${
+                                  isFyClosed 
+                                    ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
+                                    : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                            )}
+                            {isHOD && matchesDept && (
+                              <button
+                                onClick={() => openCommitteeModal(b)}
+                                disabled={isFyClosed}
+                                className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-all ${
+                                  isFyClosed
+                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                    : (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id)
+                                      ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 border-amber-300 ring-2 ring-amber-150/40 shadow-sm'
+                                      : 'text-indigo-655 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
+                              >
+                                <Users size={12} /> Nominate
+                              </button>
+                            )}
+                            {isDirectorOrAdmin && (
+                              <button
+                                onClick={() => openDirectorModal(b)}
+                                disabled={isFyClosed}
+                                className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
+                                  isFyClosed
+                                    ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                    : 'text-emerald-650 hover:text-emerald-850 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30'
+                                }`}
+                                title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
+                              >
+                                <Award size={12} /> Nominee
+                              </button>
+                            )}
+                            {user?.role?.group_key === 'faculty' && Number(b.allocated_initiator_id) === Number(user.id) ? (
+                              <button
+                                onClick={() => navigate(`/administrative-approvals/create?budget_id=${b.id}`)}
+                                className="p-1 px-2.5 rounded flex items-center gap-1.5 text-[11px] font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 transition-all shadow-sm"
+                                title="Initiate Administrative Approval for this budget"
+                              >
+                                <Plus size={12} /> Initiate Admin Approval
+                              </button>
+                            ) : (
+                              !isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
+                                <span className="text-xs text-slate-400 italic">No Actions</span>
+                              )
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
@@ -621,6 +648,18 @@ export const BudgetPage: React.FC = () => {
                       <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
                       <td className="px-3 py-3 max-w-[150px]" title={b.item_name}>
                         <div className="font-medium text-slate-800 text-xs line-clamp-2">{b.item_name}</div>
+                        {b.attachment_path && b.attachment_url && (
+                          <div className="mt-1 flex items-center gap-1">
+                            <a
+                              href={b.attachment_url.startsWith('http') ? b.attachment_url : `${window.location.origin}${b.attachment_url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                            >
+                              <Paperclip size={10} /> View Attachment
+                            </a>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium rounded capitalize">{b.category || '—'}</span>
@@ -754,13 +793,13 @@ export const BudgetPage: React.FC = () => {
       {/* HOD nomination modal */}
       {selectedBudgetForCommittee && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-visible">
             <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
               <h2 className="text-lg font-bold">Nominate Technical Committee</h2>
               <p className="text-xs text-blue-200 mt-1">File No: {selectedBudgetForCommittee.file_no}</p>
             </div>
             
-            <form onSubmit={submitCommittee} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            <form onSubmit={submitCommittee} className="p-6 space-y-4 overflow-visible">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
@@ -791,7 +830,7 @@ export const BudgetPage: React.FC = () => {
                   <div key={index} className="flex gap-2 items-center">
                     <div className="flex-1">
                       <SearchableSelect
-                        options={faculties}
+                        options={deptFaculties}
                         value={nomineeId}
                         onChange={(val) => {
                           const updated = [...nomineeIds];
@@ -838,31 +877,25 @@ export const BudgetPage: React.FC = () => {
         </div>
       )}
 
-      {/* Director nominee modal */}
       {selectedBudgetForDirector && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-visible">
             <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
               <h2 className="text-lg font-bold">Assign Director Nominee</h2>
               <p className="text-xs text-blue-200 mt-1">File No: {selectedBudgetForDirector.file_no}</p>
             </div>
             
-            <form onSubmit={submitDirectorCommittee} className="p-6 space-y-4">
+            <form onSubmit={submitDirectorCommittee} className="p-6 space-y-4 overflow-visible">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   Director Nominee (Faculty/User) <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  value={directorFacultyId || ''}
-                  onChange={e => setDirectorFacultyId(Number(e.target.value) || null)}
-                  required
-                  className="input-field w-full"
-                >
-                  <option value="">Select Nominee...</option>
-                  {allUsers.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={allUsers}
+                  value={directorFacultyId || null}
+                  onChange={(val) => setDirectorFacultyId(val)}
+                  placeholder="Select Director Nominee..."
+                />
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">

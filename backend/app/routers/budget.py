@@ -110,6 +110,8 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "expert2_id": b.expert2_id or (b.department.expert2_id if b.department else None),
             "department": b.department.name if b.department else None,
             "financial_year": b.financial_year.label if b.financial_year else None,
+            "attachment_path": b.attachment_path,
+            "attachment_url": f"/static/uploads/{b.attachment_path}" if b.attachment_path else None,
         }
         for b in entries
     ]
@@ -406,8 +408,8 @@ async def assign_budget_committee(budget_id: int, body: dict, db: AsyncSession =
         notif_init = Notification(
             user_id=allocated_initiator_id,
             title="Assigned as Purchase Initiator",
-            message=f"You have been assigned as the Purchase Initiator for budget file {b.file_no} ({b.item_name}).",
-            link="/budget"
+            message=f"You have been assigned as the Purchase Initiator for budget file {b.file_no} ({b.item_name}). Click here to initiate your Administrative Approval request.",
+            link=f"/administrative-approvals/create?budget_id={b.id}"
         )
         db.add(notif_init)
         

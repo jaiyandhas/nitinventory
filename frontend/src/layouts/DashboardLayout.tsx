@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { notificationsApi } from '../services/api';
+import { notificationsApi, budgetApi } from '../services/api';
 
 interface NavItem {
   label: string;
@@ -69,6 +69,12 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
+  const { data: budgetFiles = [] } = useQuery({
+    queryKey: ['budgets', 'files-list-layout'],
+    queryFn: () => budgetApi.files().then(res => res.data),
+    enabled: !!user && user.role?.group_key === 'hod',
+  });
+
   const unreadCount = unreadData?.count || 0;
 
   const visibleItems = NAV_ITEMS.filter((item) => {
@@ -113,6 +119,21 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           const active = item.href === '/dashboard'
             ? location.pathname === '/dashboard'
             : location.pathname === item.href || location.pathname.startsWith(item.href + '/');
+
+          let displayLabel = item.label;
+          let collapsedLabel = item.label.substring(0, 2).toUpperCase();
+
+          if (item.label === 'Budget' && user?.role?.group_key === 'hod') {
+            const countWithoutNominees = budgetFiles.filter((b: any) => {
+              const isTemp = b.file_no?.toUpperCase().startsWith('TEMP/');
+              return !isTemp && (!b.allocated_initiator_id || !b.expert1_id || !b.expert2_id);
+            }).length;
+            if (countWithoutNominees > 0) {
+              displayLabel = `Budget (${countWithoutNominees})`;
+              collapsedLabel = `B(${countWithoutNominees})`;
+            }
+          }
+
           return (
             <Link
               key={item.href}
@@ -122,9 +143,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               title={collapsed && !mobile ? item.label : undefined}
             >
               {(!collapsed || mobile) ? (
-                <span>{item.label}</span>
+                <span>{displayLabel}</span>
               ) : (
-                <span className="text-xs font-black tracking-wider text-slate-800">{item.label.substring(0, 2).toUpperCase()}</span>
+                <span className="text-xs font-black tracking-wider text-slate-800">{collapsedLabel}</span>
               )}
             </Link>
           );

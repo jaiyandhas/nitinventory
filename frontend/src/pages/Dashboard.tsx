@@ -87,16 +87,16 @@ export const DashboardPage: React.FC = () => {
   const scopedAAs = aas;
   const scopedPRs = prs;
 
-  // Categorize a request into one of the 9 stages of the procurement lifecycle
+  // Categorize a request into one of the 8 stages of the procurement lifecycle
   const getRequestStage = (item: any): string | null => {
     if ('current_status' in item) {
       // It's a PR
       const status = item.current_status;
-      if (status === 'budget_file_allocation') {
-        return 'budget_alloc';
-      }
       if (['completed', 'rejected', 'cancelled'].includes(status)) {
-        return 'po_issuance';
+        return 'asset';
+      }
+      if (status === 'budget_file_allocation') {
+        return 'indent_specs';
       }
       const phase = item.flow?.phase_name;
       if (phase === 'Indent and Detailed Tech Specification' || phase === 'Administrative Approval') {
@@ -111,16 +111,25 @@ export const DashboardPage: React.FC = () => {
       if (phase === 'Financial Sanction' || phase === 'Financial Evaluation') {
         return 'fin_eval';
       }
-      if (phase === 'Purchase Order' || status === 'po_issued') {
-        return 'po_issuance';
+      if (phase === 'Purchase Order') {
+        return 'approver';
+      }
+      if (status === 'po_issued' || status === 'po_draft' || status === 'po_approved') {
+        return 'po_issued';
       }
       return 'indent_specs';
-    } else if ('gate_pass_no' in item || 'delivery_date' in item) {
-      return 'delivery';
+    } else if ('gate_pass_no' in item || 'delivery_date' in item || 'gin_number' in item) {
+      // It's a Delivery
+      return item.status === 'completed' || item.status === 'verified' ? 'asset' : 'po_issued';
     } else if ('asset_tag' in item) {
-      return 'assets';
+      // It's an Asset
+      return 'asset';
     } else {
       // It's an AA
+      if (['Administrative Approval Granted', 'Rejected', 'Cancelled'].includes(item.status)) {
+        const hasPR = prs.some((pr: any) => pr.administrative_approval_id === item.id || pr.administrative_approval?.id === item.id);
+        return hasPR ? 'asset' : 'indent_specs';
+      }
       return 'admin_approval';
     }
   };
@@ -143,34 +152,65 @@ export const DashboardPage: React.FC = () => {
   const getStageItems = (stageKey: string) => {
     const items: any[] = [];
     
-    if (stageKey === 'delivery') {
+    // PO issued Stage
+    if (stageKey === 'po_issued') {
       deliveriesData.forEach((d: any) => {
-        items.push({
-          id: d.id,
-          number: d.gate_pass_no || `#DEL-${d.id}`,
-          department: d.purchase_request?.initiator?.department?.name || 'Central Office',
-          description: d.purchase_request?.category?.title || 'Delivery Challan',
-          pendingWith: d.status === 'pending' ? 'Department PI' : d.status === 'under_inspection' ? 'Stores / LPC' : 'Completed',
-          status: d.status.toUpperCase(),
-          type: 'DEL',
-          amount: d.purchase_request?.amount || 0,
-          currentStage: 'Delivery Verification',
-          pendingSince: formatDate(d.updated_at || d.created_at),
-          link: `/inventory/deliveries/${d.id}`
-        });
+        if (d.status === 'pending' || d.status === 'under_inspection' || d.status === 'discrepancy') {
+          const hasUnapprovedLogs = d.items?.some((i: any) => i.stores_log && !i.stores_log.is_approved);
+          items.push({
+            id: d.id,
+            number: d.gin_number || d.gate_pass_no || `#DEL-${d.id}`,
+            department: d.purchase_request?.initiator?.department?.name || 'Central Office',
+            description: d.purchase_request?.category?.title || 'Delivery Receipt/Inspection',
+            pendingWith: d.status === 'pending' 
+              ? (d.purchase_request?.initiator_name || 'Faculty (Initiator)')
+              : hasUnapprovedLogs ? 'Apex Approver' : 'HOD / Stores',
+            status: d.status === 'pending' ? 'AWAITING GIN CONFIRMATION' : d.status.toUpperCase().replace('_', ' '),
+            type: 'DEL',
+            amount: d.purchase_request?.amount || 0,
+            currentStage: 'PO issued',
+            pendingSince: formatDate(d.updated_at || d.created_at),
+            link: `/inventory/deliveries/${d.id}`
+          });
+        }
       });
+
+      // Show PRs with status po_issued that don't have deliveries yet
+      scopedPRs.forEach((pr: any) => {
+        if (pr.current_status === 'po_issued') {
+          const hasDel = deliveriesData.some((d: any) => d.purchase_request_id === pr.id || d.purchase_request?.id === pr.id);
+          if (!hasDel) {
+            items.push({
+              id: pr.id,
+              number: pr.icr_number || `#PR-${pr.id}`,
+              department: pr.initiator?.department?.name || 'Central Office',
+              description: pr.category?.title || 'Purchase Request (PO Issued)',
+              pendingWith: 'Faculty (Awaiting Delivery)',
+              status: 'PO ISSUED',
+              type: 'PR',
+              amount: pr.amount,
+              currentStage: 'PO issued',
+              pendingSince: formatDate(pr.updated_at),
+              link: `/pr/${pr.id}`
+            });
+          }
+        }
+      });
+
       return items;
     }
 
-    if (stageKey === 'assets') {
+    // Asset Stage
+    if (stageKey === 'asset') {
+      // Assets
       assets.forEach((ast: any) => {
         items.push({
           id: ast.id,
           number: ast.asset_tag || `#AST-${ast.id}`,
           department: ast.department?.name || 'Central Office',
           description: ast.asset_name || 'Asset Registry',
-          pendingWith: 'None (Registered)',
-          status: ast.condition?.toUpperCase() || 'GOOD',
+          pendingWith: 'None (Completed)',
+          status: 'COMPLETED',
           type: 'AST',
           amount: ast.cost || 0,
           currentStage: 'Asset Registry',
@@ -178,9 +218,46 @@ export const DashboardPage: React.FC = () => {
           link: `/assets/${ast.id}`
         });
       });
+      // Completed Deliveries
+      deliveriesData.forEach((d: any) => {
+        if (d.status === 'completed' || d.status === 'verified') {
+          items.push({
+            id: d.id,
+            number: d.gin_number || d.gate_pass_no || `#DEL-${d.id}`,
+            department: d.purchase_request?.initiator?.department?.name || 'Central Office',
+            description: d.purchase_request?.category?.title || 'Delivery Completed',
+            pendingWith: 'None (Completed)',
+            status: 'COMPLETED',
+            type: 'DEL',
+            amount: d.purchase_request?.amount || 0,
+            currentStage: 'Delivery Completed',
+            pendingSince: formatDate(d.updated_at || d.created_at),
+            link: `/inventory/deliveries/${d.id}`
+          });
+        }
+      });
+      // Completed/Rejected/Cancelled PRs
+      prs.forEach((pr: any) => {
+        if (['completed', 'rejected', 'cancelled'].includes(pr.current_status)) {
+          items.push({
+            id: pr.id,
+            number: pr.icr_number || `#PR-${pr.id}`,
+            department: pr.initiator?.department?.name || 'Central Office',
+            description: pr.category?.title || 'Purchase Request',
+            pendingWith: 'None',
+            status: pr.current_status.toUpperCase(),
+            type: 'PR',
+            amount: pr.amount,
+            currentStage: 'Completed',
+            pendingSince: formatDate(pr.updated_at),
+            link: `/pr/${pr.id}`
+          });
+        }
+      });
       return items;
     }
 
+    // Administrative Approval Stage
     scopedAAs.forEach((aa: any) => {
       if (getRequestStage(aa) === stageKey) {
         items.push({
@@ -199,6 +276,7 @@ export const DashboardPage: React.FC = () => {
       }
     });
 
+    // Indent and Detailed Tech specifications Stage
     if (stageKey === 'indent_specs') {
       const approvedAAsWithNoPR = scopedAAs.filter((aa: any) => {
         const fileNo = aa.budget_info?.file_no || aa.budget_file?.file_no || aa.file_no || '';
@@ -222,8 +300,32 @@ export const DashboardPage: React.FC = () => {
           link: `/pr/create?aa_id=${aa.id}`
         });
       });
+
+      // Budget committee setup actions:
+      if (isRole('hod') && Array.isArray(budgetFiles)) {
+        budgetFiles.forEach((bf: any) => {
+          const needsInitiator = !bf.allocated_initiator_id;
+          const needsCommittee = !bf.expert1_id || !bf.expert2_id;
+          if (needsInitiator || needsCommittee) {
+            items.push({
+              id: bf.id,
+              number: bf.file_no || `#BUDGET-${bf.id}`,
+              department: bf.department?.name || user?.department?.name || 'Department',
+              description: `Setup Committee: ${bf.item_name || 'Budget File'}`,
+              pendingWith: bf.hod_name || 'HOD',
+              status: 'COMMITTEE SETUP',
+              type: 'BUDGET',
+              amount: bf.total_allocation,
+              currentStage: 'Budget Setup',
+              pendingSince: formatDate(bf.updated_at || bf.created_at),
+              link: `/budget?setup_committee_id=${bf.id}`
+            });
+          }
+        });
+      }
     }
 
+    // PRs matching the current stage
     scopedPRs.forEach((pr: any) => {
       if (getRequestStage(pr) === stageKey) {
         items.push({
@@ -243,144 +345,20 @@ export const DashboardPage: React.FC = () => {
         });
       }
     });
+
     return items;
-  };
-
-  // Calculate detailed counts (Total, Pending, Returned, Completed) per stage
-  const getStageCounts = (stageKey: string) => {
-    let pending = 0;
-    let returned = 0;
-    let completed = 0;
-
-    if (stageKey === 'delivery') {
-      deliveriesData.forEach((d: any) => {
-        if (d.status === 'pending' || d.status === 'shipped' || d.status === 'under_inspection') {
-          pending++;
-        } else if (d.status === 'verified' || d.status === 'received') {
-          completed++;
-        }
-      });
-      const total = pending + returned + completed;
-      return { total, pending, returned, completed };
-    }
-
-    if (stageKey === 'assets') {
-      assets.forEach((ast: any) => {
-        if (ast.disposal_status === 'flagged') {
-          pending++;
-        } else {
-          completed++;
-        }
-      });
-      const total = pending + returned + completed;
-      return { total, pending, returned, completed };
-    }
-
-    scopedAAs.forEach((aa: any) => {
-      if (stageKey === 'admin_approval') {
-        if (aa.status === 'Administrative Approval Granted' || aa.status === 'Rejected') {
-          completed++;
-        } else if (aa.status === 'Returned' || aa.pending_with === 'PI') {
-          returned++;
-        } else {
-          pending++;
-        }
-      }
-    });
-
-    scopedPRs.forEach((pr: any) => {
-      const phase = pr.flow?.phase_name;
-      const status = pr.current_status;
-
-      if (stageKey === 'admin_approval') {
-        completed++;
-      } else if (stageKey === 'indent_specs') {
-        if (phase === 'Indent and Detailed Tech Specification' || phase === 'Administrative Approval') {
-          if (status === 'returned') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else if (phase && !['Indent and Detailed Tech Specification', 'Administrative Approval'].includes(phase)) {
-          completed++;
-        } else if (status === 'completed' || status === 'po_issued') {
-          completed++;
-        }
-      } else if (stageKey === 'tendering') {
-        if (phase === 'Tendering') {
-          if (status === 'returned') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else if (phase && !['Indent and Detailed Tech Specification', 'Administrative Approval', 'Tendering'].includes(phase)) {
-          completed++;
-        } else if (status === 'completed' || status === 'po_issued') {
-          completed++;
-        }
-      } else if (stageKey === 'tech_eval') {
-        if (phase === 'Technical Evaluation') {
-          if (status === 'returned') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else if (phase && !['Indent and Detailed Tech Specification', 'Administrative Approval', 'Tendering', 'Technical Evaluation'].includes(phase)) {
-          completed++;
-        } else if (status === 'completed' || status === 'po_issued') {
-          completed++;
-        }
-      } else if (stageKey === 'fin_eval') {
-        if (phase === 'Financial Sanction' || phase === 'Financial Evaluation') {
-          if (status === 'returned') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else if (phase && ['Purchase Order'].includes(phase)) {
-          completed++;
-        } else if (status === 'completed' || status === 'po_issued') {
-          completed++;
-        }
-      } else if (stageKey === 'po_issuance') {
-        if (phase === 'Purchase Order') {
-          if (status === 'returned') {
-            returned++;
-          } else {
-            pending++;
-          }
-        } else if (status === 'po_issued' || status === 'completed') {
-          completed++;
-        }
-      }
-    });
-
-    // If a request is approved in AA but has no PR yet, it is pending indent specification creation
-    if (stageKey === 'indent_specs') {
-      const approvedAAsWithNoPR = scopedAAs.filter((aa: any) => {
-        const fileNo = aa.budget_info?.file_no || aa.budget_file?.file_no || aa.file_no || '';
-        const isTemp = fileNo.toUpperCase().startsWith('TEMP');
-        if (isTemp || aa.status !== 'Administrative Approval Granted') return false;
-        const hasPR = scopedPRs.some((pr: any) => pr.administrative_approval_id === aa.id || pr.administrative_approval?.id === aa.id);
-        return !hasPR;
-      });
-      pending += approvedAAsWithNoPR.length;
-    }
-
-    const total = pending + returned + completed;
-    return { total, pending, returned, completed };
   };
 
   // 8 Lifecycle stages definition
   const LIFECYCLE_STAGES = [
-    { key: 'admin_approval', label: 'Administrative Approval', icon: CheckCircle, desc: 'AA workflow & nominee checks' },
-    { key: 'indent_specs', label: 'Indent & Specs', icon: FileText, desc: 'Technical specifications review' },
-    { key: 'tendering', label: 'Tendering Process', icon: Layers, desc: 'LPC minutes & vendor bidding' },
-    { key: 'tech_eval', label: 'Tech Evaluation', icon: AlertTriangle, desc: 'Expert committee evaluation' },
-    { key: 'fin_eval', label: 'Financial Sanction', icon: TrendingUp, desc: 'Price bid analysis & awards' },
-    { key: 'po_issuance', label: 'Purchase Order', icon: Package, desc: 'PO drafting & delivery tracking' },
-    { key: 'delivery', label: 'Delivery', icon: Clock, desc: 'Receipt verification & GRN' },
-    { key: 'assets', label: 'Asset Management', icon: ShieldAlert, desc: 'Asset registry & tagging' }
+    { key: 'admin_approval', label: 'Administrative Approval', desc: 'AA workflow & nominee checks' },
+    { key: 'indent_specs', label: 'Indent and Detailed Tech specifications', desc: 'Technical specifications review & PR creation' },
+    { key: 'tendering', label: 'Tendering', desc: 'LPC minutes & vendor bidding' },
+    { key: 'tech_eval', label: 'Technical', desc: 'Expert committee evaluation' },
+    { key: 'fin_eval', label: 'Financial', desc: 'Price bid analysis & awards' },
+    { key: 'approver', label: 'Approver', desc: 'Purchase order drafting & approvals' },
+    { key: 'po_issued', label: 'PO issued', desc: 'Delivery logging & receipt verification' },
+    { key: 'asset', label: 'Asset', desc: 'Asset registry & completed requests' }
   ];
 
   // Aggregated Action-Oriented Pending Queue
@@ -396,6 +374,7 @@ export const DashboardPage: React.FC = () => {
       const isPendingHOD = (aa.pending_with === 'HOD' && isRole('hod') && aa.pi_department_id === user?.department_id) || (aa.pending_with === 'HOD' && isRole('admin'));
       const isPendingADPD = aa.pending_with === 'ADPD' && (isRole('verifier_general') || user?.role?.value === 'adpd' || isRole('admin'));
       const isPendingDean = aa.pending_with === 'Dean' && (isRole('dean_approver') || user?.role?.value === 'dean_pd' || isRole('admin'));
+      const isPendingIA = (aa.pending_with === 'IA' || aa.pending_with?.toLowerCase().includes('audit')) && (user?.role?.value === 'ia' || user?.role?.value === 'internal_auditor' || user?.role?.group_key === 'internal_audit' || user?.role?.group_key === 'auditor' || isRole('admin'));
       const isPendingDirector = aa.pending_with === 'Director' && (isRole('apex_approver') || user?.role?.value === 'director' || isRole('admin'));
       const isPendingPI = (aa.pending_with === 'PI' || aa.status === 'Returned' || aa.status?.toLowerCase().includes('returned')) && aa.pi_id === user?.id;
       
@@ -404,7 +383,7 @@ export const DashboardPage: React.FC = () => {
         (nom: any) => nom.nominee_id === user?.id && nom.status === 'Pending'
       );
       
-      if (isPendingHOD || isPendingADPD || isPendingDean || isPendingDirector || isPendingPI || isNomineePending) {
+      if (isPendingHOD || isPendingADPD || isPendingDean || isPendingIA || isPendingDirector || isPendingPI || isNomineePending) {
         let badgeText = 'AA Review';
         let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200';
         let actionRequired = 'Verify and approve administrative approval request.';
@@ -425,6 +404,10 @@ export const DashboardPage: React.FC = () => {
           badgeText = 'AA Dean Signoff';
           badgeColor = 'bg-teal-100 text-teal-800 border border-teal-200';
           actionRequired = 'Verify and recommend approval to the Director.';
+        } else if (isPendingIA) {
+          badgeText = 'AA IA Scrutiny';
+          badgeColor = 'bg-indigo-100 text-indigo-850 border border-indigo-200';
+          actionRequired = 'Scrutinize and sign the administrative approval file.';
         } else if (isPendingDirector) {
           badgeText = 'AA Director Approval';
           badgeColor = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
@@ -553,6 +536,31 @@ export const DashboardPage: React.FC = () => {
       });
     }
 
+    // Faculty Pending Administrative Approvals actions:
+    if (isRole('faculty') && Array.isArray(budgetFiles)) {
+      budgetFiles.forEach((bf: any) => {
+        if (Number(bf.allocated_initiator_id) === Number(user?.id)) {
+          const hasAA = aas.some((aa: any) => Number(aa.budget_file_id) === Number(bf.id));
+          if (!hasAA) {
+            actions.push({
+              id: bf.id,
+              number: bf.file_no || `#BUDGET-${bf.id}`,
+              title: `Initiate Admin Approval: ${bf.item_name || 'Budget File'}`,
+              type: 'BUDGET',
+              badgeText: 'AA Action Needed',
+              badgeColor: 'bg-emerald-100 text-emerald-800 border border-emerald-250',
+              amount: bf.total_allocation,
+              link: `/administrative-approvals/create?budget_id=${bf.id}`,
+              actionRequired: 'Please initiate the Administrative Approval request for this budget.',
+              department: bf.department || user?.department?.name || 'Department',
+              initiator: 'System',
+              date: formatDate(bf.updated_at || bf.created_at)
+            });
+          }
+        }
+      });
+    }
+
     // Deduplicate
     const seen = new Set();
     return actions.filter((act) => {
@@ -564,7 +572,53 @@ export const DashboardPage: React.FC = () => {
   };
 
   const myPendingActionsList = getMyPendingActions();
-  const activeStageItemsList = selectedStage ? getStageItems(selectedStage) : [];
+
+  const isActionRequiredForUser = (item: any): boolean => {
+    // 1. Check against myPendingActionsList for AA, PR, BUDGET
+    const inPendingList = myPendingActionsList.some(
+      (act) => act.type === item.type && act.id === item.id
+    );
+    if (inPendingList) return true;
+
+    // 2. Check for GIN/GRN (DEL pending or under inspection)
+    if (item.type === 'DEL') {
+      const delRecord = deliveriesData.find((d: any) => d.id === item.id);
+      if (delRecord) {
+        if (delRecord.status === 'pending') {
+          const isInitiator = user && delRecord.purchase_request?.initiator_id === user.id;
+          return !!isInitiator;
+        }
+        if (delRecord.status === 'under_inspection' || delRecord.status === 'discrepancy') {
+          const hasUnapprovedLogs = delRecord.items?.some((i: any) => i.stores_log && !i.stores_log.is_approved);
+          const isHod = user?.role?.group_key === 'hod';
+          const isStores = user?.role?.group_key === 'verifier_sp';
+          const isApex = user?.role?.group_key === 'apex_approver';
+          const isAdmin = user?.role?.group_key === 'admin';
+          
+          if (hasUnapprovedLogs && isApex) return true;
+          if (!hasUnapprovedLogs && (isHod || isStores || isAdmin)) return true;
+        }
+      }
+    }
+
+    // 3. Check for AAs awaiting indent
+    if (item.type === 'AA' && item.status === 'AWAITING INDENT') {
+      const aaRecord = aas.find((a: any) => a.id === item.id);
+      if (aaRecord && aaRecord.pi_id === user?.id) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const activeStageItemsList = selectedStage 
+    ? getStageItems(selectedStage).sort((a, b) => {
+        const aReq = isActionRequiredForUser(a) ? 1 : 0;
+        const bReq = isActionRequiredForUser(b) ? 1 : 0;
+        return bReq - aReq;
+      })
+    : [];
 
   return (
     <div className="space-y-6">
@@ -601,222 +655,88 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Budget Overview Stat Cards */}
-      {showBudgetOverview && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[110px]">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Allocation</p>
-                <h3 className="text-lg font-extrabold text-slate-800 mt-2">{formatCurrency(safeBudget.total)}</h3>
-              </div>
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                <Wallet size={16} />
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Allocated Budget File Funds</p>
+      {!selectedStage ? (
+        <div className="space-y-4 text-left">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Procurement Lifecycle Tracking</h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Click on a stage card to view the work queue of active requests in that phase.</p>
           </div>
 
-          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[110px]">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Locked (Committed)</p>
-                <h3 className="text-lg font-extrabold text-amber-600 mt-2">{formatCurrency(safeBudget.locked)}</h3>
-              </div>
-              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
-                <Clock size={16} />
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Active Indents & Tenders</p>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {LIFECYCLE_STAGES.map((stage) => {
+              const stageItems = getStageItems(stage.key);
+              const totalCount = stageItems.length;
 
-          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[110px]">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Utilized (Deducted)</p>
-                <h3 className="text-lg font-extrabold text-indigo-650 mt-2">{formatCurrency(safeBudget.deducted)}</h3>
-              </div>
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                <TrendingUp size={16} />
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">PO Issued & Completed</p>
-          </div>
+              // Determine status and pending counts
+              const pendingUserItems = stageItems.filter(isActionRequiredForUser);
+              const pendingUserCount = pendingUserItems.length;
 
-          <div className="bg-white p-5 border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[110px]">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Balance</p>
-                <h3 className="text-lg font-extrabold text-emerald-600 mt-2">{formatCurrency(safeBudget.available)}</h3>
-              </div>
-              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                <Package size={16} />
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-100 pt-2">Ready for New Procurement</p>
-          </div>
-        </div>
-      )}
+              // Under review items are items in progress that are not requiring current user action
+              const underReviewCount = stageItems.filter(item => {
+                if (isActionRequiredForUser(item)) return false;
+                if (item.status === 'COMPLETED' || item.status === 'REJECTED' || item.status === 'CANCELLED' || item.status === 'GOOD') return false;
+                return true;
+              }).length;
 
-      {/* Discrepancy Banner */}
-      {discrepancies.filter((d: { status: string }) => d.status === 'open').length > 0 && (
-        <div className="border border-l-4 border-l-orange-500 border-slate-200 rounded-xl p-4 flex items-center gap-4 bg-orange-50/70 text-left shadow-sm">
-          <AlertTriangle size={20} className="text-orange-600 flex-shrink-0" />
-          <div className="flex-1">
-            <div className="text-sm font-bold text-orange-850">
-              {discrepancies.filter((d: { status: string }) => d.status === 'open').length} Open Inventory Discrepancy Mismatches Detected
-            </div>
-            <div className="text-xs font-semibold text-orange-700 mt-0.5">Quantity mismatches must be resolved to unblock pending payments.</div>
-          </div>
-          <Link to="/inventory/discrepancies" className="btn-primary text-xs py-1.5 px-3 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg border-none shadow-sm transition">
-            Resolve Now
-          </Link>
-        </div>
-      )}
+              let statusColor = 'bg-emerald-500';
+              let statusText = 'No Action Required';
+              let borderStyle = 'border-slate-200';
 
-      {/* My Pending Actions Section */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 text-left shadow-sm">
-        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2">
-            <Layers size={18} className="text-[#1a3a6b]" />
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">My Pending Actions</h3>
-          </div>
-          <span className="bg-rose-50 text-rose-700 px-2.5 py-1 rounded-full text-xs font-bold border border-rose-200">
-            {myPendingActionsList.length} Action(s) Required
-          </span>
-        </div>
+              if (pendingUserCount > 0) {
+                statusColor = 'bg-rose-500';
+                statusText = `${pendingUserCount} Action Required`;
+                borderStyle = 'border-rose-350 ring-1 ring-rose-50/50';
+              } else if (underReviewCount > 0) {
+                statusColor = 'bg-amber-400';
+                statusText = `${underReviewCount} Under Review`;
+                borderStyle = 'border-slate-250';
+              }
 
-        {myPendingActionsList.length === 0 ? (
-          <div className="text-center py-10 text-slate-500 text-xs font-semibold flex flex-col items-center justify-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-500">
-              <CheckCircle size={24} />
-            </div>
-            <div>
-              <p className="text-slate-800 font-bold text-sm">All Caught Up!</p>
-              <p className="text-slate-400 font-medium mt-1">No pending procurement actions at this moment.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="text-[10px] text-slate-450 border-b border-slate-200 bg-slate-50/50 uppercase tracking-wider font-bold">
-                  <th className="px-5 py-3.5">Ref No</th>
-                  <th className="px-5 py-3.5">Title / Item</th>
-                  <th className="px-5 py-3.5">Dept / Initiator</th>
-                  <th className="px-5 py-3.5">Amount</th>
-                  <th className="px-5 py-3.5">Date</th>
-                  <th className="px-5 py-3.5">Action Status</th>
-                  <th className="px-5 py-3.5">Instructions</th>
-                  <th className="px-5 py-3.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-150">
-                {myPendingActionsList.map((item) => (
-                  <tr key={`${item.type}-${item.id}`} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-5 py-4 font-bold text-slate-800">
-                      <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px] font-bold mr-1.5">
-                        {item.type}
-                      </span>
-                      {item.number}
-                    </td>
-                    <td className="px-5 py-4 font-semibold text-slate-800">{item.title}</td>
-                    <td className="px-5 py-4 text-slate-605 font-medium">
-                      <div>{item.department}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                        <User size={10} className="text-slate-400" /> {item.initiator}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 font-bold text-slate-700 font-mono">{formatCurrency(item.amount)}</td>
-                    <td className="px-5 py-4 text-slate-500 font-mono">{item.date}</td>
-                    <td className="px-5 py-4">
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${item.badgeColor}`}>
-                        {item.badgeText}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 italic max-w-xs truncate" title={item.actionRequired}>
-                      "{item.actionRequired}"
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <Link
-                        to={item.link}
-                        className="inline-flex items-center gap-1 bg-[#1a3a6b] hover:bg-[#244b8f] text-white font-bold px-3 py-1.5 rounded-lg text-[10px] shadow-sm hover:shadow transition"
-                      >
-                        Action <ChevronRight size={10} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Procurement Lifecycle Stage Cards */}
-      <div className="space-y-4 text-left">
-        <div>
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Procurement Lifecycle Tracking</h3>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">Click on a stage card to view the work queue of active requests in that phase.</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {LIFECYCLE_STAGES.map((stage) => {
-            const count = getStageItems(stage.key).length;
-            const isActive = count > 0;
-            const isSelected = selectedStage === stage.key;
-            const counts = getStageCounts(stage.key);
-
-            return (
-              <button
-                key={stage.key}
-                onClick={() => setSelectedStage(isSelected ? null : stage.key)}
-                className={`flex flex-col items-center justify-between text-center p-5 bg-white border rounded-xl shadow-sm transition-all focus:outline-none min-h-[160px] ${
-                  isSelected 
-                    ? 'border-[#1a3a6b] ring-2 ring-blue-100/70 bg-blue-50/10' 
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                }`}
-              >
-                <div className="w-full flex flex-col items-center justify-center space-y-1">
-                  <p className={`text-xs font-bold uppercase tracking-wider ${isSelected ? 'text-[#1a3a6b]' : 'text-slate-700'}`}>
-                    {stage.label}
+              return (
+                <button
+                  key={stage.key}
+                  onClick={() => setSelectedStage(stage.key)}
+                  className={`flex flex-col text-left p-5 bg-white border rounded-xl shadow-sm transition-all focus:outline-none min-h-[140px] hover:border-slate-350 hover:shadow ${borderStyle}`}
+                >
+                  <div className="flex justify-between items-start w-full gap-2">
+                    <h4 className="text-xs font-extrabold text-slate-800 tracking-tight uppercase">{stage.label}</h4>
+                    <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                      {totalCount} {totalCount === 1 ? 'Record' : 'Records'}
+                    </span>
+                  </div>
+                  
+                  <p className="text-xs text-slate-400 font-medium mt-1.5 flex-grow line-clamp-2">
+                    {stage.desc}
                   </p>
                   
-                  <p className="text-3xl font-black text-[#1a3a6b] py-2">
-                    {counts.pending}
-                  </p>
-                  
-                  <p className="text-[10px] text-slate-400 font-semibold tracking-wide uppercase">
-                    {counts.pending === 1 ? '1 request under review' : `${counts.pending} requests under review`}
-                  </p>
-                </div>
-
-                <div className="w-full border-t border-slate-100 mt-4 pt-3 flex justify-center gap-3 text-[10px] text-slate-450 font-bold tracking-tight">
-                  <div>
-                    <span className="text-slate-400">Total:</span> <span className="text-slate-700">{counts.total}</span>
+                  <div className={`w-full mt-4 pt-2.5 border-t border-slate-100 flex items-center gap-1.5`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
+                    <span className="text-[10px] font-extrabold tracking-wider uppercase text-slate-600">
+                      {statusText}
+                    </span>
                   </div>
-                  <div>
-                    <span className="text-amber-600">Ret:</span> <span className="text-slate-700">{counts.returned}</span>
-                  </div>
-                  <div>
-                    <span className="text-emerald-600">Done:</span> <span className="text-slate-700">{counts.completed}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
-
-      {/* Stage-Wise Work Queue Table */}
-      {selectedStage && (
+      ) : (
+        /* Stage-Wise Work Queue Table */
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm text-left overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Active Work Queue</span>
-              <h3 className="text-xs font-extrabold text-slate-800 uppercase mt-0.5">
-                Stage: {LIFECYCLE_STAGES.find(s => s.key === selectedStage)?.label} ({activeStageItemsList.length} Item(s))
-              </h3>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSelectedStage(null)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#1a3a6b] bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition"
+              >
+                ← Back to Dashboard
+              </button>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Active Work Queue</span>
+                <h3 className="text-xs font-extrabold text-slate-800 uppercase mt-0.5">
+                  Stage: {LIFECYCLE_STAGES.find(s => s.key === selectedStage)?.label} ({activeStageItemsList.length} Item(s))
+                </h3>
+              </div>
             </div>
           </div>
 
@@ -824,49 +744,61 @@ export const DashboardPage: React.FC = () => {
             <table className="w-full text-xs text-left">
               <thead>
                 <tr className="text-[10px] text-slate-450 border-b border-slate-200 bg-slate-50/30 uppercase tracking-wider font-bold">
-                  <th className="px-5 py-3.5">Request Number</th>
+                  <th className="px-5 py-3.5">Reference No</th>
                   <th className="px-5 py-3.5">Department</th>
+                  <th className="px-5 py-3.5">Description</th>
                   <th className="px-5 py-3.5">Amount</th>
-                  <th className="px-5 py-3.5">Current Stage</th>
                   <th className="px-5 py-3.5">Pending With User/Role</th>
-                  <th className="px-5 py-3.5">Pending Since Date</th>
+                  <th className="px-5 py-3.5">Pending Since</th>
                   <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5 text-right">Action links</th>
+                  <th className="px-5 py-3.5 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {activeStageItemsList.map((item) => (
-                  <tr key={`${item.type}-${item.id}`} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-5 py-4 font-bold text-slate-800">
-                      <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px] font-bold mr-1">
-                        {item.type}
-                      </span>
-                      {item.number}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 font-semibold">{item.department}</td>
-                    <td className="px-5 py-4 font-bold text-slate-700 font-mono">{formatCurrency(item.amount)}</td>
-                    <td className="px-5 py-4">
-                      <span className="bg-slate-100 text-slate-700 font-bold text-[9px] px-2 py-0.5 rounded border border-slate-200 uppercase tracking-wider">
-                        {item.currentStage}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-550 font-semibold">{item.pendingWith}</td>
-                    <td className="px-5 py-4 text-slate-500 font-mono font-medium">{item.pendingSince}</td>
-                    <td className="px-5 py-4">
-                      <span className="bg-blue-50 text-[#1a3a6b] font-bold text-[9px] px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider">
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <Link
-                        to={item.link}
-                        className="inline-flex items-center gap-1 text-[#1a3a6b] hover:text-[#244b8f] font-extrabold hover:underline"
-                      >
-                        {item.type === 'AA' && item.status === 'AWAITING INDENT' ? 'Initiate Indent' : 'View Request'} <ChevronRight size={13} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {activeStageItemsList.map((item) => {
+                  const requiresAction = isActionRequiredForUser(item);
+                  return (
+                    <tr 
+                      key={`${item.type}-${item.id}`} 
+                      className={`transition-colors ${
+                        requiresAction 
+                          ? 'bg-rose-50/25 hover:bg-rose-50/40 border-l-2 border-l-rose-500' 
+                          : 'hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <td className="px-5 py-4 font-bold text-slate-800">
+                        <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px] font-bold mr-1.5">
+                          {item.type}
+                        </span>
+                        {item.number}
+                      </td>
+                      <td className="px-5 py-4 text-slate-600 font-semibold">{item.department}</td>
+                      <td className="px-5 py-4 text-slate-700 font-medium max-w-xs truncate" title={item.description}>{item.description}</td>
+                      <td className="px-5 py-4 font-bold text-slate-700 font-mono">{formatCurrency(item.amount)}</td>
+                      <td className="px-5 py-4 text-slate-550 font-semibold">{item.pendingWith}</td>
+                      <td className="px-5 py-4 text-slate-500 font-mono font-medium">{item.pendingSince}</td>
+                      <td className="px-5 py-4">
+                        <span className={`font-bold text-[9px] px-2 py-0.5 rounded border uppercase tracking-wider ${
+                          requiresAction 
+                            ? 'bg-rose-100 text-rose-800 border-rose-200' 
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {requiresAction ? 'Action Required' : item.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Link
+                          to={item.link}
+                          className={`inline-flex items-center gap-1 font-extrabold hover:underline ${
+                            requiresAction ? 'text-rose-600 hover:text-rose-700' : 'text-[#1a3a6b] hover:text-[#244b8f]'
+                          }`}
+                        >
+                          {item.type === 'AA' && item.status === 'AWAITING INDENT' ? 'Initiate Indent' : requiresAction ? 'Take Action' : 'View Request'} <ChevronRight size={13} />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {activeStageItemsList.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-5 py-10 text-center text-slate-400 font-medium italic">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
-  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText, Clock
+  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText, Clock, Paperclip, ChevronRight, Download
 } from 'lucide-react';
 import { useParams, Link } from 'react-router-dom';
 import { formatCurrency } from '../utils/format';
@@ -543,8 +543,220 @@ export const PRDetailPage: React.FC = () => {
                   {selectedStageKey === activeStageKey && isActionable ? (
                     <PRActionPanel pr={pr} user={user} refetch={refetch} faculties={faculties} />
                   ) : (
-                    <div className="p-4 bg-slate-50 border border-slate-100 rounded text-center text-xs text-slate-500 font-semibold italic">
-                      Administrative approval stage has completed or is not actively awaiting actions.
+                    <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl space-y-5">
+                      <div className="text-center text-xs text-slate-500 font-semibold italic">
+                        Administrative approval stage has completed or is not actively awaiting actions.
+                      </div>
+                      
+                      {pr.administrative_approval_id && (
+                        <div className="border-t border-slate-200 pt-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-700">Administrative Approval PDF Report</h4>
+                            <p className="text-[10px] text-slate-400">Download the signed administrative approval document for records.</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const absoluteUrl = `${window.location.origin}/api/administrative-approvals/${pr.administrative_approval_id}/print`;
+                              window.open(absoluteUrl, '_blank');
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg font-bold shadow transition-all shrink-0 cursor-pointer border-none"
+                          >
+                            <FileText size={14} /> Download AA PDF Report
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Display attached documents uploaded during the stage if present */}
+                      {pr.administrative_approval && (
+                        (pr.administrative_approval.attachment_path ||
+                         pr.administrative_approval.basis_of_estimation_path ||
+                         pr.administrative_approval.gem_non_availability_path ||
+                         pr.administrative_approval.authority_approval_path ||
+                         pr.administrative_approval.pac_dept_cert_path ||
+                         pr.administrative_approval.pac_vendor_cert_path)
+                      ) && (
+                        <div className="border-t border-slate-200 pt-4 space-y-3">
+                          <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <Paperclip size={14} /> Attached Documents Uploaded During Stage
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {pr.administrative_approval.attachment_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.attachment_path.split('/').pop() || 'Attachment'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    Administrative Approval Attachment
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.attachment_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.attachment_url || undefined}
+                                    download={pr.administrative_approval.attachment_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {pr.administrative_approval.basis_of_estimation_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.basis_of_estimation_path.split('/').pop() || 'Basis of Estimation'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    Basis of Estimation
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.basis_of_estimation_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.basis_of_estimation_url || undefined}
+                                    download={pr.administrative_approval.basis_of_estimation_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {pr.administrative_approval.gem_non_availability_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.gem_non_availability_path.split('/').pop() || 'GeM ARpt'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    GeM Non-Availability Report
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.gem_non_availability_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.gem_non_availability_url || undefined}
+                                    download={pr.administrative_approval.gem_non_availability_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {pr.administrative_approval.authority_approval_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.authority_approval_path.split('/').pop() || 'Authority Approval'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    Competent Authority Approval
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.authority_approval_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.authority_approval_url || undefined}
+                                    download={pr.administrative_approval.authority_approval_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {pr.administrative_approval.pac_dept_cert_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.pac_dept_cert_path.split('/').pop() || 'PAC Dept Cert'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    PAC Department Certificate
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.pac_dept_cert_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.pac_dept_cert_url || undefined}
+                                    download={pr.administrative_approval.pac_dept_cert_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {pr.administrative_approval.pac_vendor_cert_path && (
+                              <div className="flex items-start justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">
+                                    {pr.administrative_approval.pac_vendor_cert_path.split('/').pop() || 'PAC Vendor Cert'}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
+                                    PAC Vendor Certificate
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={pr.administrative_approval.pac_vendor_cert_url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ChevronRight size={10} /> View
+                                  </a>
+                                  <a
+                                    href={pr.administrative_approval.pac_vendor_cert_url || undefined}
+                                    download={pr.administrative_approval.pac_vendor_cert_path.split('/').pop()}
+                                    className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <Download size={10} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

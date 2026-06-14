@@ -32,9 +32,14 @@ export const BudgetFormPage: React.FC = () => {
 
   useEffect(() => {
     if (!authLoading && user) {
+      if (isEdit && user.designation === 'Dean P&D (Budget)') {
+        toast.error('Dean P&D (Budget) is not authorized to modify budgets');
+        navigate('/budget');
+        return;
+      }
       setIsTemporary(isHod());
     }
-  }, [authLoading, user]);
+  }, [authLoading, user, navigate, isEdit]);
 
   const [remarks, setRemarks] = useState<string>('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
