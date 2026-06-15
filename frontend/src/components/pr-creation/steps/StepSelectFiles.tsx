@@ -4,7 +4,7 @@ import type { PRWizardSelection } from '../../../types/prCreation';
 import { Link } from 'react-router-dom';
 import { Plus, Info, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { formatFileNo, formatCurrency } from '../../../utils/format';
+import { formatFileNo, formatCurrency, formatIndianNumber } from '../../../utils/format';
 
 interface Props {
   budgetFiles: BudgetFile[];
@@ -141,10 +141,7 @@ export const StepSelectFiles: React.FC<Props> = ({
     );
   };
 
-  const selectedMop = React.useMemo(() => {
-    if (!selection.procurementMethodId) return null;
-    return procurementMethods.find((m) => m.id === selection.procurementMethodId);
-  }, [procurementMethods, selection.procurementMethodId]);
+
 
   return (
     <div className="space-y-6">
@@ -223,23 +220,6 @@ export const StepSelectFiles: React.FC<Props> = ({
           </div>
         )}
       </div>
-
-      {selection.administrativeApprovalId && (
-        <div className="space-y-6">
-          {/* Locked file count/selections */}
-          <div className="grid grid-cols-1 gap-4">
-            {renderFileSelect(0)}
-          </div>
-
-          {/* Locked Mode of Purchase */}
-          <div>
-            <label className="label font-bold text-slate-700">Mode of Purchase (Locked from AA)</label>
-            <div className="input-field bg-slate-50 border border-slate-200 text-slate-650 font-bold select-none">
-              {selectedMop ? selectedMop.name : 'Resolving mode...'}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Manual selection fallback only if not choosing from AA (but we enforce selection) */}
       {!selection.administrativeApprovalId && approvedAAs.length > 0 && (

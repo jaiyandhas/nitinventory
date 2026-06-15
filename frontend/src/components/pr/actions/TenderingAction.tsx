@@ -131,6 +131,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   const phaseName = pr.flow?.phase_name;
   const hasExistingDraft = pr.documents?.some((d: any) => d.doc_key === 'draft_tender_document');
   const hasExistingTender = pr.documents?.some((d: any) => d.doc_key === 'tender_document');
+  const isAfterBiddingRegistry = (pr.flow?.step_order ?? 0) >= 6;
 
   useEffect(() => {
     if (
@@ -193,8 +194,6 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   };
 
   const handleTenderScheduleSubmit = async () => {
-    if (!tenderRef.trim()) { toast.error('Tender Reference Number is required'); return; }
-    if (!tenderDate) { toast.error('Tender date is required'); return; }
     if (!hasExistingDraft && !draftTenderDoc) {
       toast.error('Draft Tender Document is mandatory');
       return;
@@ -206,10 +205,6 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
     try {
       const formData = new FormData();
       const payload = {
-        tender_reference_number: tenderRef,
-        date_of_tender: tenderDate,
-        date_of_tech_bid_opening: techOpenDate || null,
-        date_of_financial_bid_opening: finOpenDate || null,
         remarks: remarks
       };
       formData.append('payload', JSON.stringify(payload));
@@ -387,54 +382,6 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
           {/* Tab 1: Tender Scheduling */}
           {daTab === 'draft' && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Tender Specifications</h5>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="label text-slate-600 font-semibold text-xs">Tender Ref Number *</label>
-                    <div className="relative mt-1">
-                      <input
-                        type="text"
-                        value={tenderRef}
-                        onChange={(e) => setTenderRef(e.target.value)}
-                        className="input-field pl-8 py-1.5 text-xs"
-                        placeholder="e.g. NITT/CSE/2026/04"
-                        required
-                      />
-                      <span className="absolute left-3 top-2 text-slate-400 text-xs font-semibold font-mono">#</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label text-slate-600 font-semibold text-xs">Date of Tender *</label>
-                    <input
-                      type="date"
-                      value={tenderDate}
-                      onChange={(e) => setTenderDate(e.target.value)}
-                      className="input-field mt-1 py-1.5 text-xs"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-slate-600 font-semibold text-xs">Tech Bid Opening</label>
-                    <input
-                      type="date"
-                      value={techOpenDate}
-                      onChange={(e) => setTechOpenDate(e.target.value)}
-                      className="input-field mt-1 py-1.5 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-slate-600 font-semibold text-xs">Fin Bid Opening</label>
-                    <input
-                      type="date"
-                      value={finOpenDate}
-                      onChange={(e) => setFinOpenDate(e.target.value)}
-                      className="input-field mt-1 py-1.5 text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
               <div className="space-y-2 pt-1">
                 <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100/50 pb-0.5">Draft Tender Document</h5>
                 <div className="p-2.5 border border-dashed border-slate-200 rounded-lg bg-slate-50/20">
@@ -469,7 +416,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                 <div className="flex flex-wrap gap-2.5 pt-1">
                   <button
                     onClick={handleTenderScheduleSubmit}
-                    disabled={actionLoading || !tenderRef || !tenderDate || !remarks.trim()}
+                    disabled={actionLoading || !remarks.trim()}
                     className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
                   >
                     <CheckCircle2 size={14} /> Submit Tender Schedule &amp; Advance
@@ -500,26 +447,28 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
           {/* Tab 2: Bidding Registry */}
           {daTab === 'vendors' && (
             <div className="space-y-4">
-              {/* Optional: Update tender specifications */}
+              {/* Tender specifications */}
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-3">
-                <h5 className="font-bold text-[#1a3a6b] uppercase tracking-wide">Update Tender Specifications (Optional)</h5>
+                <h5 className="font-bold text-[#1a3a6b] uppercase tracking-wide">Tender Specifications</h5>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
-                    <label className="label text-slate-600 font-semibold text-[11px]">Tender Ref Number</label>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Tender Ref Number *</label>
                     <input
                       type="text"
                       value={tenderRef}
                       onChange={(e) => setTenderRef(e.target.value)}
                       className="input-field mt-1 py-1 text-xs"
+                      required
                     />
                   </div>
                   <div>
-                    <label className="label text-slate-600 font-semibold text-[11px]">Date of Tender</label>
+                    <label className="label text-slate-600 font-semibold text-[11px]">Date of Tender *</label>
                     <input
                       type="date"
                       value={tenderDate}
                       onChange={(e) => setTenderDate(e.target.value)}
                       className="input-field mt-1 py-1 text-xs"
+                      required
                     />
                   </div>
                   <div>
@@ -842,36 +791,40 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
       {/* Superintendent / Consultant / General Review Form */}
       {pr.flow?.expected_role_name !== 'Dealing Assistant' && (pr.flow?.step_order ?? 0) >= 3 && (
         <div className="space-y-4 bg-white p-4 border border-blue-200 rounded shadow-sm text-left">
-          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Review Tender Details & Bidders</h4>
+          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+            {isAfterBiddingRegistry ? "Review Tender Details & Bidders" : "Review Scheduled Tender"}
+          </h4>
           
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-100 text-sm">
-            <div>
-              <span className="font-bold text-slate-500">Tender Reference Number:</span>
-              <p className="font-semibold text-slate-800">{pr.tender_reference_number}</p>
-            </div>
-            <div>
-              <span className="font-bold text-slate-500">Date of Tender:</span>
-              <p className="font-semibold text-slate-800">{pr.date_of_tender ? pr.date_of_tender.substring(0, 10) : '-'}</p>
-            </div>
-            <div>
-              <span className="font-bold text-slate-500">Tech Bid Opening Date:</span>
-              <p className="font-semibold text-slate-800">{pr.date_of_tech_bid_opening ? pr.date_of_tech_bid_opening.substring(0, 10) : '-'}</p>
-            </div>
-            <div>
-              <span className="font-bold text-slate-500">Financial Bid Opening Date:</span>
-              <p className="font-semibold text-slate-800">{pr.date_of_financial_bid_opening ? pr.date_of_financial_bid_opening.substring(0, 10) : '-'}</p>
-            </div>
-            {pr.vendor_list_link && (
-              <div className="col-span-2">
-                <span className="font-bold text-slate-500">External Vendor List Document URL:</span>
-                <p className="font-semibold text-slate-800">
-                  <a href={pr.vendor_list_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
-                    {pr.vendor_list_link}
-                  </a>
-                </p>
+          {isAfterBiddingRegistry && (
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-100 text-sm">
+              <div>
+                <span className="font-bold text-slate-500">Tender Reference Number:</span>
+                <p className="font-semibold text-slate-800">{pr.tender_reference_number}</p>
               </div>
-            )}
-          </div>
+              <div>
+                <span className="font-bold text-slate-500">Date of Tender:</span>
+                <p className="font-semibold text-slate-800">{pr.date_of_tender ? pr.date_of_tender.substring(0, 10) : '-'}</p>
+              </div>
+              <div>
+                <span className="font-bold text-slate-500">Tech Bid Opening Date:</span>
+                <p className="font-semibold text-slate-800">{pr.date_of_tech_bid_opening ? pr.date_of_tech_bid_opening.substring(0, 10) : '-'}</p>
+              </div>
+              <div>
+                <span className="font-bold text-slate-500">Financial Bid Opening Date:</span>
+                <p className="font-semibold text-slate-800">{pr.date_of_financial_bid_opening ? pr.date_of_financial_bid_opening.substring(0, 10) : '-'}</p>
+              </div>
+              {pr.vendor_list_link && (
+                <div className="col-span-2">
+                  <span className="font-bold text-slate-500">External Vendor List Document URL:</span>
+                  <p className="font-semibold text-slate-800">
+                    <a href={pr.vendor_list_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+                      {pr.vendor_list_link}
+                    </a>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Uploaded Documents</h5>
@@ -893,39 +846,41 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
             </div>
           </div>
 
-          <div>
-            <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vendor List</h5>
-            <div className="border border-slate-200 rounded bg-slate-50/30 p-0.5">
-              <table className="w-full divide-y divide-slate-200 text-sm text-slate-700">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider text-xs">
-                    <th className="px-3 py-1.5 text-left w-[25%]">Name</th>
-                    <th className="px-3 py-1.5 text-left w-[20%]">Email</th>
-                    <th className="px-3 py-1.5 text-left w-[15%]">Quoted (L)</th>
-                    <th className="px-3 py-1.5 text-left w-[15%]">Status</th>
-                    <th className="px-3 py-1.5 text-left w-[25%]">Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {pr.commercial_evaluations?.map((ce: any) => (
-                    <tr key={ce.id} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-3 py-2 font-medium w-[25%]">{ce.vendor_name}</td>
-                      <td className="px-3 py-2 text-slate-500 w-[20%]">{ce.vendor_email || '-'}</td>
-                      <td className="px-3 py-2 font-semibold text-slate-800 w-[15%]">
-                        {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? formatCurrency(ce.quoted_amount) : '-'}
-                      </td>
-                      <td className="px-3 py-2 w-[15%]">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${ce.is_qualified ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {ce.is_qualified ? 'Qualified' : 'Not Qualified'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-slate-500 italic w-[25%]">{ce.remarks || '-'}</td>
+          {isAfterBiddingRegistry && (
+            <div>
+              <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vendor List</h5>
+              <div className="border border-slate-200 rounded bg-slate-50/30 p-0.5">
+                <table className="w-full divide-y divide-slate-200 text-sm text-slate-700">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider text-xs">
+                      <th className="px-3 py-1.5 text-left w-[25%]">Name</th>
+                      <th className="px-3 py-1.5 text-left w-[20%]">Email</th>
+                      <th className="px-3 py-1.5 text-left w-[15%]">Quoted (L)</th>
+                      <th className="px-3 py-1.5 text-left w-[15%]">Status</th>
+                      <th className="px-3 py-1.5 text-left w-[25%]">Remarks</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-200">
+                    {pr.commercial_evaluations?.map((ce: any) => (
+                      <tr key={ce.id} className="hover:bg-slate-50/40 transition-colors">
+                        <td className="px-3 py-2 font-medium w-[25%]">{ce.vendor_name}</td>
+                        <td className="px-3 py-2 text-slate-500 w-[20%]">{ce.vendor_email || '-'}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-800 w-[15%]">
+                          {ce.quoted_amount !== null && ce.quoted_amount !== undefined ? formatCurrency(ce.quoted_amount) : '-'}
+                        </td>
+                        <td className="px-3 py-2 w-[15%]">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${ce.is_qualified ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {ce.is_qualified ? 'Qualified' : 'Not Qualified'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-500 italic w-[25%]">{ce.remarks || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="pt-2 border-t border-slate-100 space-y-2">
             <label className="label text-slate-700 font-bold text-xs">Review Remarks *</label>

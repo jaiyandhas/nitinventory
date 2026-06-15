@@ -12,8 +12,9 @@ import { StepItemDetails } from '../components/pr-creation/steps/StepItemDetails
 import { StepCommonDetails } from '../components/pr-creation/steps/StepCommonDetails';
 import { StepReviewSubmit } from '../components/pr-creation/steps/StepReviewSubmit';
 import { buildPRCreateFormData } from '../utils/prPayload';
-import { AlertTriangle, RotateCcw, Trash2, Loader2 } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Trash2, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { formatFileNo, formatIndianNumber } from '../utils/format';
  
 export const NewPRPage: React.FC = () => {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ export const NewPRPage: React.FC = () => {
   const aaIdParam = searchParams.get('aa_id');
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  const [aaDetailsExpanded, setAaDetailsExpanded] = useState(true);
   const wizard = usePRWizard();
 
   const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
@@ -56,6 +58,16 @@ export const NewPRPage: React.FC = () => {
     () => budgetFiles.filter((f: any) => wizard.selection.selectedFileIds.includes(f.id)),
     [budgetFiles, wizard.selection.selectedFileIds]
   );
+
+  const selectedAA = useMemo(() => {
+    if (!wizard.selection.administrativeApprovalId) return null;
+    return approvedAAs.find((a: any) => a.id === wizard.selection.administrativeApprovalId);
+  }, [approvedAAs, wizard.selection.administrativeApprovalId]);
+
+  const selectedMop = useMemo(() => {
+    if (!wizard.selection.procurementMethodId) return null;
+    return procurementMethods.find((m: any) => m.id === wizard.selection.procurementMethodId);
+  }, [procurementMethods, wizard.selection.procurementMethodId]);
 
   // Filter out any stale/invalid selected file IDs or procurement methods that are no longer available in the active lists (e.g. from draft restoration)
   React.useEffect(() => {
@@ -265,6 +277,72 @@ export const NewPRPage: React.FC = () => {
 
       <div className="card p-6">
         <PRWizardStepper currentIndex={wizard.stepIndex} />
+
+        {selectedAA && (
+          <div className="mb-6 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/25 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setAaDetailsExpanded(!aaDetailsExpanded)}
+              className="w-full flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-200 text-left transition-colors hover:bg-slate-100"
+            >
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                Administrative Approval Reference Details
+              </span>
+              <span className="text-slate-500">
+                {aaDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </span>
+            </button>
+            
+            {aaDetailsExpanded && (
+              <div className="p-4 bg-white">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5 text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">File No:</span>
+                    <span className="font-bold text-slate-800 text-right">
+                      {formatFileNo(selectedAA.file_no, user?.role?.group_key)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">Name of the Department:</span>
+                    <span className="font-bold text-slate-800 text-right">
+                      {selectedAA.pi_department_name || selectedAA.department || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">Name of the purchase Indentor:</span>
+                    <span className="font-bold text-slate-800 text-right">
+                      {selectedAA.pi_name || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">Name of the laboratory/office:</span>
+                    <span className="font-bold text-slate-800 text-right text-emerald-800 bg-emerald-50/50 px-2 py-0.5 rounded">
+                      {wizard.common.laboratory_office || selectedAA.laboratory_office || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">Source of Fund:</span>
+                    <span className="font-bold text-slate-800 text-right">
+                      {selectedAA.source_of_fund || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-500">Mode of Purchase:</span>
+                    <span className="font-bold text-slate-800 text-right">
+                      {selectedMop ? selectedMop.name : selectedAA.mode_of_procurement || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100 md:col-span-2">
+                    <span className="font-semibold text-slate-500">Estimated amount:</span>
+                    <span className="font-extrabold text-emerald-700 text-sm text-right">
+                      Rs. {formatIndianNumber(selectedAA.total_cost)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {wizard.stepId === 'select' && (
           <StepSelectFiles

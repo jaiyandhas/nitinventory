@@ -14,8 +14,7 @@ import toast from 'react-hot-toast';
 // Modular Detail Components
 import { PRHeader } from '../components/pr/detail/PRHeader';
 import { PRItemsTable } from '../components/pr/detail/PRItemsTable';
-import { WorkflowTimeline } from '../components/pr/detail/WorkflowTimeline';
-import { WorkflowTracker } from '../components/pr/detail/WorkflowTracker';
+
 import { PRCommitteePanel } from '../components/pr/detail/PRCommitteePanel';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
 import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
@@ -38,7 +37,6 @@ export const PRDetailPage: React.FC = () => {
   const isAdmin = user?.role?.group_key === 'admin';
   const isHodOrAbove = user && user.role?.group_key !== 'faculty';
 
-  const [showHistory, setShowHistory] = useState(true);
 
   const [selectedStageKey, setSelectedStageKey] = useState<string>('request');
 
@@ -1149,26 +1147,13 @@ export const PRDetailPage: React.FC = () => {
 
             </div>
 
-            {/* Workflow History Log */}
-            <div className="card text-left">
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Workflow History Log</h3>
-                <button onClick={() => setShowHistory(!showHistory)} className="text-slate-500 hover:text-[#1a3a6b]">
-                  {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
-              </div>
-              {showHistory && (
-                <div className="p-6">
-                  <WorkflowTimeline pr={pr} />
-                </div>
-              )}
-            </div>
+
 
           </div>
 
           {/* Right column: Status details / history */}
           <div className="lg:col-span-4 space-y-6">
-            <WorkflowTracker pr={pr} />
+
             
             {/* Case status details */}
             <div className="card text-left">

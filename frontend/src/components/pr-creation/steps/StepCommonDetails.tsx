@@ -209,7 +209,7 @@ export const StepCommonDetails: React.FC<Props> = ({
         <input
           type="file"
           accept="application/pdf"
-          required={!common.quotation_file}
+          required={!common.quotation_file && !common.replicated_quotation_path}
           className="input-field"
           onChange={(e) => onUpdate({ quotation_file: e.target.files?.[0] ?? null })}
         />
@@ -217,6 +217,17 @@ export const StepCommonDetails: React.FC<Props> = ({
           <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
             <span>📄 Selected:</span>
             <span className="font-semibold">{common.quotation_file.name}</span>
+          </div>
+        )}
+        {common.replicated_quotation_path && !common.quotation_file && (
+          <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+            <span className="flex items-center gap-1.5">
+              <span>🔄 Replicated from Administrative Approval:</span>
+              <a href={`/static/uploads/${common.replicated_quotation_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                View Quotation
+              </a>
+            </span>
+            <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
           </div>
         )}
       </div>
@@ -228,7 +239,7 @@ export const StepCommonDetails: React.FC<Props> = ({
             <input
               type="file"
               accept="application/pdf"
-              required={!common.dept_pac_file}
+              required={!common.dept_pac_file && !common.replicated_dept_pac_path}
               className="input-field"
               onChange={(e) => onUpdate({ dept_pac_file: e.target.files?.[0] ?? null })}
             />
@@ -238,6 +249,17 @@ export const StepCommonDetails: React.FC<Props> = ({
                 <span className="font-semibold">{common.dept_pac_file.name}</span>
               </div>
             )}
+            {common.replicated_dept_pac_path && !common.dept_pac_file && (
+              <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+                <span className="flex items-center gap-1.5">
+                  <span>🔄 Replicated from Administrative Approval:</span>
+                  <a href={`/static/uploads/${common.replicated_dept_pac_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                    View Cert
+                  </a>
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
+              </div>
+            )}
           </div>
 
           <div>
@@ -245,7 +267,7 @@ export const StepCommonDetails: React.FC<Props> = ({
             <input
               type="file"
               accept="application/pdf"
-              required={!common.oem_pac_file}
+              required={!common.oem_pac_file && !common.replicated_oem_pac_path}
               className="input-field"
               onChange={(e) => onUpdate({ oem_pac_file: e.target.files?.[0] ?? null })}
             />
@@ -255,6 +277,17 @@ export const StepCommonDetails: React.FC<Props> = ({
                 <span className="font-semibold">{common.oem_pac_file.name}</span>
               </div>
             )}
+            {common.replicated_oem_pac_path && !common.oem_pac_file && (
+              <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+                <span className="flex items-center gap-1.5">
+                  <span>🔄 Replicated from Administrative Approval:</span>
+                  <a href={`/static/uploads/${common.replicated_oem_pac_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                    View Cert
+                  </a>
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
+              </div>
+            )}
           </div>
 
           <div>
@@ -262,7 +295,7 @@ export const StepCommonDetails: React.FC<Props> = ({
             <input
               type="file"
               accept="application/pdf"
-              required={!common.oem_auth_file}
+              required={!common.oem_auth_file && !common.replicated_oem_auth_path}
               className="input-field"
               onChange={(e) => onUpdate({ oem_auth_file: e.target.files?.[0] ?? null })}
             />
@@ -270,6 +303,17 @@ export const StepCommonDetails: React.FC<Props> = ({
               <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
                 <span>📄 Selected:</span>
                 <span className="font-semibold">{common.oem_auth_file.name}</span>
+              </div>
+            )}
+            {common.replicated_oem_auth_path && !common.oem_auth_file && (
+              <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+                <span className="flex items-center gap-1.5">
+                  <span>🔄 Replicated from Administrative Approval:</span>
+                  <a href={`/static/uploads/${common.replicated_oem_auth_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                    View Cert
+                  </a>
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
               </div>
             )}
           </div>

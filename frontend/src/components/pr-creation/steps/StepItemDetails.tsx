@@ -167,12 +167,23 @@ export const StepItemDetails: React.FC<Props> = ({
               ) : (
                 <div className="md:col-span-2">
                   <label className="label">GeM Non-Availability Certificate (PDF) *</label>
-                  <input type="file" accept="application/pdf" required={!item.gem_nac_file} className="input-field"
+                  <input type="file" accept="application/pdf" required={!item.gem_nac_file && !item.replicated_gem_nac_path} className="input-field"
                     onChange={(e) => onUpdate(fid, { gem_nac_file: e.target.files?.[0] ?? null })} />
                   {item.gem_nac_file && (
                     <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
                       <span>📄 Selected:</span>
                       <span className="font-semibold">{item.gem_nac_file.name}</span>
+                    </div>
+                  )}
+                  {item.replicated_gem_nac_path && !item.gem_nac_file && (
+                    <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+                      <span className="flex items-center gap-1.5">
+                        <span>🔄 Replicated from Administrative Approval:</span>
+                        <a href={`/static/uploads/${item.replicated_gem_nac_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                          View Certificate
+                        </a>
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
                     </div>
                   )}
                 </div>
@@ -210,12 +221,23 @@ export const StepItemDetails: React.FC<Props> = ({
 
             <div>
               <label className="label">Upload Tech Spec (PDF) *</label>
-              <input type="file" accept="application/pdf" required={!item.tech_specs_file} className="input-field"
+              <input type="file" accept="application/pdf" required={!item.tech_specs_file && !item.replicated_tech_specs_path} className="input-field"
                 onChange={(e) => onUpdate(fid, { tech_specs_file: e.target.files?.[0] ?? null })} />
               {item.tech_specs_file && (
                 <div className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2.5 py-1 flex items-center gap-1.5 w-fit">
                   <span>📄 Selected:</span>
                   <span className="font-semibold">{item.tech_specs_file.name}</span>
+                </div>
+              )}
+              {item.replicated_tech_specs_path && !item.tech_specs_file && (
+                <div className="mt-1.5 text-xs text-blue-700 bg-blue-50/50 border border-blue-200 rounded px-2.5 py-1.5 flex items-center justify-between gap-1.5 w-full">
+                  <span className="flex items-center gap-1.5">
+                    <span>🔄 Replicated from Administrative Approval:</span>
+                    <a href={`/static/uploads/${item.replicated_tech_specs_path}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline text-blue-800 hover:text-blue-900">
+                      View Document
+                    </a>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">(Upload a new file to override)</span>
                 </div>
               )}
             </div>

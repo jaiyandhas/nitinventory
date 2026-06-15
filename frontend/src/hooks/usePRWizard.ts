@@ -192,6 +192,14 @@ export function usePRWizard() {
         let defaultCharges = existing.charges || '18';
         let defaultTechSpecs = existing.tech_specs_text || '';
         let defaultJustification = existing.justification_for_procurement || '';
+        let defaultEquipName = existing.equipment_name || '';
+        let defaultAvailability: 'Yes' | 'No' | '' = existing.availability || '';
+        let defaultPresentStock = existing.present_stock || '';
+        let defaultPrevFileNo = existing.previous_file_no_reference || '';
+        let replicatedGemNacPath = '';
+        let replicatedGemNacUrl = '';
+        let replicatedTechSpecsPath = '';
+        let replicatedTechSpecsUrl = '';
 
         if (budgetFiles) {
           const file = budgetFiles.find((f) => f.id === id);
@@ -206,7 +214,18 @@ export function usePRWizard() {
             defaultQty = String(aa.quantity || 1);
             defaultCharges = String(aa.gst_rate ?? 18);
             defaultTechSpecs = aa.item_description || '';
-            defaultJustification = aa.justification || '';
+            defaultEquipName = aa.item_description || '';
+            defaultJustification = aa.stock_availability === 'Yes' && aa.justification_procurement && aa.justification_procurement !== '-'
+              ? aa.justification_procurement
+              : (aa.justification || '');
+            defaultAvailability = aa.stock_availability === 'Yes' || aa.stock_availability === 'No' ? aa.stock_availability : '';
+            defaultPresentStock = aa.present_stock && aa.present_stock !== '-' ? aa.present_stock : '';
+            defaultPrevFileNo = aa.prev_file_no && aa.prev_file_no !== '-' ? aa.prev_file_no : '';
+            
+            replicatedGemNacPath = aa.gem_non_availability_path || '';
+            replicatedGemNacUrl = aa.gem_non_availability_url || '';
+            replicatedTechSpecsPath = aa.attachment_path || '';
+            replicatedTechSpecsUrl = aa.attachment_url || '';
           }
         }
 
@@ -215,7 +234,15 @@ export function usePRWizard() {
           quantity: defaultQty,
           charges: defaultCharges,
           tech_specs_text: defaultTechSpecs,
+          equipment_name: defaultEquipName,
           justification_for_procurement: defaultJustification,
+          availability: defaultAvailability,
+          present_stock: defaultPresentStock,
+          previous_file_no_reference: defaultPrevFileNo,
+          replicated_gem_nac_path: replicatedGemNacPath,
+          replicated_gem_nac_url: replicatedGemNacUrl,
+          replicated_tech_specs_path: replicatedTechSpecsPath,
+          replicated_tech_specs_url: replicatedTechSpecsUrl,
         };
       }
       return next;
@@ -245,11 +272,45 @@ export function usePRWizard() {
           others = rawSource;
         }
 
+        let categoryVal: 'Assets' | 'Consumables' | '' = '';
+        let repQuotePath = '';
+        let repQuoteUrl = '';
+        let repDeptPacPath = '';
+        let repDeptPacUrl = '';
+        let repOemPacPath = '';
+        let repOemPacUrl = '';
+        let repOemAuthPath = '';
+        let repOemAuthUrl = '';
+
+        if (selection.administrativeApprovalId && approvedAAs) {
+          const aa = approvedAAs.find((a) => a.id === selection.administrativeApprovalId);
+          if (aa) {
+            categoryVal = aa.item_category === 'Assets' || aa.item_category === 'Consumables' ? aa.item_category : '';
+            repQuotePath = aa.basis_of_estimation_path || '';
+            repQuoteUrl = aa.basis_of_estimation_url || '';
+            repDeptPacPath = aa.pac_dept_cert_path || '';
+            repDeptPacUrl = aa.pac_dept_cert_url || '';
+            repOemPacPath = aa.pac_vendor_cert_path || '';
+            repOemPacUrl = aa.pac_vendor_cert_url || '';
+            repOemAuthPath = aa.authority_approval_path || '';
+            repOemAuthUrl = aa.authority_approval_url || '';
+          }
+        }
+
         setCommon((prev) => ({
           ...prev,
           source_of_fund: sourceVal,
           source_of_fund_project_code: projectCode,
           source_of_fund_others: others,
+          item_category: categoryVal || prev.item_category,
+          replicated_quotation_path: repQuotePath,
+          replicated_quotation_url: repQuoteUrl,
+          replicated_dept_pac_path: repDeptPacPath,
+          replicated_dept_pac_url: repDeptPacUrl,
+          replicated_oem_pac_path: repOemPacPath,
+          replicated_oem_pac_url: repOemPacUrl,
+          replicated_oem_auth_path: repOemAuthPath,
+          replicated_oem_auth_url: repOemAuthUrl,
         }));
       }
     }
@@ -341,7 +402,7 @@ export function usePRWizard() {
           return `Provide site readiness remarks where site is not ready`;
         }
         if (isGem && !item.gem_link.trim()) return `GeM product link required for GeM procurement`;
-        if (!isGem && !item.gem_nac_file) return `GeM NAC certificate required for non-GeM procurement`;
+        if (!isGem && !item.gem_nac_file && !item.replicated_gem_nac_path) return `GeM NAC certificate required for non-GeM procurement`;
         if (!item.availability) return `Select department availability for all items`;
         if (fieldVisible({ field: 'availability', equals: 'Yes' }, ctx)) {
           if (!item.present_stock.trim() || !item.justification_for_procurement.trim() || !item.previous_file_no_reference.trim()) {
@@ -349,7 +410,7 @@ export function usePRWizard() {
           }
         }
         if (!item.tech_specs_text.trim()) return `Enter technical specifications for all items`;
-        if (!item.tech_specs_file) return `Upload tech spec PDF for all items`;
+        if (!item.tech_specs_file && !item.replicated_tech_specs_path) return `Upload tech spec PDF for all items`;
         if (!item.equipment_name.trim()) return `Enter name of equipment for all items`;
         if (!item.pdi_required) return `Select pre-dispatch inspection requirement for all items`;
         if (item.pdi_required === 'Yes' && !item.pdi_justification.trim()) return `Provide justification for pre-dispatch inspection`;
@@ -370,9 +431,9 @@ export function usePRWizard() {
     }
     const isPac = procurementName && (procurementName.toLowerCase().includes('proprietary') || procurementName.toLowerCase().includes('pac'));
     if (isPac) {
-      if (!common.dept_pac_file) return 'Department PAC (PDF) is required for Proprietary Purchase';
-      if (!common.oem_pac_file) return 'OEM PAC Certificate (PDF) is required for Proprietary Purchase';
-      if (!common.oem_auth_file) return 'OEM Authorization Certificate (PDF) is required for Proprietary Purchase';
+      if (!common.dept_pac_file && !common.replicated_dept_pac_path) return 'Department PAC (PDF) is required for Proprietary Purchase';
+      if (!common.oem_pac_file && !common.replicated_oem_pac_path) return 'OEM PAC Certificate (PDF) is required for Proprietary Purchase';
+      if (!common.oem_auth_file && !common.replicated_oem_auth_path) return 'OEM Authorization Certificate (PDF) is required for Proprietary Purchase';
     }
     if (formSchema && formSchema.required && formSchema.properties) {
       const formData = common.form_data || {};
@@ -394,7 +455,7 @@ export function usePRWizard() {
     if (!common.item_category) return 'Select item category';
     if (!common.basis_of_estimate) return 'Select basis of estimation';
     if (common.basis_of_estimate === 'Others' && !common.basis_of_estimate_others.trim()) return 'Enter details for basis of estimation';
-    if (!common.quotation_file) return 'Upload basis of estimation PDF';
+    if (!common.quotation_file && !common.replicated_quotation_path) return 'Upload basis of estimation PDF';
     if (!common.emd) return 'Select EMD percentage';
     if (!common.performance_security) return 'Select performance security percentage';
     if (!common.delivery_location.trim()) return 'Enter delivery location';

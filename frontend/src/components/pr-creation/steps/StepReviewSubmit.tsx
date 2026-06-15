@@ -86,7 +86,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
           <span>📂</span> Uploaded Documents Preview
         </h3>
         <div className="grid grid-cols-1 gap-2.5">
-          {common.quotation_file && (
+          {common.quotation_file ? (
             <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
               <span className="font-medium text-slate-700">📄 Basis of Estimation: {common.quotation_file.name}</span>
               <a
@@ -98,8 +98,20 @@ export const StepReviewSubmit: React.FC<Props> = ({
                 View PDF
               </a>
             </div>
-          )}
-          {isPac && common.dept_pac_file && (
+          ) : common.replicated_quotation_path ? (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 Basis of Estimation: [Replicated from Administrative Approval]</span>
+              <a
+                href={`/static/uploads/${common.replicated_quotation_path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          ) : null}
+          {isPac && (common.dept_pac_file ? (
             <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
               <span className="font-medium text-slate-700">📄 Department PAC: {common.dept_pac_file.name}</span>
               <a
@@ -111,8 +123,20 @@ export const StepReviewSubmit: React.FC<Props> = ({
                 View PDF
               </a>
             </div>
-          )}
-          {isPac && common.oem_pac_file && (
+          ) : common.replicated_dept_pac_path ? (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 Department PAC: [Replicated from Administrative Approval]</span>
+              <a
+                href={`/static/uploads/${common.replicated_dept_pac_path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          ) : null)}
+          {isPac && (common.oem_pac_file ? (
             <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
               <span className="font-medium text-slate-700">📄 OEM PAC Certificate: {common.oem_pac_file.name}</span>
               <a
@@ -124,8 +148,20 @@ export const StepReviewSubmit: React.FC<Props> = ({
                 View PDF
               </a>
             </div>
-          )}
-          {isPac && common.oem_auth_file && (
+          ) : common.replicated_oem_pac_path ? (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 OEM PAC Certificate: [Replicated from Administrative Approval]</span>
+              <a
+                href={`/static/uploads/${common.replicated_oem_pac_path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          ) : null)}
+          {isPac && (common.oem_auth_file ? (
             <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
               <span className="font-medium text-slate-700">📄 OEM Authorization Certificate: {common.oem_auth_file.name}</span>
               <a
@@ -137,13 +173,25 @@ export const StepReviewSubmit: React.FC<Props> = ({
                 View PDF
               </a>
             </div>
-          )}
+          ) : common.replicated_oem_auth_path ? (
+            <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+              <span className="font-medium text-slate-700">📄 OEM Authorization Certificate: [Replicated from Administrative Approval]</span>
+              <a
+                href={`/static/uploads/${common.replicated_oem_auth_path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+              >
+                View PDF
+              </a>
+            </div>
+          ) : null)}
           {files.map((f) => {
             const item = items[f.id];
             if (!item) return null;
             return (
               <React.Fragment key={f.id}>
-                {item.tech_specs_file && (
+                {item.tech_specs_file ? (
                   <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
                     <span className="font-medium text-slate-700">📄 {f.item_name} Tech Specs: {item.tech_specs_file.name}</span>
                     <a
@@ -155,8 +203,20 @@ export const StepReviewSubmit: React.FC<Props> = ({
                       View PDF
                     </a>
                   </div>
-                )}
-                {item.gem_nac_file && (
+                ) : item.replicated_tech_specs_path ? (
+                  <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+                    <span className="font-medium text-slate-700">📄 {f.item_name} Tech Specs: [Replicated from Administrative Approval]</span>
+                    <a
+                      href={`/static/uploads/${item.replicated_tech_specs_path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+                    >
+                      View PDF
+                    </a>
+                  </div>
+                ) : null}
+                {item.gem_nac_file ? (
                   <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
                     <span className="font-medium text-slate-700">📄 {f.item_name} GeM NAC: {item.gem_nac_file.name}</span>
                     <a
@@ -168,7 +228,19 @@ export const StepReviewSubmit: React.FC<Props> = ({
                       View PDF
                     </a>
                   </div>
-                )}
+                ) : item.replicated_gem_nac_path ? (
+                  <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 hover:shadow-sm transition-all">
+                    <span className="font-medium text-slate-700">📄 {f.item_name} GeM NAC: [Replicated from Administrative Approval]</span>
+                    <a
+                      href={`/static/uploads/${item.replicated_gem_nac_path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline"
+                    >
+                      View PDF
+                    </a>
+                  </div>
+                ) : null}
               </React.Fragment>
             );
           })}

@@ -28,6 +28,12 @@ export interface PRItemFormState {
   training_required: 'Yes' | 'No' | '';
   training_location: "Purchaser's Premises" | "Supplier's Premises" | '';
   tech_eligibility: string;
+
+  // Replicated files from Administrative Approval
+  replicated_gem_nac_path?: string | null;
+  replicated_gem_nac_url?: string | null;
+  replicated_tech_specs_path?: string | null;
+  replicated_tech_specs_url?: string | null;
 }
 
 export interface PRCommonFormState {
@@ -59,6 +65,16 @@ export interface PRCommonFormState {
   purpose_justification: string;
   mii_clause: 'Applicable' | 'Not Applicable' | '';
   mii_justification: string;
+
+  // Replicated files from Administrative Approval
+  replicated_quotation_path?: string | null;
+  replicated_quotation_url?: string | null;
+  replicated_dept_pac_path?: string | null;
+  replicated_dept_pac_url?: string | null;
+  replicated_oem_pac_path?: string | null;
+  replicated_oem_pac_url?: string | null;
+  replicated_oem_auth_path?: string | null;
+  replicated_oem_auth_url?: string | null;
 }
 
 export interface PRWizardSelection {
@@ -97,6 +113,12 @@ export function createEmptyItemState(budgetFileId: number): PRItemFormState {
     training_required: '',
     training_location: '',
     tech_eligibility: '',
+
+    // Replicated files from Administrative Approval
+    replicated_gem_nac_path: '',
+    replicated_gem_nac_url: '',
+    replicated_tech_specs_path: '',
+    replicated_tech_specs_url: '',
   };
 }
 
@@ -130,5 +152,15 @@ export function createEmptyCommonState(): PRCommonFormState {
     purpose_justification: '',
     mii_clause: '',
     mii_justification: '',
+
+    // Replicated files from Administrative Approval
+    replicated_quotation_path: '',
+    replicated_quotation_url: '',
+    replicated_dept_pac_path: '',
+    replicated_dept_pac_url: '',
+    replicated_oem_pac_path: '',
+    replicated_oem_pac_url: '',
+    replicated_oem_auth_path: '',
+    replicated_oem_auth_url: '',
   };
 }

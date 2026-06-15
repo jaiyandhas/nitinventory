@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  FileText, CheckCircle, Clock, XCircle, TrendingUp, Package, 
-  AlertTriangle, Wallet, Layers, Plus, ChevronRight, User, ShieldAlert 
+import {
+  FileText, CheckCircle, Clock, XCircle, TrendingUp, Package,
+  AlertTriangle, Wallet, Layers, Plus, ChevronRight, User, ShieldAlert
 } from 'lucide-react';
 import { prApi, budgetApi, aaApi, inventoryApi, assetsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -28,7 +28,7 @@ interface PendingActionItem {
 
 export const DashboardPage: React.FC = () => {
   const { user, isRole } = useAuth();
-  
+
   // State for stage-wise work queue filtering
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
@@ -151,7 +151,7 @@ export const DashboardPage: React.FC = () => {
   // Compile items in each stage
   const getStageItems = (stageKey: string) => {
     const items: any[] = [];
-    
+
     // PO issued Stage
     if (stageKey === 'po_issued') {
       deliveriesData.forEach((d: any) => {
@@ -162,7 +162,7 @@ export const DashboardPage: React.FC = () => {
             number: d.gin_number || d.gate_pass_no || `#DEL-${d.id}`,
             department: d.purchase_request?.initiator?.department?.name || 'Central Office',
             description: d.purchase_request?.category?.title || 'Delivery Receipt/Inspection',
-            pendingWith: d.status === 'pending' 
+            pendingWith: d.status === 'pending'
               ? (d.purchase_request?.initiator_name || 'Faculty (Initiator)')
               : hasUnapprovedLogs ? 'Apex Approver' : 'HOD / Stores',
             status: d.status === 'pending' ? 'AWAITING GIN CONFIRMATION' : d.status.toUpperCase().replace('_', ' '),
@@ -259,7 +259,8 @@ export const DashboardPage: React.FC = () => {
 
     // Administrative Approval Stage
     scopedAAs.forEach((aa: any) => {
-      if (getRequestStage(aa) === stageKey) {
+      // Avoid duplicate entries when the AA is in 'indent_specs' stage
+      if (getRequestStage(aa) === stageKey && stageKey !== 'indent_specs') {
         items.push({
           id: aa.id,
           number: aa.aa_number !== '-' ? aa.aa_number : `#AA-${aa.id}`,
@@ -333,8 +334,8 @@ export const DashboardPage: React.FC = () => {
           number: pr.icr_number || `#PR-${pr.id}`,
           department: pr.initiator?.department?.name || 'Central Office',
           description: pr.category?.title || 'Purchase Request',
-          pendingWith: pr.flow?.expected_user?.name 
-            ? `${pr.flow.expected_user.name} (${pr.flow.expected_role_name || pr.flow.expected_group || 'User'})` 
+          pendingWith: pr.flow?.expected_user?.name
+            ? `${pr.flow.expected_user.name} (${pr.flow.expected_role_name || pr.flow.expected_group || 'User'})`
             : pr.flow?.expected_role_name || pr.flow?.expected_group || 'System',
           status: PR_STATUS_LABELS[pr.current_status as PRStatus] || pr.current_status,
           type: 'PR',
@@ -351,14 +352,14 @@ export const DashboardPage: React.FC = () => {
 
   // 8 Lifecycle stages definition
   const LIFECYCLE_STAGES = [
-    { key: 'admin_approval', label: 'Administrative Approval', desc: 'AA workflow & nominee checks' },
-    { key: 'indent_specs', label: 'Indent and Detailed Tech specifications', desc: 'Technical specifications review & PR creation' },
-    { key: 'tendering', label: 'Tendering', desc: 'LPC minutes & vendor bidding' },
-    { key: 'tech_eval', label: 'Technical', desc: 'Expert committee evaluation' },
-    { key: 'fin_eval', label: 'Financial', desc: 'Price bid analysis & awards' },
-    { key: 'approver', label: 'Approver', desc: 'Purchase order drafting & approvals' },
-    { key: 'po_issued', label: 'PO issued', desc: 'Delivery logging & receipt verification' },
-    { key: 'asset', label: 'Asset', desc: 'Asset registry & completed requests' }
+    { key: 'admin_approval', label: 'Administrative Approval', desc: 'Admin approvals and internal technical committee nominee reviews.' },
+    { key: 'indent_specs', label: 'Indent and Detailed Tech specifications', desc: 'Purchase Initiator creates purchase request form and uploads specifications.' },
+    { key: 'tendering', label: 'Tendering', desc: 'Procurement section publishes tender or processes local purchase selection.' },
+    { key: 'tech_eval', label: 'Technical', desc: 'Expert committee reviews submitted technical bids and signs evaluation report.' },
+    { key: 'fin_eval', label: 'Financial', desc: 'Dean/Director reviews financial comparative sheets and grants sanction.' },
+    { key: 'approver', label: 'Approver', desc: 'Dean/Director final approval and purchase order verification.' },
+    { key: 'po_issued', label: 'PO issued', desc: 'Official purchase order generation, delivery logging, and final billing.' },
+    { key: 'asset', label: 'Asset', desc: 'Completed purchases and asset tagging.' }
   ];
 
   // Aggregated Action-Oriented Pending Queue
@@ -370,24 +371,24 @@ export const DashboardPage: React.FC = () => {
       if (['Administrative Approval Granted', 'Rejected', 'Cancelled'].includes(aa.status)) {
         return;
       }
-      
+
       const isPendingHOD = (aa.pending_with === 'HOD' && isRole('hod') && aa.pi_department_id === user?.department_id) || (aa.pending_with === 'HOD' && isRole('admin'));
       const isPendingADPD = aa.pending_with === 'ADPD' && (isRole('verifier_general') || user?.role?.value === 'adpd' || isRole('admin'));
       const isPendingDean = aa.pending_with === 'Dean' && (isRole('dean_approver') || user?.role?.value === 'dean_pd' || isRole('admin'));
       const isPendingIA = (aa.pending_with === 'IA' || aa.pending_with?.toLowerCase().includes('audit')) && (user?.role?.value === 'ia' || user?.role?.value === 'internal_auditor' || user?.role?.group_key === 'internal_audit' || user?.role?.group_key === 'auditor' || isRole('admin'));
       const isPendingDirector = aa.pending_with === 'Director' && (isRole('apex_approver') || user?.role?.value === 'director' || isRole('admin'));
       const isPendingPI = (aa.pending_with === 'PI' || aa.status === 'Returned' || aa.status?.toLowerCase().includes('returned')) && aa.pi_id === user?.id;
-      
+
       // Also check if user is a nominee with pending status
       const isNomineePending = aa.nominees && Array.isArray(aa.nominees) && aa.nominees.some(
         (nom: any) => nom.nominee_id === user?.id && nom.status === 'Pending'
       );
-      
+
       if (isPendingHOD || isPendingADPD || isPendingDean || isPendingIA || isPendingDirector || isPendingPI || isNomineePending) {
         let badgeText = 'AA Review';
         let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200';
         let actionRequired = 'Verify and approve administrative approval request.';
-        
+
         if (isPendingPI) {
           badgeText = 'AA Returned';
           badgeColor = 'bg-amber-100 text-amber-800 border border-amber-200';
@@ -413,7 +414,7 @@ export const DashboardPage: React.FC = () => {
           badgeColor = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
           actionRequired = 'Sanction administrative approval.';
         }
-        
+
         actions.push({
           id: aa.id,
           number: aa.aa_number !== '-' ? aa.aa_number : `#AA-${aa.id}`,
@@ -436,24 +437,24 @@ export const DashboardPage: React.FC = () => {
       if (['po_issued', 'rejected', 'cancelled', 'completed'].includes(pr.current_status)) {
         return;
       }
-      
+
       const isExpectedUser = pr.flow?.expected_user_id === user?.id;
       const isExpectedGroup = pr.flow?.expected_group && isRole(pr.flow.expected_group);
       const isHODDeptMatch = pr.flow?.expected_group === 'hod' && pr.initiator?.department_id === user?.department_id;
       const isFacultyPRMatch = pr.flow?.expected_group === 'faculty' && pr.initiator_id === user?.id;
       const isReturned = pr.current_status === 'returned' || pr.current_status?.includes('returned');
-      
-      const isAwaitingAction = isExpectedUser || 
-                               (isExpectedGroup && pr.flow?.expected_group !== 'hod' && pr.flow?.expected_group !== 'faculty') ||
-                               isHODDeptMatch || 
-                               isFacultyPRMatch ||
-                               isRole('admin');
-                               
+
+      const isAwaitingAction = isExpectedUser ||
+        (isExpectedGroup && pr.flow?.expected_group !== 'hod' && pr.flow?.expected_group !== 'faculty') ||
+        isHODDeptMatch ||
+        isFacultyPRMatch ||
+        isRole('admin');
+
       if (isAwaitingAction) {
         let badgeText = isReturned ? 'PR Returned' : `Pending ${pr.flow?.phase_name || 'Action'}`;
         let badgeColor = isReturned ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-indigo-100 text-indigo-800 border border-indigo-200';
         let actionRequired = isReturned ? 'Revise indent specifications.' : `Process ${pr.flow?.phase_name || 'request'} in workflow.`;
-        
+
         if (isHODDeptMatch) {
           badgeText = 'PR HOD Review';
           badgeColor = 'bg-indigo-100 text-indigo-800 border border-indigo-200';
@@ -467,7 +468,7 @@ export const DashboardPage: React.FC = () => {
           badgeColor = 'bg-emerald-50 text-emerald-700 border border-emerald-150';
           actionRequired = 'Sanction purchase order and funding.';
         }
-        
+
         actions.push({
           id: pr.id,
           number: pr.icr_number || `#PR-${pr.id}`,
@@ -523,10 +524,10 @@ export const DashboardPage: React.FC = () => {
             badgeColor: 'bg-amber-100 text-amber-800 border border-amber-250',
             amount: bf.total_allocation,
             link: `/budget?setup_committee_id=${bf.id}`,
-            actionRequired: needsInitiator && needsCommittee 
-              ? 'Assign a Purchase Initiator and Technical Committee nominees.' 
-              : needsInitiator 
-                ? 'Assign a Purchase Initiator.' 
+            actionRequired: needsInitiator && needsCommittee
+              ? 'Assign a Purchase Initiator and Technical Committee nominees.'
+              : needsInitiator
+                ? 'Assign a Purchase Initiator.'
                 : 'Assign Technical Committee nominees.',
             department: bf.department?.name || user?.department?.name || 'Department',
             initiator: bf.hod_name || 'HOD',
@@ -594,7 +595,7 @@ export const DashboardPage: React.FC = () => {
           const isStores = user?.role?.group_key === 'verifier_sp';
           const isApex = user?.role?.group_key === 'apex_approver';
           const isAdmin = user?.role?.group_key === 'admin';
-          
+
           if (hasUnapprovedLogs && isApex) return true;
           if (!hasUnapprovedLogs && (isHod || isStores || isAdmin)) return true;
         }
@@ -612,12 +613,12 @@ export const DashboardPage: React.FC = () => {
     return false;
   };
 
-  const activeStageItemsList = selectedStage 
+  const activeStageItemsList = selectedStage
     ? getStageItems(selectedStage).sort((a, b) => {
-        const aReq = isActionRequiredForUser(a) ? 1 : 0;
-        const bReq = isActionRequiredForUser(b) ? 1 : 0;
-        return bReq - aReq;
-      })
+      const aReq = isActionRequiredForUser(a) ? 1 : 0;
+      const bReq = isActionRequiredForUser(b) ? 1 : 0;
+      return bReq - aReq;
+    })
     : [];
 
   return (
@@ -704,11 +705,11 @@ export const DashboardPage: React.FC = () => {
                       {totalCount} {totalCount === 1 ? 'Record' : 'Records'}
                     </span>
                   </div>
-                  
+
                   <p className="text-xs text-slate-400 font-medium mt-1.5 flex-grow line-clamp-2">
                     {stage.desc}
                   </p>
-                  
+
                   <div className={`w-full mt-4 pt-2.5 border-t border-slate-100 flex items-center gap-1.5`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
                     <span className="text-[10px] font-extrabold tracking-wider uppercase text-slate-600">
@@ -758,13 +759,12 @@ export const DashboardPage: React.FC = () => {
                 {activeStageItemsList.map((item) => {
                   const requiresAction = isActionRequiredForUser(item);
                   return (
-                    <tr 
-                      key={`${item.type}-${item.id}`} 
-                      className={`transition-colors ${
-                        requiresAction 
-                          ? 'bg-rose-50/25 hover:bg-rose-50/40 border-l-2 border-l-rose-500' 
-                          : 'hover:bg-slate-50/50'
-                      }`}
+                    <tr
+                      key={`${item.type}-${item.id}`}
+                      className={`transition-colors ${requiresAction
+                        ? 'bg-rose-50/25 hover:bg-rose-50/40 border-l-2 border-l-rose-500'
+                        : 'hover:bg-slate-50/50'
+                        }`}
                     >
                       <td className="px-5 py-4 font-bold text-slate-800">
                         <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[10px] font-bold mr-1.5">
@@ -778,23 +778,31 @@ export const DashboardPage: React.FC = () => {
                       <td className="px-5 py-4 text-slate-550 font-semibold">{item.pendingWith}</td>
                       <td className="px-5 py-4 text-slate-500 font-mono font-medium">{item.pendingSince}</td>
                       <td className="px-5 py-4">
-                        <span className={`font-bold text-[9px] px-2 py-0.5 rounded border uppercase tracking-wider ${
-                          requiresAction 
-                            ? 'bg-rose-100 text-rose-800 border-rose-200' 
-                            : 'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}>
+                        <span className={`font-bold text-[9px] px-2 py-0.5 rounded border uppercase tracking-wider ${requiresAction
+                          ? 'bg-rose-100 text-rose-800 border-rose-200'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}>
                           {requiresAction ? 'Action Required' : item.status}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <Link
-                          to={item.link}
-                          className={`inline-flex items-center gap-1 font-extrabold hover:underline ${
-                            requiresAction ? 'text-rose-600 hover:text-rose-700' : 'text-[#1a3a6b] hover:text-[#244b8f]'
-                          }`}
-                        >
-                          {item.type === 'AA' && item.status === 'AWAITING INDENT' ? 'Initiate Indent' : requiresAction ? 'Take Action' : 'View Request'} <ChevronRight size={13} />
-                        </Link>
+                        <div className="flex items-center justify-end gap-3">
+                          {item.type === 'AA' && item.status === 'AWAITING INDENT' && (
+                            <Link
+                              to={`/administrative-approvals/${item.id}`}
+                              className="text-slate-500 hover:text-slate-700 font-semibold hover:underline flex items-center gap-0.5"
+                            >
+                              View Request <ChevronRight size={13} />
+                            </Link>
+                          )}
+                          <Link
+                            to={item.link}
+                            className={`inline-flex items-center gap-1 font-extrabold hover:underline ${requiresAction ? 'text-rose-600 hover:text-rose-700' : 'text-[#1a3a6b] hover:text-[#244b8f]'
+                              }`}
+                          >
+                            {item.type === 'AA' && item.status === 'AWAITING INDENT' ? 'Initiate Indent' : requiresAction ? 'Take Action' : 'View Request'} <ChevronRight size={13} />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );

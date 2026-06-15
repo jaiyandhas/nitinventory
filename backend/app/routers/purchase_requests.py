@@ -545,26 +545,98 @@ async def _persist_pr(
         tech_file = uploads.get(f"tech_specs_file_{index}")
         if tech_file and tech_file.filename:
             await doc_svc.save_upload(pr, f"item_{index}_tech_spec", tech_file, user.id)
+        elif aa and aa.attachment_path:
+            import os
+            from datetime import datetime
+            orig_name = os.path.basename(aa.attachment_path)
+            doc = Document(
+                purchase_request_id=pr.id,
+                doc_key=f"item_{index}_tech_spec",
+                doc_value={"path": aa.attachment_path, "original_name": orig_name},
+                uploaded_by_id=user.id,
+                updated_at=datetime.utcnow(),
+            )
+            db.add(doc)
 
         nac_file = uploads.get(f"gem_nac_file_{index}")
         if nac_file and nac_file.filename:
             await doc_svc.save_upload(pr, f"item_{index}_gem_nac", nac_file, user.id)
+        elif aa and aa.gem_non_availability_path:
+            import os
+            from datetime import datetime
+            orig_name = os.path.basename(aa.gem_non_availability_path)
+            doc = Document(
+                purchase_request_id=pr.id,
+                doc_key=f"item_{index}_gem_nac",
+                doc_value={"path": aa.gem_non_availability_path, "original_name": orig_name},
+                uploaded_by_id=user.id,
+                updated_at=datetime.utcnow(),
+            )
+            db.add(doc)
 
     quotation = uploads.get("quotation_file")
     if quotation and quotation.filename:
         await doc_svc.save_upload(pr, "quotation_file", quotation, user.id)
+    elif aa and aa.basis_of_estimation_path:
+        import os
+        from datetime import datetime
+        orig_name = os.path.basename(aa.basis_of_estimation_path)
+        doc = Document(
+            purchase_request_id=pr.id,
+            doc_key="quotation_file",
+            doc_value={"path": aa.basis_of_estimation_path, "original_name": orig_name},
+            uploaded_by_id=user.id,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(doc)
 
     dept_pac = uploads.get("dept_pac_file")
     if dept_pac and dept_pac.filename:
         await doc_svc.save_upload(pr, "dept_pac_file", dept_pac, user.id)
+    elif aa and aa.pac_dept_cert_path:
+        import os
+        from datetime import datetime
+        orig_name = os.path.basename(aa.pac_dept_cert_path)
+        doc = Document(
+            purchase_request_id=pr.id,
+            doc_key="dept_pac_file",
+            doc_value={"path": aa.pac_dept_cert_path, "original_name": orig_name},
+            uploaded_by_id=user.id,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(doc)
 
     oem_pac = uploads.get("oem_pac_file")
     if oem_pac and oem_pac.filename:
         await doc_svc.save_upload(pr, "oem_pac_file", oem_pac, user.id)
+    elif aa and aa.pac_vendor_cert_path:
+        import os
+        from datetime import datetime
+        orig_name = os.path.basename(aa.pac_vendor_cert_path)
+        doc = Document(
+            purchase_request_id=pr.id,
+            doc_key="oem_pac_file",
+            doc_value={"path": aa.pac_vendor_cert_path, "original_name": orig_name},
+            uploaded_by_id=user.id,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(doc)
 
     oem_auth = uploads.get("oem_auth_file")
     if oem_auth and oem_auth.filename:
         await doc_svc.save_upload(pr, "oem_auth_file", oem_auth, user.id)
+    elif aa and aa.authority_approval_path:
+        import os
+        from datetime import datetime
+        orig_name = os.path.basename(aa.authority_approval_path)
+        doc = Document(
+            purchase_request_id=pr.id,
+            doc_key="oem_auth_file",
+            doc_value={"path": aa.authority_approval_path, "original_name": orig_name},
+            uploaded_by_id=user.id,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(doc)
 
     dept_code = user.department.short_code if user.department else "GEN"
     pr.icr_number = f"ICR/S&P/{financial_year.label}/{dept_code}/{pr.id}"
@@ -1865,21 +1937,8 @@ async def schedule_tender(
         if not existing_draft and not draft_file:
             raise HTTPException(status_code=400, detail="Draft tender document is mandatory")
 
-    tender_ref = body.get("tender_reference_number")
-    if not tender_ref or not tender_ref.strip():
-        raise HTTPException(status_code=400, detail="Tender Reference Number is required")
-    pr.tender_reference_number = tender_ref
-
-    from datetime import date
-    if body.get("date_of_tender"):
-        pr.date_of_tender = date.fromisoformat(body["date_of_tender"])
-    else:
-        raise HTTPException(status_code=400, detail="Tender date is required")
-
-    if body.get("date_of_tech_bid_opening"):
-        pr.date_of_tech_bid_opening = date.fromisoformat(body["date_of_tech_bid_opening"])
-    if body.get("date_of_financial_bid_opening"):
-        pr.date_of_financial_bid_opening = date.fromisoformat(body["date_of_financial_bid_opening"])
+    # Under the new requirements, tender_reference_number, date_of_tender, tech_bid_opening,
+    # and financial_bid_opening are not collected during Tender Scheduling.
 
     doc_svc = DocumentService(db)
     if draft_file:
@@ -1943,16 +2002,26 @@ async def add_tender_details(
     else:
         body = await request.json()
 
-    if body.get("tender_reference_number"):
-        pr.tender_reference_number = body.get("tender_reference_number")
+    tender_ref = body.get("tender_reference_number")
+    if not tender_ref or not tender_ref.strip():
+        raise HTTPException(status_code=400, detail="Tender Reference Number is required")
+    pr.tender_reference_number = tender_ref
     
     from datetime import date
     if body.get("date_of_tender"):
         pr.date_of_tender = date.fromisoformat(body["date_of_tender"])
+    else:
+        raise HTTPException(status_code=400, detail="Tender date is required")
+
     if body.get("date_of_tech_bid_opening"):
         pr.date_of_tech_bid_opening = date.fromisoformat(body["date_of_tech_bid_opening"])
+    else:
+        pr.date_of_tech_bid_opening = None
+
     if body.get("date_of_financial_bid_opening"):
         pr.date_of_financial_bid_opening = date.fromisoformat(body["date_of_financial_bid_opening"])
+    else:
+        pr.date_of_financial_bid_opening = None
 
     if body.get("vendor_list_link"):
         pr.vendor_list_link = body.get("vendor_list_link")

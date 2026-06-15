@@ -8,8 +8,6 @@ import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
 import { AASummaryTable } from '../components/aa/detail/AASummaryTable';
 import { SearchableSelect } from '../components/common/SearchableSelect';
-import { WorkflowTracker } from '../components/pr/detail/WorkflowTracker';
-import { WorkflowTimeline } from '../components/pr/detail/WorkflowTimeline';
 
 export const AdministrativeApprovalDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -232,7 +230,7 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
             <h1 className="text-2xl font-bold text-slate-800">
               {aa.aa_number !== '-' ? aa.aa_number : `Admin Approval Request REQ-${aa.id}`}
             </h1>
-            <p className="text-slate-500 text-sm">Detailed overview and approval history trail.</p>
+            <p className="text-slate-500 text-sm">Detailed overview of administrative approval request.</p>
           </div>
         </div>
         
@@ -262,8 +260,7 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
       )}
 
       {/* Details Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
           {isEditing ? (
             <div className="card p-6 bg-white shadow rounded-lg border border-slate-200">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2 mb-4">
@@ -420,50 +417,7 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
             </div>
           )}
 
-          {/* Section 4 – Approval History */}
-          <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
-              Section 4 – Approval History / Action Trail
-            </h2>
-            <div className="flow-root">
-              <ul className="-mb-8">
-                {aa.history.map((h: any, idx: number) => (
-                  <li key={h.id}>
-                    <div className="relative pb-8">
-                      {idx !== aa.history.length - 1 && (
-                        <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
-                      )}
-                      <div className="relative flex space-x-3">
-                        <div>
-                          <span className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center ring-8 ring-white">
-                            {h.status === 'Approved' || h.status === 'Submitted' ? (
-                              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                            ) : h.status === 'Returned' ? (
-                              <AlertCircle className="h-5 w-5 text-amber-500" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-rose-500" />
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0 pt-1.5 flex justify-between space-x-4">
-                          <div>
-                            <p className="text-sm text-slate-800">
-                              <span className="font-bold">{h.approver_name}</span> ({h.approver_role}) acted{' '}
-                              <span className="font-bold text-slate-900">{h.status}</span>
-                            </p>
-                            <p className="text-xs text-slate-500 font-medium italic mt-1">Remarks: {h.remarks}</p>
-                          </div>
-                          <div className="text-right text-xs whitespace-nowrap text-slate-500 font-semibold">
-                            {h.acted_at ? new Date(h.acted_at).toLocaleString() : '—'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+
 
           {/* Approver Action Panel */}
           {canReview && (
@@ -524,12 +478,6 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="space-y-6">
-          <WorkflowTracker aa={aa} />
-          <WorkflowTimeline aa={aa} />
-        </div>
       </div>
     </div>
   );
