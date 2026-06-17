@@ -90,6 +90,8 @@ async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
     if not is_direct_actor:
         await db.refresh(pr, ["flow"])
         if pr.flow:
+            flow_engine = FlowEngineService(db)
+            sof_id = await flow_engine.resolve_sof_id(pr)
             step_res = await db.execute(
                 select(WorkFlowHierarchy).where(
                     and_(
@@ -99,6 +101,7 @@ async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
                         WorkFlowHierarchy.phase_id == pr.flow.phase_id,
                         WorkFlowHierarchy.step_order == pr.flow.step_order,
                         WorkFlowHierarchy.is_enabled == True,
+                        WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
                 )
             )
@@ -795,6 +798,8 @@ async def list_prs(
     for pr in prs:
         flow_data = None
         if pr.flow:
+            flow_engine = FlowEngineService(db)
+            sof_id = await flow_engine.resolve_sof_id(pr)
             res = await db.execute(
                 select(WorkFlowHierarchy).options(
                     selectinload(WorkFlowHierarchy.role),
@@ -807,6 +812,7 @@ async def list_prs(
                         WorkFlowHierarchy.phase_id == pr.flow.phase_id,
                         WorkFlowHierarchy.step_order == pr.flow.step_order,
                         WorkFlowHierarchy.is_enabled == True,
+                        WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
                 )
             )
@@ -954,6 +960,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     expected_user_name = None
     phase_name = None
     if pr.flow:
+        flow_engine = FlowEngineService(db)
+        sof_id = await flow_engine.resolve_sof_id(pr)
         res = await db.execute(
             select(WorkFlowHierarchy).where(
                 and_(
@@ -963,6 +971,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                     WorkFlowHierarchy.phase_id == pr.flow.phase_id,
                     WorkFlowHierarchy.step_order == pr.flow.step_order,
                     WorkFlowHierarchy.is_enabled == True,
+                    WorkFlowHierarchy.source_of_fund_id == sof_id,
                 )
             )
         )
@@ -1427,6 +1436,8 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
             phase = phase_res.scalar_one_or_none()
             
             # check if the step expects HOD
+            flow_engine = FlowEngineService(db)
+            sof_id = await flow_engine.resolve_sof_id(pr)
             step_res = await db.execute(
                 select(WorkFlowHierarchy).where(
                     and_(
@@ -1436,6 +1447,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                         WorkFlowHierarchy.phase_id == pr.flow.phase_id,
                         WorkFlowHierarchy.step_order == pr.flow.step_order,
                         WorkFlowHierarchy.is_enabled == True,
+                        WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
                 )
             )
@@ -1593,6 +1605,8 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
     phase = phase_res.scalar_one_or_none()
     phase_name = phase.phase_name if phase else ""
 
+    flow_engine = FlowEngineService(db)
+    sof_id = await flow_engine.resolve_sof_id(pr)
     result = await db.execute(
         select(WorkFlowHierarchy).where(
             and_(
@@ -1602,6 +1616,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
                 WorkFlowHierarchy.phase_id == pr.flow.phase_id,
                 WorkFlowHierarchy.step_order == pr.flow.step_order,
                 WorkFlowHierarchy.is_enabled == True,
+                WorkFlowHierarchy.source_of_fund_id == sof_id,
             )
         )
     )
@@ -2929,7 +2944,7 @@ async def allocate_budget_file(
                 selectinload(WorkFlowHierarchy.role),
                 selectinload(WorkFlowHierarchy.user),
             ).where(
-                flow_engine._wf_filters(pr, pr.flow.phase_id, step_order=pr.flow.step_order)
+                flow_engine._wf_filters(pr, pr.flow.phase_id, sof_id=await flow_engine.resolve_sof_id(pr), step_order=pr.flow.step_order)
             )
         )
         new_step = new_step_result.scalar_one_or_none()

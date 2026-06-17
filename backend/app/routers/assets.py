@@ -107,7 +107,7 @@ async def get_dashboard_stats(
 @router.get("/")
 async def list_assets(
     skip: int = 0,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=2000),
     search: Optional[str] = None,
     category: Optional[str] = None,
     condition: Optional[str] = None,
