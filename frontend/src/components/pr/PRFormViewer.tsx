@@ -149,7 +149,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
   const fileNo = uniqueFileNos.length > 0 
     ? uniqueFileNos.map(fn => formatFileNo(fn, user?.role?.group_key)).join(', ')
     : formatFileNo(pr.budget_file?.file_no, user?.role?.group_key);
-  const deptName = pr.initiator?.email?.includes('cse') ? 'Computer Science & Engineering' : 'Main Office';
+  const deptName = pr.initiator?.department?.name || 'Main Office';
   const indentName = (pr.items || []).map((item: any) => item.item_description).join(', ') || '-';
   const selected_fund = pr.form_data?.source_of_fund;
   const project_code = pr.form_data?.source_of_fund_project_code;
@@ -230,6 +230,43 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
               <div>
                 <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Source of Fund</span>
                 <span className="font-semibold text-slate-800">{fundSource}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs print:bg-white print:border-slate-300">
+              <div>
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Name of Laboratory / Office</span>
+                <span className="font-semibold text-slate-800">{pr.form_data?.laboratory_office || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Item Category</span>
+                <span className="font-semibold text-slate-800">{pr.form_data?.item_category || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">BOG Resolution No</span>
+                <span className="font-semibold text-slate-800">{pr.form_data?.bog_resolution_no || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">FC Resolution No</span>
+                <span className="font-semibold text-slate-800">{pr.form_data?.fc_resolution_no || '—'}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Purpose / Justification</span>
+                <span className="font-semibold text-slate-800">
+                  {pr.form_data?.purpose || '—'}
+                  {pr.form_data?.purpose === 'Others' && pr.form_data?.purpose_justification && (
+                    <span className="block text-slate-500 mt-0.5">Justification: {pr.form_data?.purpose_justification}</span>
+                  )}
+                </span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Make in India (MII) Clause</span>
+                <span className="font-semibold text-slate-800">
+                  {pr.form_data?.mii_clause || '—'}
+                  {pr.form_data?.mii_clause === 'Not Applicable' && pr.form_data?.mii_justification && (
+                    <span className="block text-slate-500 mt-0.5">Justification: {pr.form_data?.mii_justification}</span>
+                  )}
+                </span>
               </div>
             </div>
 
@@ -454,7 +491,7 @@ export const PRFormViewer: React.FC<PRFormViewerProps> = ({
                 <tbody>
                   <tr>
                     <td className="py-1">{pr.form_data?.manufacturer_name || 'OEM'}</td>
-                    <td className="py-1">NITT/{pr.initiator?.email?.includes('cse') ? 'CSE' : 'GEN'}/Prev-PAC</td>
+                    <td className="py-1">NITT/{pr.initiator?.department?.short_code || 'GEN'}/Prev-PAC</td>
                     <td className="py-1">1</td>
                     <td className="py-1 font-semibold">{formatCurrency(pr.amount)}</td>
                   </tr>

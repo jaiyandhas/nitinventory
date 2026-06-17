@@ -109,7 +109,7 @@ export const FormsDashboardPage: React.FC = () => {
     const icr = (pr.icr_number || '').toLowerCase();
     const idStr = String(pr.id);
     const initiator = (pr.initiator?.name || '').toLowerCase();
-    const dept = (pr.initiator?.email || '').includes('cse') ? 'computer science' : 'main office';
+    const dept = (pr.initiator?.department?.name || 'Main Office').toLowerCase();
     return icr.includes(searchLower) || idStr.includes(searchLower) || initiator.includes(searchLower) || dept.includes(searchLower);
   });
 
@@ -155,7 +155,7 @@ export const FormsDashboardPage: React.FC = () => {
     if (!pr.flow) return null;
     const phaseName = pr.flow.phase_name;
     
-    if (phaseName === 'Administrative Approval') {
+    if (phaseName === 'Administrative Approval' || phaseName === 'Indent and Detailed Tech Specification') {
       return 'indent';
     }
     if (phaseName === 'Technical Evaluation') {

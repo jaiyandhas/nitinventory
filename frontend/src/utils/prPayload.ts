@@ -10,16 +10,16 @@ export function buildPRCreateFormData(
 ): FormData {
   const specs: Record<string, any> = {};
   selectedFileIds.forEach((fileId) => {
-    const item = items[fileId];
+    const item = items[fileId] || {};
     specs[String(fileId)] = {
-      equipment_name: item.equipment_name,
-      pdi_required: item.pdi_required,
-      pdi_justification: item.pdi_required === 'Yes' ? item.pdi_justification : '',
-      pre_bid_required: item.pre_bid_required,
-      installation_scope: item.installation_required === 'Yes' ? item.installation_scope : '',
-      training_required: item.training_required,
-      training_location: item.training_required === 'Yes' ? item.training_location : '',
-      tech_eligibility: item.tech_eligibility,
+      equipment_name: item.equipment_name || '',
+      pdi_required: item.pdi_required || 'No',
+      pdi_justification: item.pdi_required === 'Yes' ? item.pdi_justification || '' : '',
+      pre_bid_required: item.pre_bid_required || 'No',
+      installation_scope: item.installation_required === 'Yes' ? item.installation_scope || '' : '',
+      training_required: item.training_required || 'No',
+      training_location: item.training_required === 'Yes' ? item.training_location || '' : '',
+      tech_eligibility: item.tech_eligibility || '',
     };
   });
 
@@ -65,24 +65,24 @@ export function buildPRCreateFormData(
     mii_justification: common.mii_clause === 'Not Applicable' ? common.mii_justification : null,
 
     items: selectedFileIds.map((fileId) => {
-      const item = items[fileId];
+      const item = items[fileId] || {};
       return {
         budget_file_id: fileId,
         quantity: Number(item.quantity) || 1,
         charges: item.charges ? Number(item.charges) : null,
-        requirement_type: item.requirement_type,
+        requirement_type: item.requirement_type || 'Research',
         warranty: item.warranty ? Number(item.warranty) : null,
         delivery_period: item.delivery_period ? Number(item.delivery_period) : null,
         installation_required: yesNoToBool(item.installation_required),
         site_readiness: yesNoToBool(item.site_readiness),
         site_readiness_remarks: item.site_readiness_remarks || null,
         gem_link: item.gem_link || null,
-        availability: item.availability,
+        availability: item.availability || 'No',
         availability_remarks: null,
         present_stock: item.present_stock || null,
         justification_for_procurement: item.justification_for_procurement || null,
         previous_file_no_reference: item.previous_file_no_reference || null,
-        tech_specs_text: item.tech_specs_text,
+        tech_specs_text: item.tech_specs_text || '',
       };
     }),
     form_data: {
