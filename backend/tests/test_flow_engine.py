@@ -9,6 +9,7 @@ from app.models.budget import PhaseManager, BudgetMaster
 @pytest.mark.asyncio
 async def test_workflow_flow_engine_lifecycle(db_session):
     """Test the complete workflow engine lifecycle: initialization, advancement, sending back, and rejection."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
     
     # Load test users
@@ -121,6 +122,7 @@ async def test_director_tender_approval_conditional_skipping(db_session):
       - _check_partial_approver_auto_advance returns False → Dean must act
       - Dean approves → Director (step 11) fires
     """
+    db_session.commit = db_session.flush
     from app.models.purchase_request import CommercialEvaluation
     flow_service = FlowEngineService(db_session)
 
@@ -190,6 +192,7 @@ async def test_director_tender_approval_conditional_skipping(db_session):
 @pytest.mark.asyncio
 async def test_technical_evaluation_committee_signatures(db_session):
     """Test that Technical Evaluation step remains on step 1 until all committee members have signed."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
     
     # Fetch test users
@@ -286,6 +289,7 @@ async def test_technical_evaluation_committee_signatures(db_session):
 @pytest.mark.asyncio
 async def test_technical_evaluation_advance_after_prior_signature(db_session):
     """Committee members sign via /technical-eval first; /advance must still work."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
 
     faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
@@ -351,6 +355,7 @@ async def test_technical_evaluation_advance_after_prior_signature(db_session):
 @pytest.mark.asyncio
 async def test_technical_evaluation_send_back_signature_reset(db_session):
     """Test that sending back a PR from TE step 2 to TE step 1 resets approvals, requiring all members to sign again."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
     
     # Fetch test users
@@ -435,6 +440,7 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
 @pytest.mark.asyncio
 async def test_purchase_order_signature_validation(db_session):
     """Test that approving a step in the Purchase Order phase requires the user to have a signature_path."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
     
     # Fetch test users
@@ -488,6 +494,7 @@ async def test_purchase_order_signature_validation(db_session):
 @pytest.mark.asyncio
 async def test_admin_approval_send_back_signature_voiding(db_session):
     """Test that sending back from Director (step 3) to HOD (step 1) voids approvals/signatures of HOD and Dean."""
+    db_session.commit = db_session.flush
     flow_service = FlowEngineService(db_session)
 
     faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))

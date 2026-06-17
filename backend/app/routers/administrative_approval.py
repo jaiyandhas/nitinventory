@@ -59,6 +59,125 @@ async def resolve_next_step(db: AsyncSession, aa: AdministrativeApproval, steps:
     return None
 
 
+async def resolve_aa_pending_step(db: AsyncSession, aa: AdministrativeApproval, steps: list, aa_history: list) -> Optional[dict]:
+    # Trace history to find approved indices
+    sorted_history = sorted(aa_history, key=lambda x: x.acted_at)
+    approved_indices = set()
+    for i, h in enumerate(sorted_history):
+        status = h.status
+        role = h.approver_role.lower()
+        if status == "Submitted":
+            approved_indices = set()
+        elif status == "Approved":
+            found_idx = -1
+            for idx, step in enumerate(steps):
+                if idx not in approved_indices and step.user_group.lower() == role:
+                    found_idx = idx
+                    break
+            if found_idx != -1:
+                approved_indices.add(found_idx)
+        elif status in ("Returned", "Returned to PI", "Send Back"):
+            target_role = None
+            for prev_h in reversed(sorted_history[:i]):
+                if prev_h.status in ("Approved", "Submitted") and prev_h.approver_role.lower() != role:
+                    target_role = prev_h.approver_role.lower()
+                    break
+            if target_role and target_role != "pi":
+                target_idx = -1
+                for idx in sorted(approved_indices, reverse=True):
+                    if steps[idx].user_group.lower() == target_role:
+                        target_idx = idx
+                        break
+                if target_idx != -1:
+                    approved_indices = {idx for idx in approved_indices if idx < target_idx}
+                else:
+                    approved_indices = set()
+            else:
+                approved_indices = set()
+
+    # Find first unapproved, non-skipped step
+    from app.services.evaluator import safe_eval
+    for idx, step in enumerate(steps):
+        if idx in approved_indices:
+            continue
+        if step.skip_condition:
+            context = {"aa": aa}
+            try:
+                should_skip = safe_eval(step.skip_condition, context)
+            except Exception:
+                should_skip = False
+            if should_skip:
+                continue
+        return {"step": step, "idx": idx}
+    return None
+
+
+async def realign_aa_routing(db: AsyncSession, aa: AdministrativeApproval) -> None:
+    # Skip finalized stages, nominee steps or if returned to PI
+    if not aa.status or aa.status in ("Administrative Approval Granted", "Rejected") or aa.status == "Returned to PI":
+        return
+    if aa.pending_with and aa.pending_with.lower().startswith("nominee"):
+        return
+        
+    # Lazy relationship loading checks
+    await db.refresh(aa, ["budget_file", "pi"])
+    if aa.budget_file:
+        await db.refresh(aa.budget_file, ["financial_year"])
+    if aa.pi:
+        await db.refresh(aa.pi, ["department"])
+
+    source_of_fund_id = None
+    if aa.budget_file and aa.budget_file.source_of_fund:
+        from app.models.budget import SourceOfFund
+        sof_res = await db.execute(
+            select(SourceOfFund.id).where(SourceOfFund.name == aa.budget_file.source_of_fund)
+        )
+        source_of_fund_id = sof_res.scalar_one_or_none()
+        
+    steps = await _get_aa_workflow_steps(db, aa.total_cost, aa.mode_of_procurement, source_of_fund_id)
+    if not steps:
+        return
+
+    # Fetch approval history from DB to avoid cached states
+    from app.models.administrative_approval import AdministrativeApprovalHistory
+    history_res = await db.execute(
+        select(AdministrativeApprovalHistory)
+        .where(AdministrativeApprovalHistory.approval_id == aa.id)
+    )
+    aa_history = history_res.scalars().all()
+
+    # Resolve expected next step
+    next_step_data = await resolve_aa_pending_step(db, aa, steps, aa_history)
+    expected_pending_with = None
+    expected_status = None
+    if next_step_data:
+        expected_pending_with = next_step_data["step"].user_group
+        # Keep "Returned to {role}" status if it matches the expected pending role
+        if aa.status and aa.status.startswith("Returned to ") and aa.status.replace("Returned to ", "").lower() == expected_pending_with.lower():
+            expected_status = aa.status
+        else:
+            expected_status = f"Pending with {expected_pending_with}"
+    else:
+        expected_pending_with = None
+        expected_status = "Administrative Approval Granted"
+
+    # If it is out of sync, heal it!
+    if aa.pending_with != expected_pending_with or aa.status != expected_status:
+        aa.pending_with = expected_pending_with
+        aa.status = expected_status
+        if expected_status == "Administrative Approval Granted":
+            aa.approved_at = datetime.now()
+            # Generate AA number
+            dept_code = aa.pi.department.short_code if aa.pi and aa.pi.department else "GEN"
+            fy_label = aa.budget_file.financial_year.label if aa.budget_file and aa.budget_file.financial_year else "GEN"
+            aa.aa_number = f"AA/{fy_label}/{dept_code}/{aa.id:03d}"
+            # Add to committed amount
+            if aa.budget_file:
+                aa.budget_file.committed_amount += aa.total_cost
+        await db.commit()
+
+
+
 async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_procurement: str, source_of_fund_id: Optional[int] = None) -> list:
     from app.models.administrative_approval import AdministrativeApprovalWorkflow
     from app.models.budget import PurchaseCategory, ProcurementManager
@@ -68,8 +187,22 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
     mop_res = await db.execute(select(ProcurementManager))
     mops = mop_res.scalars().all()
     matching_mop = None
+    
+    # Translate frontend mode_of_procurement to standard names
+    mop_lower = mode_of_procurement.lower() if mode_of_procurement else ""
+    if "gfr 154" in mop_lower:
+        mop_lower = "direct purchase"
+    elif "gfr 155" in mop_lower or "committee purchase" in mop_lower:
+        mop_lower = "direct purchase"
+    elif "pac" in mop_lower or "nomination" in mop_lower:
+        mop_lower = "proprietary purchase"
+    elif "limited tender" in mop_lower:
+        mop_lower = "limited tender"
+    elif "global tender" in mop_lower:
+        mop_lower = "cppp"
+        
     for m in mops:
-        if m.name.lower() in mode_of_procurement.lower() or mode_of_procurement.lower() in m.name.lower():
+        if m.name.lower() in mop_lower or mop_lower in m.name.lower():
             matching_mop = m
             break
             
@@ -88,75 +221,69 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
         cat_res = await db.execute(cat_stmt)
         cat = cat_res.scalars().first()
         
-    steps = []
-    if cat and proc_id:
-        # 1. Try to find steps matching the specific source of fund
-        steps_res = await db.execute(
-            select(AdministrativeApprovalWorkflow)
-            .options(selectinload(AdministrativeApprovalWorkflow.role))
-            .where(
-                and_(
-                    AdministrativeApprovalWorkflow.category_id == cat.id,
-                    AdministrativeApprovalWorkflow.procurement_id == proc_id,
-                    AdministrativeApprovalWorkflow.purchase_type == "department",
-                    AdministrativeApprovalWorkflow.is_enabled == True,
-                    AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
-                )
-            )
-            .order_by(AdministrativeApprovalWorkflow.step_order)
-        )
-        steps = steps_res.scalars().all()
+    from sqlalchemy import or_
+
+    filters = [AdministrativeApprovalWorkflow.is_enabled == True]
+    
+    # Category filter
+    if cat is not None:
+        filters.append(or_(
+            AdministrativeApprovalWorkflow.category_id == cat.id,
+            AdministrativeApprovalWorkflow.category_id == None
+        ))
+    else:
+        filters.append(AdministrativeApprovalWorkflow.category_id == None)
         
-        # 2. If not found and a source_of_fund_id was provided, fall back to the default (source_of_fund_id == None)
-        if not steps and source_of_fund_id is not None:
-            steps_res = await db.execute(
-                select(AdministrativeApprovalWorkflow)
-                .options(selectinload(AdministrativeApprovalWorkflow.role))
-                .where(
-                    and_(
-                        AdministrativeApprovalWorkflow.category_id == cat.id,
-                        AdministrativeApprovalWorkflow.procurement_id == proc_id,
-                        AdministrativeApprovalWorkflow.purchase_type == "department",
-                        AdministrativeApprovalWorkflow.is_enabled == True,
-                        AdministrativeApprovalWorkflow.source_of_fund_id == None,
-                    )
-                )
-                .order_by(AdministrativeApprovalWorkflow.step_order)
-            )
-            steps = steps_res.scalars().all()
+    # Procurement filter
+    if proc_id is not None:
+        filters.append(or_(
+            AdministrativeApprovalWorkflow.procurement_id == proc_id,
+            AdministrativeApprovalWorkflow.procurement_id == None
+        ))
+    else:
+        filters.append(AdministrativeApprovalWorkflow.procurement_id == None)
         
-    if not steps:
-        # Try specific source of fund first for category_id == None fallback
-        steps_res = await db.execute(
-            select(AdministrativeApprovalWorkflow)
-            .options(selectinload(AdministrativeApprovalWorkflow.role))
-            .where(
-                and_(
-                    AdministrativeApprovalWorkflow.category_id == None,
-                    AdministrativeApprovalWorkflow.is_enabled == True,
-                    AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
-                )
-            )
-            .order_by(AdministrativeApprovalWorkflow.step_order)
-        )
-        steps = steps_res.scalars().all()
+    # Source of fund filter
+    if source_of_fund_id is not None:
+        filters.append(or_(
+            AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
+            AdministrativeApprovalWorkflow.source_of_fund_id == None
+        ))
+    else:
+        filters.append(AdministrativeApprovalWorkflow.source_of_fund_id == None)
         
-        # Fall back to default fund
-        if not steps and source_of_fund_id is not None:
-            steps_res = await db.execute(
-                select(AdministrativeApprovalWorkflow)
-                .options(selectinload(AdministrativeApprovalWorkflow.role))
-                .where(
-                    and_(
-                        AdministrativeApprovalWorkflow.category_id == None,
-                        AdministrativeApprovalWorkflow.is_enabled == True,
-                        AdministrativeApprovalWorkflow.source_of_fund_id == None,
-                    )
-                )
-                .order_by(AdministrativeApprovalWorkflow.step_order)
-            )
-            steps = steps_res.scalars().all()
-        
+    # Purchase type filter
+    filters.append(or_(
+        AdministrativeApprovalWorkflow.purchase_type == "department",
+        AdministrativeApprovalWorkflow.purchase_type == None
+    ))
+    
+    steps_res = await db.execute(
+        select(AdministrativeApprovalWorkflow)
+        .options(selectinload(AdministrativeApprovalWorkflow.role))
+        .where(and_(*filters))
+    )
+    candidate_steps = steps_res.scalars().all()
+    
+    # Specificity Scoring & Merging
+    best_steps = {}
+    for step in candidate_steps:
+        score = 0
+        if source_of_fund_id is not None and step.source_of_fund_id == source_of_fund_id:
+            score += 1000
+        if cat is not None and step.category_id == cat.id:
+            score += 100
+        if proc_id is not None and step.procurement_id == proc_id:
+            score += 10
+        if step.purchase_type == "department":
+            score += 1
+            
+        order = step.step_order
+        if order not in best_steps or score > best_steps[order][1]:
+            best_steps[order] = (step, score)
+            
+    steps = [best_steps[order][0] for order in sorted(best_steps.keys())]
+    
     if not steps:
         from app.models.user import RoleManager
         roles_res = await db.execute(select(RoleManager).where(RoleManager.value.in_(["hod", "adpd", "dean_pd", "ia", "director"])))
@@ -488,6 +615,9 @@ async def list_aas(
     result = await db.execute(query)
     aas = result.scalars().all()
     
+    for aa in aas:
+        await realign_aa_routing(db, aa)
+    
     serialized = []
     for aa in aas:
       serialized.append({
@@ -549,6 +679,15 @@ async def get_aa_detail(
     user: User = Depends(get_current_user),
 ):
     from app.models.administrative_approval import AdministrativeApprovalNominee
+    # 1. Fetch simple reference and heal routing dynamically
+    result = await db.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
+    aa = result.scalar_one_or_none()
+    if not aa:
+        raise HTTPException(status_code=404, detail="Administrative Approval request not found.")
+        
+    await realign_aa_routing(db, aa)
+    
+    # 2. Re-fetch with all relationships loaded for response serialization
     result = await db.execute(
         select(AdministrativeApproval)
         .options(
@@ -560,8 +699,6 @@ async def get_aa_detail(
         .where(AdministrativeApproval.id == aa_id)
     )
     aa = result.scalar_one_or_none()
-    if not aa:
-        raise HTTPException(status_code=404, detail="Administrative Approval request not found.")
         
     await db.refresh(user, ["role"])
     group_key = user.role.group_key if user.role else None
@@ -693,6 +830,19 @@ async def action_aa(
     if not remarks or not remarks.strip():
         raise HTTPException(status_code=400, detail="Remarks are mandatory.")
         
+    # 1. Fetch simple reference and heal routing dynamically
+    result = await db.execute(
+        select(AdministrativeApproval)
+        .where(AdministrativeApproval.id == aa_id)
+        .with_for_update()
+    )
+    aa = result.scalar_one_or_none()
+    if not aa:
+        raise HTTPException(status_code=404, detail="Administrative Approval request not found.")
+        
+    await realign_aa_routing(db, aa)
+    
+    # 2. Re-fetch with all relationships loaded for action processing
     result = await db.execute(
         select(AdministrativeApproval)
         .options(
@@ -704,8 +854,6 @@ async def action_aa(
         .with_for_update()
     )
     aa = result.scalar_one_or_none()
-    if not aa:
-        raise HTTPException(status_code=404, detail="Administrative Approval request not found.")
         
     if aa.status in ("Administrative Approval Granted", "Rejected"):
         raise HTTPException(status_code=400, detail="This request has already been finalized and locked.")
@@ -729,39 +877,7 @@ async def action_aa(
 
     current_idx = -1
     
-    # Trace history to find last approved index, then find the current pending index
-    last_approved_idx = -1
-    traced = [(-1, "pi")]
-    sorted_history = sorted(aa_history, key=lambda x: x.acted_at)
-    for h in sorted_history:
-        status = h.status
-        role = h.approver_role.lower()
-        if status == "Submitted":
-            last_approved_idx = -1
-            traced = [(-1, "pi")]
-        elif status == "Approved":
-            found_idx = -1
-            for idx in range(last_approved_idx + 1, len(steps)):
-                if steps[idx].user_group.lower() == role:
-                    found_idx = idx
-                    break
-            if found_idx != -1:
-                last_approved_idx = found_idx
-                traced.append((found_idx, role))
-        elif status in ("Returned", "Returned to PI", "Send Back"):
-            target_idx = -1
-            for t_idx, t_role in reversed(traced):
-                if t_role != role:
-                    target_idx = t_idx
-                    break
-            if target_idx != -1:
-                last_approved_idx = target_idx - 1
-                traced = [t for t in traced if t[0] < target_idx]
-            else:
-                last_approved_idx = -1
-                traced = [(-1, "pi")]
-
-    next_step_data = await resolve_next_step(db, aa, steps, last_approved_idx)
+    next_step_data = await resolve_aa_pending_step(db, aa, steps, aa_history)
     resolved_idx = next_step_data["idx"] if next_step_data else -1
     
     if resolved_idx != -1 and aa.pending_with and steps[resolved_idx].user_group.lower() == aa.pending_with.lower():
@@ -818,8 +934,18 @@ async def action_aa(
                 detail=f"Total Cost ₹{aa.total_cost:,.2f} exceeds Available Budget Balance ₹{aa.budget_file.available_balance:,.2f}."
             )
             
-        # Determine next active step starting from -1
-        next_step_data = await resolve_next_step(db, aa, steps, -1)
+        # Determine next active step starting from -1 using resolve_aa_pending_step with simulated history
+        simulated_history = list(aa_history)
+        new_hist_entry = AdministrativeApprovalHistory(
+            approval_id=aa.id,
+            approver_role="PI",
+            approver_id=user.id,
+            status="Submitted",
+            remarks=body.get("remarks"),
+            acted_at=datetime.now()
+        )
+        simulated_history.append(new_hist_entry)
+        next_step_data = await resolve_aa_pending_step(db, aa, steps, simulated_history)
         if next_step_data:
             first_step = next_step_data["step"]
             first_role = first_step.user_group
@@ -911,14 +1037,8 @@ async def action_aa(
                     f"/administrative-approvals/{aa.id}"
                 )
             else:
-                # All nominees approved. Find HOD step in standard workflow, and transition to the next step
-                hod_idx = -1
-                for idx, s in enumerate(steps):
-                    if "hod" in s.user_group.lower():
-                        hod_idx = idx
-                        break
-                
-                next_step_data = await resolve_next_step(db, aa, steps, hod_idx if hod_idx != -1 else 0)
+                # All nominees approved. Resolve next standard step
+                next_step_data = await resolve_aa_pending_step(db, aa, steps, aa_history)
                 if next_step_data:
                     next_step = next_step_data["step"]
                     next_role = next_step.user_group
@@ -1152,8 +1272,18 @@ async def action_aa(
                         f"/administrative-approvals/{aa.id}"
                     )
                 
-                # Find the next step in standard workflow, bypassing nominee steps
-                next_step_data = await resolve_next_step(db, aa, steps, current_idx)
+                # Resolve next standard step using resolve_aa_pending_step with simulated history
+                simulated_history = list(aa_history)
+                new_hist_entry = AdministrativeApprovalHistory(
+                    approval_id=aa.id,
+                    approver_role=approver_role,
+                    approver_id=user.id,
+                    status="Approved",
+                    remarks=remarks,
+                    acted_at=datetime.now()
+                )
+                simulated_history.append(new_hist_entry)
+                next_step_data = await resolve_aa_pending_step(db, aa, steps, simulated_history)
                 if next_step_data:
                     next_step = next_step_data["step"]
                     next_role = next_step.user_group
@@ -1193,7 +1323,18 @@ async def action_aa(
                         f"/administrative-approvals/{aa.id}"
                     )
             else:
-                next_step_data = await resolve_next_step(db, aa, steps, current_idx)
+                # Resolve next standard step using resolve_aa_pending_step with simulated history
+                simulated_history = list(aa_history)
+                new_hist_entry = AdministrativeApprovalHistory(
+                    approval_id=aa.id,
+                    approver_role=approver_role,
+                    approver_id=user.id,
+                    status="Approved",
+                    remarks=remarks,
+                    acted_at=datetime.now()
+                )
+                simulated_history.append(new_hist_entry)
+                next_step_data = await resolve_aa_pending_step(db, aa, steps, simulated_history)
                 if next_step_data:
                     next_step = next_step_data["step"]
                     next_role = next_step.user_group

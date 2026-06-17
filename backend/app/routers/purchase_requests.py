@@ -793,6 +793,10 @@ async def list_prs(
 
     result = await db.execute(query)
     prs = result.scalars().all()
+    
+    flow_engine = FlowEngineService(db)
+    for pr in prs:
+        await flow_engine.realign_pr_flow(pr)
 
     serialized = []
     for pr in prs:
@@ -909,6 +913,14 @@ async def list_vendors(db: AsyncSession = Depends(get_db), user: User = Depends(
 
 @router.get("/{pr_id}")
 async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+
+    flow_engine = FlowEngineService(db)
+    await flow_engine.realign_pr_flow(pr)
+
     result = await db.execute(
         select(PurchaseRequest)
         .options(
@@ -939,8 +951,6 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         .where(PurchaseRequest.id == pr_id)
     )
     pr = result.scalar_one_or_none()
-    if not pr:
-        raise HTTPException(status_code=404, detail="Purchase request not found")
 
     await check_pr_access(pr, user, db)
 

@@ -1,0 +1,8 @@
+Exception type: <class 'NameError'>
+Exception details: name 'FinancialYear' is not defined
+Traceback:
+Traceback (most recent call last):
+  File "/app/tests/test_budget_allocation.py", line 30, in test_budget_file_allocated_initiator
+    fy_res = await db_session.execute(select(FinancialYear).where(FinancialYear.is_active == True))
+                                             ^^^^^^^^^^^^^
+NameError: name 'FinancialYear' is not defined

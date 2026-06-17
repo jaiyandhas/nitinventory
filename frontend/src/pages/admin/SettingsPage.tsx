@@ -525,6 +525,7 @@ export const SettingsPage: React.FC = () => {
       purchase_type: String(data.purchase_type),
       phase_id: Number(data.phase_id),
       step_order: Number(data.step_order),
+      source_of_fund_id: selectedSofId,
     };
 
     if (wfAssigneeType === 'tag') {
@@ -750,7 +751,8 @@ export const SettingsPage: React.FC = () => {
                       step_order: nextOrder,
                       category_id: selectedCat,
                       procurement_id: selectedProc,
-                      purchase_type: selectedPurchaseType
+                      purchase_type: selectedPurchaseType,
+                      source_of_fund_id: selectedSofId
                     });
                   }}
                   className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 font-semibold"

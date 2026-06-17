@@ -1,0 +1,1286 @@
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit2, Filter, Upload, Download, Loader2, AlertCircle, CheckCircle, Users, Award, ShieldAlert, Lock, Paperclip, RefreshCw, CalendarDays } from 'lucide-react';
+import { adminApi, budgetApi } from '../../services/api';
+import { queryKeys } from '../../config/queryKeys';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency, formatFileNo } from '../../utils/format';
+import { toast } from 'react-hot-toast';
+
+export const BudgetPage: React.FC = () => {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deptFilter, setDeptFilter] = useState<string>('all');
+  const [fyFilter, setFyFilter] = useState<string>('all');
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+
+  // CSV upload states
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvFyId, setCsvFyId] = useState<string>('');
+  const [uploadResult, setUploadResult] = useState<any>(null);
+
+  // Technical Committee assignment states
+  const [selectedBudgetForCommittee, setSelectedBudgetForCommittee] = useState<any>(null);
+  const [expert1Id, setExpert1Id] = useState<number | null>(null);
+  const [expert2Id, setExpert2Id] = useState<number | null>(null);
+  const [allocatedInitiatorId, setAllocatedInitiatorId] = useState<number | null>(null);
+
+  const [selectedBudgetForDirector, setSelectedBudgetForDirector] = useState<any>(null);
+  const [directorFacultyId, setDirectorFacultyId] = useState<number | null>(null);
+  const [selectedBudgetId, setSelectedBudgetId] = useState<number | null>(null);
+  const [selectedBudgetForAllocation, setSelectedBudgetForAllocation] = useState<any>(null);
+  const [allocationRemarks, setAllocationRemarks] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'review'>('active');
+
+  // Rollover modal states
+  const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
+  const [selectedRolloverIds, setSelectedRolloverIds] = useState<Set<number>>(new Set());
+  const [rolloverResult, setRolloverResult] = useState<any>(null);
+
+  // Core Queries
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const { data: budgetsData, isLoading: loadingBudgets } = useQuery({ 
+    queryKey: queryKeys.budgets.admin(searchTerm, deptFilter, fyFilter), 
+    queryFn: () => adminApi.budget({ 
+      skip: 0, 
+      limit: 1000,
+      search: searchTerm || undefined,
+      department_id: deptFilter !== 'all' ? parseInt(deptFilter) : undefined,
+      financial_year_id: fyFilter !== 'all' ? parseInt(fyFilter) : undefined
+    }).then(res => res.data) 
+  });
+
+  const budgets = budgetsData?.items || [];
+  
+  const { data: depts = [] } = useQuery({ 
+    queryKey: queryKeys.admin.departments, 
+    queryFn: () => adminApi.departments().then(res => res.data) 
+  });
+  
+  const { data: fys = [] } = useQuery({ 
+    queryKey: queryKeys.admin.financialYears, 
+    queryFn: () => adminApi.financialYears().then(res => res.data) 
+  });
+
+  // Nominee Options Queries
+  const { data: faculties = [] } = useQuery({
+    queryKey: queryKeys.users.allFaculties,
+    queryFn: () => budgetApi.allFaculties().then(res => res.data)
+  });
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: queryKeys.users.allUsers,
+    queryFn: () => budgetApi.allUsers().then(res => res.data)
+  });
+
+  // Rollover candidates — only fetched when modal is open
+  const { data: rolloverCandidates = [], isLoading: loadingCandidates } = useQuery({
+    queryKey: queryKeys.users.rolloverCandidates,
+    queryFn: () => adminApi.getRolloverCandidates().then(res => res.data),
+    enabled: isRolloverModalOpen,
+  });
+
+  // Group candidates by department for display
+  const candidatesByDept = (rolloverCandidates as any[]).reduce((acc: Record<string, any[]>, c: any) => {
+    const key = c.department_code || String(c.department_id);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(c);
+    return acc;
+  }, {});
+
+  const isWriteAllowed = user && user.role?.group_key === 'dean_approver';
+  const isHOD = user && user.role?.group_key === 'hod';
+  const isDirectorOrAdmin = user && (user.role?.value === 'director' || user.role?.group_key === 'apex_approver' || user.role?.group_key === 'admin');
+
+  // Committee assignment mutations
+  const assignCommitteeMutation = useMutation({
+    mutationFn: ({ budgetId, expert1_id, expert2_id, allocated_initiator_id }: { budgetId: number; expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }) =>
+      budgetApi.assignCommittee(budgetId, { expert1_id, expert2_id, allocated_initiator_id }),
+    onSuccess: () => {
+      toast.success('Technical committee updated successfully');
+      setSelectedBudgetForCommittee(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to update technical committee');
+    }
+  });
+
+  const assignDirectorCommitteeMutation = useMutation({
+    mutationFn: ({ budgetId, director_faculty_id }: { budgetId: number; director_faculty_id: number | null }) =>
+      budgetApi.assignDirectorCommittee(budgetId, { director_faculty_id }),
+    onSuccess: () => {
+      toast.success('Director nominee updated successfully');
+      setSelectedBudgetForDirector(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to update director nominee');
+    }
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (formData: FormData) => adminApi.importBudget(formData),
+    onSuccess: (res) => {
+      toast.success('Budget CSV imported successfully!');
+      setUploadResult(res.data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'CSV upload failed');
+    }
+  });
+
+  const assignPermanentFileNoMutation = useMutation({
+    mutationFn: ({ budgetId, fileNo, remarks }: { budgetId: number; fileNo: string; remarks?: string }) =>
+      adminApi.updateBudget(budgetId, { file_no: fileNo.replace(/^TEMP\//i, 'NITT/'), remarks }),
+    onSuccess: () => {
+      toast.success('Permanent file number assigned successfully and associated PRs resumed.');
+      setSelectedBudgetId(null);
+      setSelectedBudgetForAllocation(null);
+      setAllocationRemarks('');
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to assign permanent file number');
+      setSelectedBudgetId(null);
+    }
+  });
+
+  const rolloverMutation = useMutation({
+    mutationFn: (budgetFileIds: number[]) => adminApi.rolloverFinancialYear(budgetFileIds.length > 0 ? budgetFileIds : undefined),
+    onSuccess: (res) => {
+      setRolloverResult(res.data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.admin() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.files() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.financialYears });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.rolloverCandidates });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Rollover failed');
+    },
+  });
+
+
+
+  const activeBudgets = budgets.filter((b: any) => !b.file_no.toUpperCase().startsWith('TEMP/'));
+  const tempBudgets = budgets.filter((b: any) => b.file_no.toUpperCase().startsWith('TEMP/'));
+  const currentTabBudgets = activeTab === 'active' ? activeBudgets : tempBudgets;
+  const total = currentTabBudgets.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const displayBudgets = currentTabBudgets.slice((page - 1) * limit, page * limit);
+
+  // For the Allocate tab: same temp budgets, just renders action buttons
+  // For the Review tab: same temp budgets, renders read-only detail view
+
+  const handleCsvSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csvFile) {
+      toast.error('Please select a CSV file');
+      return;
+    }
+    if (!csvFyId) {
+      toast.error('Please select a financial year');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', csvFile);
+    formData.append('financial_year_id', csvFyId);
+    uploadMutation.mutate(formData);
+  };
+
+  const openCommitteeModal = (budget: any) => {
+    setSelectedBudgetForCommittee(budget);
+    setExpert1Id(budget.expert1_id || null);
+    setExpert2Id(budget.expert2_id || null);
+    setAllocatedInitiatorId(budget.allocated_initiator_id || null);
+  };
+
+  const openDirectorModal = (budget: any) => {
+    setSelectedBudgetForDirector(budget);
+    setDirectorFacultyId(budget.director_faculty_id || null);
+  };
+
+  const submitCommittee = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (expert1Id && expert2Id && expert1Id === expert2Id) {
+      toast.error('Expert 1 and Expert 2 must be different faculty members');
+      return;
+    }
+    assignCommitteeMutation.mutate({
+      budgetId: selectedBudgetForCommittee.id,
+      expert1_id: expert1Id,
+      expert2_id: expert2Id,
+      allocated_initiator_id: allocatedInitiatorId,
+    });
+  };
+
+  const submitDirectorCommittee = (e: React.FormEvent) => {
+    e.preventDefault();
+    assignDirectorCommitteeMutation.mutate({
+      budgetId: selectedBudgetForDirector.id,
+      director_faculty_id: directorFacultyId,
+    });
+  };
+
+  // Filter department faculties for HOD select dropdowns
+  const deptFaculties = faculties.filter((f: any) => Number(f.department_id) === Number(user?.department_id || user?.department?.id));
+
+  return (
+    <div className="space-y-6">
+      {/* Header section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Budget Management Dashboard</h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Initiate standalone budget master files, assign technical committees, and track allocations.
+          </p>
+        </div>
+        
+        {(isWriteAllowed || isHOD) && (
+          <div className="flex gap-2">
+            {isWriteAllowed && (
+              <>
+                <button
+                  onClick={() => {
+                    setIsRolloverModalOpen(true);
+                    setRolloverResult(null);
+                    setSelectedRolloverIds(new Set());
+                  }}
+                  className="btn-secondary flex items-center gap-2 border-orange-300 text-orange-700 hover:bg-orange-50 px-4 py-2 font-semibold transition-all"
+                  title="Roll over the active financial year to next year"
+                >
+                  <RefreshCw size={15} /> FY Rollover
+                </button>
+                <button
+                  onClick={() => {
+                    setUploadResult(null);
+                    setCsvFile(null);
+                    setIsCsvModalOpen(true);
+                  }}
+                  className="btn-secondary flex items-center gap-2 border-slate-300 px-4 py-2 hover:bg-slate-100 transition-all font-semibold"
+                >
+                  <Upload size={16} /> Bulk Upload CSV
+                </button>
+              </>
+            )}
+            <button 
+              onClick={() => navigate('/budget/create')} 
+              className="btn-primary flex items-center gap-2 px-4 py-2 font-semibold"
+            >
+              <Plus size={16} /> {isHOD ? 'Request Budget File' : 'Add Budget File'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Filters section */}
+      <div className="card p-4 flex gap-4 bg-white border border-slate-200 shadow-sm items-center">
+        <div className="flex items-center gap-2">
+          <Filter size={16} className="text-slate-500" />
+          <span className="text-sm font-medium text-slate-700">Filters:</span>
+        </div>
+        <input 
+          type="text"
+          placeholder="Search File No or Item Name..."
+          value={searchTerm}
+          onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+          className="input-field max-w-[250px] text-sm"
+        />
+        <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); setPage(1); }} className="input-field max-w-[200px] text-sm">
+          <option value="all">All Departments</option>
+          {depts.map((d: any) => <option key={d.id} value={d.id}>{d.short_code} - {d.name}</option>)}
+        </select>
+        <select value={fyFilter} onChange={e => { setFyFilter(e.target.value); setPage(1); }} className="input-field max-w-[200px] text-sm">
+          <option value="all">All Financial Years</option>
+          {fys.map((f: any) => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-200 gap-0 px-1">
+        <button
+          onClick={() => { setActiveTab('active'); setPage(1); }}
+          className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+            activeTab === 'active'
+              ? 'border-[#1a3a6b] text-[#1a3a6b]'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Active Budgets
+          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-medium ${
+            activeTab === 'active' ? 'bg-blue-100 text-[#1a3a6b]' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {activeBudgets.length}
+          </span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('review'); setPage(1); }}
+          className={`pb-3 px-4 text-sm font-semibold tracking-wide border-b-2 transition-all relative ${
+            activeTab === 'review'
+              ? 'border-amber-500 text-amber-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Review Requests
+          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${
+            activeTab === 'review' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {tempBudgets.length}
+          </span>
+        </button>
+      </div>
+
+      {/* Active Budgets Table */}
+      {activeTab === 'active' && (
+        <div className="card overflow-x-auto border border-slate-200 shadow-sm">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="px-3 py-2 text-xs">File No / ID</th>
+                <th className="px-3 py-2 text-xs">Dept</th>
+                <th className="px-3 py-2 text-xs">Item Name</th>
+                <th className="px-3 py-2 text-xs">Funds (Total / Locked / Utilized / Avail)</th>
+                <th className="px-3 py-2 text-xs">Technical Committee</th>
+                <th className="px-3 py-2 text-xs">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingBudgets ? (
+                <tr><td colSpan={6} className="text-center py-8">Loading budget data...</td></tr>
+              ) : displayBudgets.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-8 text-slate-500">No active budget records found.</td></tr>
+              ) : (
+                displayBudgets.map((b: any) => {
+                  const matchesDept = Number(b.department_id) === Number(user?.department_id || user?.department?.id);
+                  const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
+                  const isFyClosed = budgetFy ? budgetFy.is_closed : false;
+                  const fyLabel = budgetFy ? budgetFy.label : '';
+                  const createdAt = b.created_at ? new Date(b.created_at) : null;
+                  const isNew = createdAt ? (Date.now() - createdAt.getTime()) < 24 * 60 * 60 * 1000 : false;
+                  const createdLabel = createdAt
+                    ? createdAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : null;
+                  return (
+                    <tr key={b.id} className={`hover:bg-slate-50 border-b border-slate-100 ${isNew ? 'bg-emerald-50/30' : ''}`}>
+                      <td className="px-3 py-3 font-medium text-slate-900">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-semibold uppercase tracking-wider">{formatFileNo(b.file_no, user?.role?.group_key)}</span>
+                            {isNew && (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-700 text-[9px] rounded-full font-bold uppercase tracking-wide">
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-400 font-normal">ID: {b.id}</span>
+                            {fyLabel && (
+                              <span className="px-1.5 py-0.2 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] rounded font-sans font-medium">
+                                {fyLabel}
+                              </span>
+                            )}
+                            {isFyClosed && (
+                              <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5" title="Financial Year is closed (Read-Only)">
+                                <Lock size={10} /> Locked
+                              </span>
+                            )}
+                          </div>
+                          {createdLabel && (
+                            <div className="text-[9px] text-slate-400 font-normal flex items-center gap-0.5">
+                              <CalendarDays size={9} />
+                              {createdLabel}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="px-3 py-3 max-w-[180px]" title={b.item_name}>
+                        <div className="font-medium text-slate-800 text-xs line-clamp-2">{b.item_name}</div>
+                        {b.remarks && (
+                          <div className="text-[10px] text-slate-500 italic mt-0.5 max-w-[170px] truncate" title={b.remarks}>
+                            Remarks: {b.remarks}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="text-xs space-y-0.5 font-sans">
+                          <div className="flex justify-between gap-1.5 text-[11px] font-semibold text-slate-700" title="Total Allocation">
+                            <span className="text-slate-400">Total:</span>
+                            <span>{formatCurrency(b.total_allocation ?? b.total_cost)}</span>
+                          </div>
+                          <div className="flex justify-between gap-1.5 text-[10px] text-amber-600 font-medium" title="Locked Funds">
+                            <span className="text-slate-400">Locked:</span>
+                            <span>{formatCurrency(b.committed_amount ?? b.locked_amount)}</span>
+                          </div>
+                          <div className="flex justify-between gap-1.5 text-[10px] text-indigo-600 font-medium" title="Utilized Funds">
+                            <span className="text-slate-400">Utilized:</span>
+                            <span>{formatCurrency(b.utilized_amount ?? b.deducted_amount)}</span>
+                          </div>
+                          <div className="flex justify-between gap-1.5 text-[11px] text-green-600 font-bold" title="Available Balance">
+                            <span className="text-slate-400">Avail:</span>
+                            <span>{formatCurrency(b.available_balance ?? b.available_amount)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="text-[10px] leading-tight space-y-0.5 max-w-[160px] bg-slate-50 border border-slate-200/60 p-1.5 rounded-md">
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Init:</span> {b.allocated_initiator?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 1:</span> {b.expert1?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Exp 2:</span> {b.expert2?.name || '—'}</p>
+                          <p className="truncate text-slate-700"><span className="text-slate-400 font-medium">Dir:</span> {b.director_faculty?.name || '—'}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1.5">
+                          {(isWriteAllowed || (isHOD && matchesDept)) && (
+                            <button
+                              onClick={() => navigate(`/budget/edit/${b.id}`)}
+                              disabled={isFyClosed}
+                              className={`p-1 rounded transition-colors ${
+                                isFyClosed 
+                                  ? 'text-slate-300 cursor-not-allowed bg-slate-50' 
+                                  : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Edit details'}
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                          )}
+                          {isHOD && matchesDept && (
+                            <button
+                              onClick={() => openCommitteeModal(b)}
+                              disabled={isFyClosed}
+                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
+                                isFyClosed
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                  : 'text-indigo-650 hover:text-indigo-850 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Configure Technical Committee Experts'}
+                            >
+                              <Users size={12} /> Nominate
+                            </button>
+                          )}
+                          {isDirectorOrAdmin && (
+                            <button
+                              onClick={() => openDirectorModal(b)}
+                              disabled={isFyClosed}
+                              className={`p-1 px-2 rounded flex items-center gap-1 text-[11px] font-bold border transition-colors ${
+                                isFyClosed
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed opacity-60'
+                                  : 'text-emerald-650 hover:text-emerald-850 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30'
+                              }`}
+                              title={isFyClosed ? 'Locked - Financial Year is closed' : 'Nominate Director Nominee'}
+                            >
+                              <Award size={12} /> Nominee
+                            </button>
+                          )}
+                          {!isWriteAllowed && (!isHOD || !matchesDept) && !isDirectorOrAdmin && (
+                            <span className="text-xs text-slate-400 italic">No Actions</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'review' && (
+        <div className="card overflow-x-auto border border-slate-200 shadow-sm">
+          <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+            <AlertCircle size={15} className="text-amber-600" />
+            <p className="text-xs text-amber-700 font-medium">
+              {isWriteAllowed 
+                ? "These are HOD-submitted temporary budget requests awaiting Dean review. Assign a permanent file number to approve budget allocation."
+                : "These are HOD-submitted temporary budget requests awaiting Dean review. File reference numbers are internal and not visible to HOD/Faculty."}
+            </p>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                {isWriteAllowed && <th className="px-3 py-2 text-xs">Internal Ref No</th>}
+                <th className="px-3 py-2 text-xs">Dept</th>
+                <th className="px-3 py-2 text-xs">Item Description</th>
+                <th className="px-3 py-2 text-xs">Category</th>
+                <th className="px-3 py-2 text-xs">FY</th>
+                <th className="px-3 py-2 text-xs">Cost Details</th>
+                <th className="px-3 py-2 text-xs">HOD Remarks</th>
+                {isWriteAllowed && <th className="px-3 py-2 text-xs">Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loadingBudgets ? (
+                <tr><td colSpan={isWriteAllowed ? 9 : 7} className="text-center py-8">Loading...</td></tr>
+              ) : tempBudgets.length === 0 ? (
+                <tr><td colSpan={isWriteAllowed ? 9 : 7} className="text-center py-8 text-slate-500">No pending temporary budget requests.</td></tr>
+              ) : (
+                tempBudgets.map((b: any) => {
+                  const budgetFy = fys.find((f: any) => f.id === b.financial_year_id);
+                  const isFyClosed = budgetFy ? budgetFy.is_closed : false;
+                  const fyLabel = budgetFy ? budgetFy.label : '—';
+                  const createdAt = b.created_at ? new Date(b.created_at) : null;
+                  const isNew = createdAt ? (Date.now() - createdAt.getTime()) < 24 * 60 * 60 * 1000 : false;
+                  const createdLabel = createdAt
+                    ? createdAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : null;
+                  return (
+                    <tr key={b.id} className={`hover:bg-slate-50 border-b border-slate-100 ${isNew ? 'bg-amber-50/20' : ''}`}>
+                      {isWriteAllowed && (
+                        <td className="px-3 py-3 font-medium text-slate-900">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="font-mono text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                {b.file_no}
+                              </span>
+                              {isNew && (
+                                <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-700 text-[9px] rounded-full font-bold uppercase tracking-wide">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400">ID: {b.id}</span>
+                            {createdLabel && (
+                              <span className="text-[9px] text-slate-400 flex items-center gap-0.5">
+                                <CalendarDays size={9} />{createdLabel}
+                              </span>
+                            )}
+                            {isFyClosed && (
+                              <span className="px-1.5 py-0.2 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded font-sans font-semibold flex items-center gap-0.5 w-fit">
+                                <Lock size={9} /> Locked
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      <td className="px-3 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded">{depts.find((d: any) => d.id === b.department_id)?.short_code || b.department_id}</span></td>
+                      <td className="px-3 py-3 max-w-[150px]" title={b.item_name}>
+                        <div className="font-medium text-slate-800 text-xs line-clamp-2">{b.item_name}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium rounded capitalize">{b.category || '—'}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 text-[11px] font-medium rounded">{fyLabel}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="text-xs space-y-0.5">
+                          <div className="font-bold text-slate-900">{formatCurrency(b.total_allocation ?? b.total_cost)}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">{formatCurrency(b.unit_cost)} &times; {b.quantity}</div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 max-w-[120px] truncate" title={b.remarks || ''}>
+                        {b.remarks ? (
+                          <span className="text-xs text-slate-600 italic">{b.remarks}</span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      {isWriteAllowed && (
+                        <td className="px-3 py-3">
+                          <button
+                            onClick={() => {
+                              setSelectedBudgetForAllocation(b);
+                              setAllocationRemarks(b.remarks || '');
+                            }}
+                            disabled={isFyClosed}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 ${
+                              isFyClosed
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow'
+                            }`}
+                            title={isFyClosed ? 'Locked - Financial Year is closed' : 'Assign Permanent File Number'}
+                          >
+                            {isFyClosed ? <Lock size={12} /> : <CheckCircle size={12} />}
+                            Allocate
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination Controls - only for Active Budgets tab */}
+      {activeTab === 'active' && total > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center gap-4 justify-between w-full sm:w-auto">
+            <p className="text-sm text-slate-700">
+              Showing <span className="font-medium">{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
+              <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
+              <span className="font-medium">{total}</span> budgets
+            </p>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>Show</span>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="rounded-md border-slate-300 py-1 px-2 text-sm focus:border-[#1a3a6b] focus:ring-[#1a3a6b] bg-white border shadow-sm"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>per page</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => setPage(p => Math.max(p - 1, 1))}
+                disabled={page === 1}
+                className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+                disabled={page === totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            {totalPages > 1 && (
+              <div className="hidden sm:block">
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => setPage(p => Math.max(p - 1, 1))}
+                    disabled={page === 1}
+                    className="relative inline-flex items-center rounded-l-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 ${
+                        p === page
+                          ? 'z-10 bg-[#1a3a6b] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1a3a6b]'
+                          : 'text-slate-900 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:outline-offset-0'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+                    disabled={page === totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-3 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </nav>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* HOD nomination modal */}
+      {selectedBudgetForCommittee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
+              <h2 className="text-lg font-bold">Nominate Technical Committee</h2>
+              <p className="text-xs text-blue-200 mt-1">File No: {selectedBudgetForCommittee.file_no}</p>
+            </div>
+            
+            <form onSubmit={submitCommittee} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Purchase Initiator (Faculty) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={allocatedInitiatorId || ''}
+                  onChange={e => setAllocatedInitiatorId(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Purchase Initiator...</option>
+                  {deptFaculties.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Department Expert 1 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={expert1Id || ''}
+                  onChange={e => setExpert1Id(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Faculty Expert...</option>
+                  {deptFaculties.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Department Expert 2 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={expert2Id || ''}
+                  onChange={e => setExpert2Id(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Faculty Expert...</option>
+                  {deptFaculties.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBudgetForCommittee(null)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignCommitteeMutation.isPending}
+                  className="btn-primary px-5 flex items-center gap-1.5"
+                >
+                  {assignCommitteeMutation.isPending ? 'Updating...' : 'Nominate Experts'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Director nominee modal */}
+      {selectedBudgetForDirector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
+              <h2 className="text-lg font-bold">Assign Director Nominee</h2>
+              <p className="text-xs text-blue-200 mt-1">File No: {selectedBudgetForDirector.file_no}</p>
+            </div>
+            
+            <form onSubmit={submitDirectorCommittee} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Director Nominee (Faculty/User) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={directorFacultyId || ''}
+                  onChange={e => setDirectorFacultyId(Number(e.target.value) || null)}
+                  required
+                  className="input-field w-full"
+                >
+                  <option value="">Select Nominee...</option>
+                  {allUsers.map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBudgetForDirector(null)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignDirectorCommitteeMutation.isPending}
+                  className="btn-primary px-5 flex items-center gap-1.5"
+                >
+                  {assignDirectorCommitteeMutation.isPending ? 'Updating...' : 'Assign Nominee'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Review Temporary Budget Allocation Modal */}
+      {selectedBudgetForAllocation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-200 bg-amber-600 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">Review Temporary Budget Request</h2>
+                <p className="text-xs text-amber-100 mt-0.5">Verify details before assigning permanent rolling number</p>
+              </div>
+              <button 
+                onClick={() => { setSelectedBudgetForAllocation(null); setAllocationRemarks(''); }} 
+                className="text-white hover:text-amber-100 font-bold text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Temp File Reference</span>
+                  <span className="font-mono font-bold text-slate-800 uppercase tracking-wide">{selectedBudgetForAllocation.file_no}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department</span>
+                  <span className="font-semibold text-slate-700">{depts.find((d: any) => d.id === selectedBudgetForAllocation.department_id)?.name || selectedBudgetForAllocation.department_id}</span>
+                </div>
+                <div className="col-span-2 border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Item Description</span>
+                  <span className="font-medium text-slate-900">{selectedBudgetForAllocation.item_name}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Category</span>
+                  <span className="font-medium text-slate-750 capitalize">{selectedBudgetForAllocation.category}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Financial Year</span>
+                  <span className="font-semibold text-slate-700">{fys.find((f: any) => f.id === selectedBudgetForAllocation.financial_year_id)?.label || selectedBudgetForAllocation.financial_year_id}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unit Cost</span>
+                  <span className="font-mono text-slate-900">{formatCurrency(selectedBudgetForAllocation.unit_cost)}</span>
+                </div>
+                <div className="border-t border-slate-200/60 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Quantity</span>
+                  <span className="font-semibold text-slate-800">{selectedBudgetForAllocation.quantity}</span>
+                </div>
+                <div className="col-span-2 border-t border-slate-200/60 pt-2 bg-amber-50/50 -mx-4 -mb-4 p-4 rounded-b-xl border-t border-amber-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Total Cost / Allocation</span>
+                    <span className="text-lg font-bold text-amber-800 font-sans">{formatCurrency(selectedBudgetForAllocation.total_allocation ?? selectedBudgetForAllocation.total_cost)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Target Rolling Sequence</span>
+                    <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase tracking-wide">
+                      {selectedBudgetForAllocation.file_no.replace(/^TEMP\//i, 'NITT/')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedBudgetForAllocation.remarks && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                  <span className="font-semibold text-slate-700 block mb-1">HOD remarks & justification:</span>
+                  <p className="text-slate-600 italic">"{selectedBudgetForAllocation.remarks}"</p>
+                </div>
+              )}
+
+              {selectedBudgetForAllocation.attachment_url && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+                  <Paperclip size={14} className="text-blue-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="font-semibold text-blue-800 block">Supporting Document</span>
+                    <span className="text-blue-600 text-[11px]">Attached by HOD at the time of request</span>
+                  </div>
+                  <a
+                    href={selectedBudgetForAllocation.attachment_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-[11px] flex items-center gap-1 transition-colors"
+                  >
+                    View Document
+                  </a>
+                </div>
+              )}
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block" htmlFor="alloc-remarks">
+                  Allocation Remarks / Comments <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  id="alloc-remarks"
+                  rows={2}
+                  placeholder="Enter remarks or approval notes for the audit trail..."
+                  value={allocationRemarks}
+                  onChange={(e) => setAllocationRemarks(e.target.value)}
+                  required
+                  className="input-field w-full text-xs resize-none bg-white font-normal text-slate-700"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => { setSelectedBudgetForAllocation(null); setAllocationRemarks(''); }}
+                className="btn-secondary text-xs px-4"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!allocationRemarks.trim()) {
+                    toast.error('Allocation remarks are required');
+                    return;
+                  }
+                  setSelectedBudgetId(selectedBudgetForAllocation.id);
+                  assignPermanentFileNoMutation.mutate({
+                    budgetId: selectedBudgetForAllocation.id,
+                    fileNo: selectedBudgetForAllocation.file_no,
+                    remarks: allocationRemarks
+                  });
+                }}
+                disabled={assignPermanentFileNoMutation.isPending}
+                className="btn-primary bg-amber-600 hover:bg-amber-700 border-none text-white text-xs px-5 flex items-center gap-1.5 shadow-sm font-semibold"
+              >
+                {assignPermanentFileNoMutation.isPending ? (
+                  <><Loader2 size={14} className="animate-spin" /> Allocating...</>
+                ) : (
+                  <>Approve &amp; Assign Permanent File Number</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk upload CSV modal */}
+      {isCsvModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-[#1a3a6b] text-white">
+              <h2 className="text-lg font-bold">Bulk Upload Budget CSV</h2>
+              <button onClick={() => setIsCsvModalOpen(false)} className="text-white hover:text-slate-200 font-bold text-lg">×</button>
+            </div>
+            
+            <div className="p-6 space-y-5">
+              {/* Template Download Section */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex justify-between items-center">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-800">CSV Import Template</p>
+                  <p className="text-xs text-slate-500">Download the structure before uploading your data</p>
+                </div>
+                <a
+                  href="/api/admin/budget/import-template"
+                  className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3 border-slate-300 hover:bg-slate-100"
+                  download
+                >
+                  <Download size={14} /> Download Template
+                </a>
+              </div>
+
+              {uploadResult ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-600 font-semibold text-sm">
+                    <CheckCircle size={18} />
+                    Import completed successfully!
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 font-semibold uppercase">Total Rows</p>
+                      <p className="text-2xl font-bold text-[#1a3a6b] mt-1">{uploadResult.total_rows}</p>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 font-semibold uppercase">Created</p>
+                      <p className="text-2xl font-bold text-emerald-600 mt-1">{uploadResult.created}</p>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 font-semibold uppercase">Aggregated</p>
+                      <p className="text-2xl font-bold text-indigo-600 mt-1">{uploadResult.aggregated}</p>
+                    </div>
+                  </div>
+
+                  {uploadResult.errors && uploadResult.errors.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-100 rounded-lg p-3 text-xs text-rose-700 space-y-1 max-h-32 overflow-y-auto">
+                      <p className="font-bold flex items-center gap-1"><ShieldAlert size={12} /> Row Warnings:</p>
+                      {uploadResult.errors.map((err: string, i: number) => (
+                        <p key={i}>• {err}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsCsvModalOpen(false)}
+                      className="btn-primary px-4 py-2"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleCsvSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Financial Year</label>
+                    <select
+                      value={csvFyId}
+                      onChange={e => setCsvFyId(e.target.value)}
+                      required
+                      className="input-field w-full"
+                    >
+                      <option value="">Select Financial Year...</option>
+                      {fys.map((f: any) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Budget CSV File</label>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={e => setCsvFile(e.target.files?.[0] || null)}
+                      required
+                      className="input-field w-full text-slate-600"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsCsvModalOpen(false)} className="btn-secondary">Cancel</button>
+                    <button type="submit" disabled={uploadMutation.isPending} className="btn-primary flex items-center gap-2">
+                      {uploadMutation.isPending ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" /> Uploading & Calculating...
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={16} /> Import & Recalculate
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Financial Year Rollover Modal ─────────────────────────────── */}
+      {isRolloverModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200">
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-200 bg-gradient-to-r from-orange-600 to-amber-500 text-white rounded-t-2xl flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <CalendarDays size={18} />
+                  <h2 className="text-lg font-bold">Financial Year Rollover</h2>
+                </div>
+                <p className="text-xs text-orange-100">
+                  Select which unused budget files to carry forward to the next financial year.
+                  Selected files will be renamed with an <code className="bg-orange-700/40 px-1 py-0.5 rounded text-[11px]">R</code> prefix (revised).
+                </p>
+              </div>
+              {!rolloverMutation.isSuccess && (
+                <button
+                  onClick={() => setIsRolloverModalOpen(false)}
+                  className="text-white/80 hover:text-white text-2xl leading-none font-bold"
+                >×</button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {rolloverResult ? (
+                /* ── Success state ── */
+                <div className="flex flex-col items-center gap-6 py-6">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <CheckCircle size={32} className="text-emerald-500" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-slate-800">Rollover Successful!</h3>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Financial year <span className="font-semibold text-orange-600">{rolloverResult.closed_year}</span> has been closed.
+                      Now active: <span className="font-semibold text-emerald-600">{rolloverResult.opened_year}</span>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                      <p className="text-xs font-bold text-blue-500 uppercase tracking-wide">PRs Rolled Over</p>
+                      <p className="text-3xl font-bold text-blue-700 mt-1">{rolloverResult.rolled_over_pr_count ?? rolloverResult.rolled_over_count ?? 0}</p>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                      <p className="text-xs font-bold text-orange-500 uppercase tracking-wide">Budget Files Rolled</p>
+                      <p className="text-3xl font-bold text-orange-600 mt-1">{rolloverResult.rolled_over_file_count ?? 0}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsRolloverModalOpen(false)}
+                    className="btn-primary px-8 mt-2"
+                  >Close</button>
+                </div>
+              ) : loadingCandidates ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 size={28} className="animate-spin text-orange-500" />
+                  <span className="ml-3 text-slate-500">Loading unused budget files...</span>
+                </div>
+              ) : rolloverCandidates.length === 0 ? (
+                <div className="flex flex-col items-center gap-4 py-12 text-center">
+                  <CalendarDays size={40} className="text-slate-300" />
+                  <div>
+                    <p className="font-semibold text-slate-600">No unused budget files found</p>
+                    <p className="text-sm text-slate-400 mt-1">All active-year files have pending PRs or have already been utilized.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Select all toggle */}
+                  <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                    <div>
+                      <p className="font-semibold text-orange-800 text-sm">
+                        {selectedRolloverIds.size} of {(rolloverCandidates as any[]).length} files selected
+                      </p>
+                      <p className="text-xs text-orange-600 mt-0.5">
+                        Only selected files will receive a revised (R-prefix) file number in the new FY.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRolloverIds(new Set((rolloverCandidates as any[]).map((c: any) => c.id)))}
+                        className="text-xs font-semibold text-orange-700 hover:text-orange-900 bg-white border border-orange-300 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors"
+                      >Select All</button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRolloverIds(new Set())}
+                        className="text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                      >Clear</button>
+                    </div>
+                  </div>
+
+                  {/* Grouped by department */}
+                  {Object.entries(candidatesByDept).map(([deptCode, files]: [string, any]) => (
+                    <div key={deptCode} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-100 px-4 py-2.5 flex items-center justify-between">
+                        <span className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                          <span className="bg-[#1a3a6b] text-white text-[11px] font-bold px-2 py-0.5 rounded">{deptCode}</span>
+                          {depts.find((d: any) => d.short_code === deptCode)?.name || deptCode}
+                        </span>
+                        <span className="text-xs text-slate-500">{files.length} file{files.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {files.map((c: any) => {
+                          const checked = selectedRolloverIds.has(c.id);
+                          const revisedNo = c.file_no
+                            .replace(c.fy_label, '(next-FY)')
+                            .replace(/F\.No\./gi, 'R');
+                          return (
+                            <label
+                              key={c.id}
+                              className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                                checked ? 'bg-orange-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  setSelectedRolloverIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(c.id);
+                                    else next.delete(c.id);
+                                    return next;
+                                  });
+                                }}
+                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                    {c.file_no}
+                                  </span>
+                                  {c.is_temporary && (
+                                    <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">TEMP</span>
+                                  )}
+                                  {checked && (
+                                    <span className="text-[10px] text-orange-600 font-semibold flex items-center gap-0.5">
+                                      → <span className="font-mono">{revisedNo}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 mt-0.5 font-medium truncate">{c.item_name}</p>
+                                <p className="text-[11px] text-slate-400">
+                                  {c.source_of_fund} · {formatCurrency(c.total_allocation)} · Qty {c.quantity}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!rolloverResult && (
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-between items-center gap-3">
+                <div className="text-xs text-slate-500">
+                  {selectedRolloverIds.size === 0 && !loadingCandidates && rolloverCandidates.length > 0 && (
+                    <span className="text-amber-600 font-medium">⚠ No files selected — only in-progress PRs will be carried over.</span>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsRolloverModalOpen(false)}
+                    className="btn-secondary text-sm px-5"
+                    disabled={rolloverMutation.isPending}
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    disabled={rolloverMutation.isPending}
+                    onClick={() => {
+                      if (!window.confirm(
+                        `This will CLOSE the current financial year and open the next one.\n\n` +
+                        `${selectedRolloverIds.size} unused budget file(s) will be carried over with revised file numbers.\n\n` +
+                        `This action cannot be undone. Proceed?`
+                      )) return;
+                      rolloverMutation.mutate(Array.from(selectedRolloverIds));
+                    }}
+                    className="flex items-center gap-2 px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold rounded-lg shadow transition-colors disabled:opacity-60"
+                  >
+                    {rolloverMutation.isPending ? (
+                      <><Loader2 size={15} className="animate-spin" /> Rolling Over...</>
+                    ) : (
+                      <><RefreshCw size={15} /> Confirm FY Rollover</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

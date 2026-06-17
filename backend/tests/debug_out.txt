@@ -5,7 +5,7 @@ Traceback:
 Traceback (most recent call last):
   File "/app/tests/test_budget_allocation.py", line 111, in test_budget_file_allocated_initiator
     await _persist_pr(payload, user=faculty_cse_other, db=db_session, background_tasks=bg_tasks)
-  File "/app/app/routers/purchase_requests.py", line 248, in _persist_pr
+  File "/app/app/routers/purchase_requests.py", line 251, in _persist_pr
     raise HTTPException(
 fastapi.exceptions.HTTPException: 400: Administrative Approval is mandatory before creating a Purchase Request.
 

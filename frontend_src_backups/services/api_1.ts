@@ -1,0 +1,210 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: '/api',
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+api.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    // Only auto-redirect to login on 401 for non-auth-check requests.
+    // /auth/me is used to probe login state — never redirect from it.
+    const url = error.config?.url || '';
+    if (error.response?.status === 401 && !url.includes('/auth/me') && !url.includes('/auth/login')) {
+      if (window.location.pathname && window.location.pathname !== '/login') {
+        sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search);
+      }
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
+// Auth
+export const authApi = {
+  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  logout: () => api.post('/auth/logout'),
+  me: () => api.get('/auth/me'),
+  register: (formData: FormData) =>
+    api.post('/auth/register', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  updateProfile: (formData: FormData) =>
+    api.post('/auth/profile', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  departments: () => api.get('/auth/departments'),
+  roles: () => api.get('/auth/roles'),
+  designations: () => api.get('/auth/designations'),
+};
+
+// Purchase Requests
+export const prApi = {
+  list: (params?: { skip?: number; limit?: number }) => api.get('/pr/', { params }),
+  get: (id: number) => api.get(`/pr/${id}`),
+  create: (data: object) => api.post('/pr/', data),
+  createWithFiles: (formData: FormData) =>
+    api.post('/pr/', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  advance: (id: number, remarks?: string, status?: string, faculty1_id?: number, faculty2_id?: number, faculty3_id?: number) => api.post(`/pr/${id}/advance`, { remarks, status, faculty1_id, faculty2_id, faculty3_id }),
+  reject: (id: number, reason: string) => api.post(`/pr/${id}/reject`, { reason }),
+  sendBack: (id: number, to_step: number, reason: string) => api.post(`/pr/${id}/send-back`, { to_step, reason }),
+  assignDa: (id: number, da_id: number) => api.post(`/pr/${id}/assign-da`, { da_id }),
+  addTechnicalEval: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/technical-eval`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  addFinancialBids: (id: number, payload: any) => api.post(`/pr/${id}/financial-bids`, payload),
+  getSendBackCandidates: (id: number) => api.get(`/pr/${id}/send-back-candidates`),
+  addTenderDetails: (id: number, data: any) => {
+    if (data instanceof FormData) {
+      return api.post(`/pr/${id}/tender-details`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    }
+    return api.post(`/pr/${id}/tender-details`, data);
+  },
+  scheduleTender: (id: number, data: any) => {
+    if (data instanceof FormData) {
+      return api.post(`/pr/${id}/tender-schedule`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    }
+    return api.post(`/pr/${id}/tender-schedule`, data);
+  },
+  getDealingAssistants: () => api.get('/pr/dealing-assistants'),
+  getVendors: () => api.get('/pr/vendors'),
+  awardBid: (id: number, vendor_id: number, remarks?: string) => api.post(`/pr/${id}/award-bid`, { vendor_id, remarks }),
+  cancelPo: (id: number, reason: string, reinitiationMethod: string, reallocatedAmount: number) =>
+    api.post(`/pr/${id}/cancel-po`, { reason, reinitiation_method: reinitiationMethod, reallocated_amount: reallocatedAmount }),
+  cancelTender: (id: number, reason: string, reinitiationMethod: string) =>
+    api.post(`/pr/${id}/cancel-tender`, { reason, reinitiation_method: reinitiationMethod }),
+  reinitiatePr: (id: number) => api.post(`/pr/${id}/reinitiate`),
+  billPassing: (id: number, data: any) => api.post(`/pr/${id}/bill-passing`, data),
+  referPr: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/refer`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  respondReferral: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/refer/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  clarifyPr: (id: number, formData: FormData) =>
+    api.post(`/pr/${id}/clarify`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  respondClarification: (id: number, clarificationId: number, formData: FormData) =>
+    api.post(`/pr/${id}/clarify/${clarificationId}/respond`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  allocateBudgetFile: (id: number, data: { file_no?: string; remarks?: string; selected_budget_file_id?: number | null }) =>
+    api.post(`/pr/${id}/allocate-budget-file`, data),
+};
+
+// Budget
+export const budgetApi = {
+  files: () => api.get('/budget/files'),
+  overview: () => api.get('/budget/overview'),
+  financialYears: () => api.get('/budget/financial-years'),
+  procurementMethods: () => api.get('/budget/procurement-methods'),
+  departmentFaculty: () => api.get('/budget/department-faculty'),
+  getDepartmentCommittee: () => api.get('/budget/department-committee'),
+  updateDepartmentCommittee: (data: object) => api.post('/budget/department-committee', data),
+  directorGetCommittees: () => api.get('/budget/director/committees'),
+  directorUpdateCommittee: (data: object) => api.post('/budget/director/committees', data),
+  allFaculties: () => api.get('/budget/all-faculties'),
+  assignCommittee: (
+    budgetId: number,
+    data: { expert1_id: number | null; expert2_id: number | null; allocated_initiator_id?: number | null }
+  ) => api.post(`/budget/files/${budgetId}/committee`, data),
+  assignDirectorCommittee: (budgetId: number, data: { director_faculty_id: number | null }) =>
+    api.post(`/budget/files/${budgetId}/director-committee`, data),
+  allUsers: () => api.get('/budget/users'),
+};
+
+// Inventory
+export const inventoryApi = {
+  listDeliveries: () => api.get('/inventory/deliveries'),
+  getDelivery: (id: number) => api.get(`/inventory/deliveries/${id}`),
+  confirmDelivery: (deliveryId: number, formData: FormData) =>
+    api.post(`/inventory/deliveries/${deliveryId}/confirm`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  logDeptReceipt: (deliveryId: number, itemId: number, data: object) =>
+    api.post(`/inventory/deliveries/${deliveryId}/items/${itemId}/dept-log`, data),
+  logStoresReceipt: (deliveryId: number, itemId: number, data: object) =>
+    api.put(`/inventory/deliveries/${deliveryId}/items/${itemId}/stores-log`, data),
+  approveStoresLog: (deliveryId: number, itemId: number) =>
+    api.post(`/inventory/deliveries/${deliveryId}/items/${itemId}/stores-log/approve`),
+  approveAllDeliveries: (deliveryId: number) =>
+    api.post(`/inventory/deliveries/${deliveryId}/approve-all`),
+  listDiscrepancies: () => api.get('/inventory/discrepancies'),
+};
+
+// Assets
+export const assetsApi = {
+  list: (params?: {
+    skip?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    condition?: string;
+    disposal_status?: string;
+    fund_source?: string;
+    department_id?: number;
+    year?: number;
+  }) => api.get('/assets/', { params }),
+  get: (id: number) => api.get(`/assets/${id}`),
+  create: (data: object) => api.post('/assets/', data),
+  importCsv: (formData: FormData) =>
+    api.post('/assets/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  delete: (id: number) => api.delete(`/assets/${id}`),
+  publicProfile: (tag: string) => api.get(`/assets/qr/${tag}`),
+  updateCondition: (id: number, condition: string) => api.patch(`/assets/${id}/condition`, { condition }),
+  move: (id: number, to_building: string, to_room: string, reason?: string) =>
+    api.post(`/assets/${id}/move`, { to_building, to_room, reason }),
+  flagDisposal: (id: number) => api.post(`/assets/${id}/flag-disposal`),
+  confirmDisposal: (id: number) => api.post(`/assets/${id}/confirm-disposal`),
+};
+
+// Admin
+export const adminApi = {
+  users: () => api.get('/admin/users'),
+  createUser: (data: object) => api.post('/admin/users', data),
+  departments: () => api.get('/admin/departments'),
+  roles: () => api.get('/admin/roles'),
+  financialYears: () => api.get('/admin/financial-years'),
+  createFinancialYear: (data: object) => api.post('/admin/financial-years', data),
+  rolloverFinancialYear: (budget_file_ids?: number[]) => api.post('/admin/financial-years/rollover', { budget_file_ids }),
+  getRolloverCandidates: () => api.get('/admin/financial-years/rollover-candidates'),
+  settings: () => api.get('/admin/settings'),
+  updateSetting: (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
+  budget: (params?: { skip?: number; limit?: number; search?: string; department_id?: number; financial_year_id?: number; is_temporary?: boolean }) => api.get('/admin/budget', { params }),
+  createBudget: (data: FormData) => api.post('/admin/budget', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  updateBudget: (id: number, data: object) => api.put(`/admin/budget/${id}`, data),
+  workflows: () => api.get('/admin/workflows'),
+  createWorkflow: (data: object) => api.post('/admin/workflows', data),
+  updateWorkflow: (id: number, data: object) => api.put(`/admin/workflows/${id}`, data),
+  reorderWorkflows: (data: object) => api.post('/admin/workflows/reorder', data),
+  createRole: (data: object) => api.post('/admin/roles', data),
+  deleteWorkflow: (id: number) => api.delete(`/admin/workflows/${id}`),
+  phases: () => api.get('/admin/phases'),
+  categories: () => api.get('/admin/categories'),
+  createCategory: (data: object) => api.post('/admin/categories', data),
+  updateCategory: (id: number, data: object) => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id: number) => api.delete(`/admin/categories/${id}`),
+  updateUser: (id: number, data: object) => api.put(`/admin/users/${id}`, data),
+  resetPassword: (id: number) => api.post(`/admin/users/${id}/reset-password`, {}),
+  procurementMethods: () => api.get('/admin/procurement-methods'),
+  createProcurementMethod: (data: object) => api.post('/admin/procurement-methods', data),
+  updateProcurementMethod: (id: number, data: object) => api.put(`/admin/procurement-methods/${id}`, data),
+  deleteProcurementMethod: (id: number) => api.delete(`/admin/procurement-methods/${id}`),
+  resetWorkflow: (data: object) => api.post('/admin/workflows/reset-defaults', data),
+  toggleWorkflow: (id: number) => api.patch(`/admin/workflows/${id}/toggle`, {}),
+  getPendingUsers: () => api.get('/admin/users/pending'),
+  approveUser: (id: number) => api.post(`/admin/users/${id}/approve`),
+  rejectUser: (id: number) => api.post(`/admin/users/${id}/reject`),
+  importBudget: (formData: FormData) =>
+    api.post('/admin/budget/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  clearBudgets: () => api.delete('/admin/budget/clear'),
+  getBudgetDetail: (id: number) => api.get(`/admin/budget/${id}`),
+  getCategories: () => api.get('/admin/budget/categories'),
+  addCategory: (data: { type: 'source_of_fund' | 'item'; value: string }) => api.post('/admin/budget/categories', data),
+  deleteBudgetCategory: (type: 'source_of_fund' | 'item', value: string) =>
+    api.delete('/admin/budget/categories', { params: { type, value } }),
+  getNextFileNumber: (params: { department_id: number; source_of_fund: string; financial_year_id: number; is_temporary?: boolean }) =>
+    api.get('/admin/budget/next-file-number', { params }),
+  forceAdvancePr: (prId: number, remarks: string) =>
+    api.post(`/admin/purchase-requests/${prId}/force-advance`, { remarks }),
+  addDesignation: (value: string) => api.post('/admin/designations', { value }),
+  deleteDesignation: (value: string) => api.delete('/admin/designations', { params: { value } }),
+};

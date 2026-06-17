@@ -83,6 +83,117 @@ class FlowEngineService:
         )
         return sof_id if fund_check.scalar_one_or_none() else None
 
+    async def realign_pr_flow(self, pr: PurchaseRequest) -> None:
+        """Dynamic alignment of PurchaseRequestFlow based on history and active WorkFlowHierarchy."""
+        if pr.current_status in (RequestStatus.COMPLETED, RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED):
+            return
+
+        flow = await self._get_current_flow(pr)
+        if not flow:
+            return
+
+        sof_id = await self.resolve_sof_id(pr)
+        # Get active steps for this phase
+        from sqlalchemy.orm import selectinload
+        result = await self.db.execute(
+            select(WorkFlowHierarchy)
+            .options(selectinload(WorkFlowHierarchy.role), selectinload(WorkFlowHierarchy.user))
+            .where(
+                self._wf_filters(pr, flow.phase_id, sof_id=sof_id)
+            ).order_by(WorkFlowHierarchy.step_order)
+        )
+        steps = result.scalars().all()
+        if not steps:
+            return
+
+        # Fetch PR history
+        from app.models.purchase_request import PurchaseRequestHistory
+        history_res = await self.db.execute(
+            select(PurchaseRequestHistory)
+            .options(selectinload(PurchaseRequestHistory.current_approver).selectinload(User.role))
+            .where(PurchaseRequestHistory.purchase_request_id == pr.id)
+        )
+        pr_history = history_res.scalars().all()
+
+        approved_indices = set()
+        te_signed_user_ids = set()
+        sorted_history = sorted(pr_history, key=lambda x: x.acted_at)
+        for h in sorted_history:
+            status_lower = h.status.lower() if h.status else ""
+            if "sent back" in status_lower or "returned" in status_lower:
+                approved_indices = set()
+                te_signed_user_ids = set()
+                continue
+            if "rejected" in status_lower or "voided" in status_lower:
+                continue
+
+            # Record technical evaluation signatures.
+            h_status = h.status.strip() if h.status else ""
+            is_te_signature = h_status.lower() in ("technical evaluation completed", "technical evaluation approved")
+            if is_te_signature and h.current_approver_id:
+                te_signed_user_ids.add(h.current_approver_id)
+                # Check if this tech_evaluation step is now fully approved.
+                from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
+                await sync_tech_committee_to_pr(self.db, pr)
+                if await is_tech_committee_configured(self.db, pr):
+                    required_ids = set(await get_tech_committee_member_ids(self.db, pr))
+                    if required_ids and required_ids.issubset(te_signed_user_ids):
+                        # Find the tech_evaluation step and add it to approved_indices
+                        for idx in range(len(steps)):
+                            if steps[idx].user_type == "tech_evaluation":
+                                # SPECIAL RULE: If the flow is currently at this tech_evaluation step,
+                                # we do NOT mark it as approved here, because we want the normal advance
+                                # logic to handle the transition (so the user is validated against the TE step).
+                                if flow.step_order == steps[idx].step_order:
+                                    continue
+                                approved_indices.add(idx)
+                continue  # Skip matching TE signatures as standard single-user approvals
+
+            if h.current_approver:
+                role_val = h.current_approver.role.value if h.current_approver.role else None
+                group_key = h.current_approver.role.group_key if h.current_approver.role else None
+                
+                found_idx = -1
+                for idx in range(len(steps)):
+                    if idx in approved_indices:
+                        continue
+                    if steps[idx].user_type == "tech_evaluation":
+                        continue
+                    step_role = steps[idx].role.value if steps[idx].role else None
+                    step_group = steps[idx].user_group.lower() if steps[idx].user_group else ""
+                    if (role_val and step_role and role_val.lower() == step_role.lower()) or \
+                       (group_key and step_group and group_key.lower() == step_group.lower()):
+                        found_idx = idx
+                        break
+                if found_idx != -1:
+                    approved_indices.add(found_idx)
+
+        expected_step_idx = len(steps)
+        for idx in range(len(steps)):
+            if idx not in approved_indices:
+                expected_step_idx = idx
+                break
+        
+        if expected_step_idx < len(steps):
+            expected_step_order = steps[expected_step_idx].step_order
+        else:
+            current_phase = flow.phase
+            if not current_phase:
+                await self.db.refresh(flow, ["phase"])
+                current_phase = flow.phase
+            next_phase = await self._get_next_valid_phase(pr, current_phase)
+            if next_phase:
+                flow.phase_id = next_phase.id
+                first_step = await self._get_first_step(pr, next_phase, sof_id)
+                expected_step_order = first_step.step_order if first_step else 1
+            else:
+                pr.current_status = RequestStatus.PO_ISSUED
+                expected_step_order = flow.step_order
+
+        if flow.step_order != expected_step_order:
+            flow.step_order = expected_step_order
+            await self.db.commit()
+
     def _wf_filters(self, pr: PurchaseRequest, phase_id: int, sof_id: Optional[int] = None, **extra):
         """Generate filtering clauses for matching a workflow hierarchy step schema.
 
@@ -570,6 +681,7 @@ class FlowEngineService:
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
             
+        await self.realign_pr_flow(pr)
         await self._validate_role(pr, acted_by, flow)
 
         result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
@@ -852,6 +964,7 @@ class FlowEngineService:
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
             
+        await self.realign_pr_flow(pr)
         await self._validate_role(pr, acted_by, flow)
         
         if to_step >= flow.step_order or to_step < 1:

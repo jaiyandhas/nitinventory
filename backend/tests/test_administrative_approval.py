@@ -579,11 +579,536 @@ async def test_duplicate_steps_and_nomineeless_routing(db_session):
     )
     assert action_res["status"] == "Pending with Director"
 
-    # 10. Action 5: Director Approves -> Granted
+    # Action 5: Director Approves -> Administrative Approval Granted
     action_res = await action_aa(
         aa_id=aa_id,
-        body={"action": "Approve", "remarks": "Director final approval"},
+        body={"action": "Approve", "remarks": "Director approves"},
         db=db_session,
         user=director
     )
     assert action_res["status"] == "Administrative Approval Granted"
+
+
+@pytest.mark.asyncio
+async def test_dynamic_workflow_realignment(db_session):
+    db_session.commit = db_session.flush
+
+    # 1. Fetch Users
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    await db_session.refresh(faculty, ["department", "role"])
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+    await db_session.refresh(hod, ["department", "role"])
+
+    adpd_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    adpd = adpd_res.scalar_one()
+    await db_session.refresh(adpd, ["department", "role"])
+
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+    await db_session.refresh(dean, ["department", "role"])
+
+    dir_role_res = await db_session.execute(select(RoleManager).where(RoleManager.value == "director"))
+    dir_role = dir_role_res.scalar_one()
+    director_res = await db_session.execute(select(User).where(User.role_id == dir_role.id))
+    director = director_res.scalars().first()
+    if not director:
+        director = User(
+            name="J. Director",
+            email="director@nitt.edu",
+            hashed_password="password",
+            designation="Director",
+            gender="male",
+            role_id=dir_role.id,
+            is_active=True,
+            is_approved=True,
+        )
+        db_session.add(director)
+        await db_session.flush()
+    else:
+        await db_session.refresh(director, ["role"])
+
+    # 2. Setup Category and Procurement Mode
+    from app.models.budget import PurchaseCategory, ProcurementManager
+    proc = ProcurementManager(name="Realignment Procurement")
+    db_session.add(proc)
+    await db_session.flush()
+
+    cat = PurchaseCategory(
+        title="Realignment Category",
+        min_amount=1000.0,
+        max_amount=10000.0,
+        procurement_id=proc.id
+    )
+    db_session.add(cat)
+    await db_session.flush()
+
+    # 3. Add initial workflow steps: HOD -> ADPD -> Dean -> Director
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    steps_data = [
+        ("HOD", 1),
+        ("ADPD", 2),
+        ("Dean", 3),
+        ("Director", 4)
+    ]
+    db_steps = []
+    for grp, order in steps_data:
+        step_obj = AdministrativeApprovalWorkflow(
+            category_id=cat.id,
+            procurement_id=proc.id,
+            purchase_type="department",
+            step_order=order,
+            user_group=grp,
+            is_enabled=True
+        )
+        db_steps.append(step_obj)
+        db_session.add(step_obj)
+    await db_session.flush()
+
+    # 4. Create budget
+    fy_res = await db_session.execute(select(FinancialYear).limit(1))
+    fy = fy_res.scalar_one()
+
+    budget = BudgetMaster(
+        department_id=faculty.department_id,
+        financial_year_id=fy.id,
+        source_of_fund="OPEX",
+        item_name="Realignment Board",
+        category="equipment",
+        course_code="CSE-TEST-2",
+        unit_cost=3000.0,
+        quantity=1,
+        total_allocation=5000.0,
+        file_no="NITT/F.No.8888/OPEX/2026-27/CSE",
+        is_revision=False,
+        committed_amount=0.0,
+        utilized_amount=0.0,
+        allocated_initiator_id=faculty.id,
+        expert1_id=None,
+        expert2_id=None,
+        nominee_ids=None
+    )
+    db_session.add(budget)
+    await db_session.flush()
+
+    # 5. Create AA request
+    body = {
+        "budget_file_id": budget.id,
+        "item_description": "Test board for Realignment",
+        "gst_rate": 18.0,
+        "mode_of_procurement": "Realignment Procurement",
+        "justification": "Required for upgrades",
+        "item_category": "Assets",
+        "stock_availability": "No",
+        "present_stock": "0",
+        "prev_file_no": "None",
+        "justification_procurement": "Required",
+        "generic_specification_declaration": True
+    }
+
+    create_res = await create_aa(body, db_session, faculty)
+    aa_id = create_res["id"]
+
+    # 6. HOD Approves
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "HOD approves"},
+        db=db_session,
+        user=hod
+    )
+
+    # Fetch request and verify Pending with ADPD
+    aa_res = await db_session.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
+    aa = aa_res.scalar_one()
+    assert aa.pending_with == "ADPD"
+
+    # 7. Modify Workflow: Delete ADPD step (Order 2) and re-normalize step orders
+    adpd_step = db_steps[1]
+    await db_session.delete(adpd_step)
+    await db_session.flush()
+
+    db_steps[2].step_order = 2
+    db_steps[3].step_order = 3
+    await db_session.flush()
+
+    # 8. Load request detail and assert that realignment dynamically healed it to point to Dean!
+    await get_aa_detail(aa_id=aa_id, db=db_session, user=faculty)
+    await db_session.refresh(aa)
+    assert aa.pending_with == "Dean"
+
+    # 9. Dean approves
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "Dean approves"},
+        db=db_session,
+        user=dean
+    )
+    await db_session.refresh(aa)
+    assert aa.pending_with == "Director"
+
+    # 10. Delete Director step
+    director_step = db_steps[3]
+    await db_session.delete(director_step)
+    await db_session.flush()
+
+    # 11. Load details and verify dynamic alignment auto-grants
+    await get_aa_detail(aa_id=aa_id, db=db_session, user=faculty)
+    await db_session.refresh(aa)
+    assert aa.status == "Administrative Approval Granted"
+    assert aa.pending_with is None
+
+
+@pytest.mark.asyncio
+async def test_workflow_realignment_insert_middle(db_session):
+    db_session.commit = db_session.flush
+
+    # 1. Fetch Users
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    await db_session.refresh(faculty, ["department", "role"])
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+    await db_session.refresh(hod, ["department", "role"])
+
+    adpd_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    adpd = adpd_res.scalar_one()
+    await db_session.refresh(adpd, ["department", "role"])
+
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+    await db_session.refresh(dean, ["department", "role"])
+
+    dir_role_res = await db_session.execute(select(RoleManager).where(RoleManager.value == "director"))
+    dir_role = dir_role_res.scalar_one()
+    director_res = await db_session.execute(select(User).where(User.role_id == dir_role.id))
+    director = director_res.scalars().first()
+    if not director:
+        director = User(
+            name="J. Director",
+            email="director@nitt.edu",
+            hashed_password="password",
+            designation="Director",
+            gender="male",
+            role_id=dir_role.id,
+            is_active=True,
+            is_approved=True,
+        )
+        db_session.add(director)
+        await db_session.flush()
+    else:
+        await db_session.refresh(director, ["role"])
+
+    ia_res = await db_session.execute(select(User).where(User.email == "ia@nitt.edu"))
+    ia_user = ia_res.scalar_one()
+    await db_session.refresh(ia_user, ["department", "role"])
+
+    # 2. Setup Category and Procurement Mode
+    from app.models.budget import PurchaseCategory, ProcurementManager
+    proc = ProcurementManager(name="Insert Middle Procurement")
+    db_session.add(proc)
+    await db_session.flush()
+
+    cat = PurchaseCategory(
+        title="Insert Middle Category",
+        min_amount=1000.0,
+        max_amount=10000.0,
+        procurement_id=proc.id
+    )
+    db_session.add(cat)
+    await db_session.flush()
+
+    # 3. Add initial workflow steps: HOD -> ADPD -> Dean
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    steps_data = [
+        ("HOD", 1),
+        ("ADPD", 2),
+        ("Dean", 3)
+    ]
+    db_steps = []
+    for grp, order in steps_data:
+        step_obj = AdministrativeApprovalWorkflow(
+            category_id=cat.id,
+            procurement_id=proc.id,
+            purchase_type="department",
+            step_order=order,
+            user_group=grp,
+            is_enabled=True
+        )
+        db_steps.append(step_obj)
+        db_session.add(step_obj)
+    await db_session.flush()
+
+    # 4. Create budget
+    fy_res = await db_session.execute(select(FinancialYear).limit(1))
+    fy = fy_res.scalar_one()
+
+    budget = BudgetMaster(
+        department_id=faculty.department_id,
+        financial_year_id=fy.id,
+        source_of_fund="OPEX",
+        item_name="Insert Middle Board",
+        category="equipment",
+        course_code="CSE-TEST-3",
+        unit_cost=3000.0,
+        quantity=1,
+        total_allocation=5000.0,
+        file_no="NITT/F.No.7777/OPEX/2026-27/CSE",
+        is_revision=False,
+        committed_amount=0.0,
+        utilized_amount=0.0,
+        allocated_initiator_id=faculty.id,
+        expert1_id=None,
+        expert2_id=None,
+        nominee_ids=None
+    )
+    db_session.add(budget)
+    await db_session.flush()
+
+    # 5. Create AA request
+    body = {
+        "budget_file_id": budget.id,
+        "item_description": "Test board for Insert Middle",
+        "gst_rate": 18.0,
+        "mode_of_procurement": "Insert Middle Procurement",
+        "justification": "Required for upgrades",
+        "item_category": "Assets",
+        "stock_availability": "No",
+        "present_stock": "0",
+        "prev_file_no": "None",
+        "justification_procurement": "Required",
+        "generic_specification_declaration": True
+    }
+
+    create_res = await create_aa(body, db_session, faculty)
+    aa_id = create_res["id"]
+
+    # 6. HOD Approves (routes to ADPD)
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "HOD approves"},
+        db=db_session,
+        user=hod
+    )
+
+    # Fetch request and verify Pending with ADPD
+    aa_res = await db_session.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
+    aa = aa_res.scalar_one()
+    assert aa.pending_with == "ADPD"
+
+    # 7. ADPD Approves (routes to Dean)
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "ADPD approves"},
+        db=db_session,
+        user=adpd
+    )
+    await db_session.refresh(aa)
+    assert aa.pending_with == "Dean"
+
+    # 8. Modify Workflow: Insert "IA" step at Order 2 (between HOD and ADPD)
+    # New order: HOD (1) -> IA (2) -> ADPD (3) -> Dean (4)
+    db_steps[1].step_order = 3
+    db_steps[2].step_order = 4
+    
+    ia_step = AdministrativeApprovalWorkflow(
+        category_id=cat.id,
+        procurement_id=proc.id,
+        purchase_type="department",
+        step_order=2,
+        user_group="IA",
+        is_enabled=True
+    )
+    db_session.add(ia_step)
+    await db_session.flush()
+
+    # 9. Load request detail and assert that realignment dynamically healed it to point to IA!
+    await get_aa_detail(aa_id=aa_id, db=db_session, user=faculty)
+    await db_session.refresh(aa)
+    assert aa.pending_with == "IA"
+
+    # 10. IA Approves (since HOD and ADPD are already approved, it should skip ADPD and route to Dean!)
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "IA approves"},
+        db=db_session,
+        user=ia_user
+    )
+    await db_session.refresh(aa)
+    assert aa.pending_with == "Dean"
+
+    # 11. Dean approves (routes to Administrative Approval Granted)
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "Dean approves"},
+        db=db_session,
+        user=dean
+    )
+    await db_session.refresh(aa)
+    assert action_res["status"] == "Administrative Approval Granted"
+    assert aa.pending_with is None
+
+
+@pytest.mark.asyncio
+async def test_administrative_approval_source_of_fund_workflow_merging(db_session):
+    # Commit mocks
+    db_session.commit = db_session.flush
+
+    # 1. Fetch Users
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    await db_session.refresh(faculty, ["department", "role"])
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+    await db_session.refresh(hod, ["department", "role"])
+
+    adpd_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    adpd = adpd_res.scalar_one()
+    await db_session.refresh(adpd, ["department", "role"])
+
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+    await db_session.refresh(dean, ["department", "role"])
+
+    # 2. Setup Category and Procurement Mode
+    from app.models.budget import PurchaseCategory, ProcurementManager, SourceOfFund
+    proc = ProcurementManager(name="SOF Merge Procurement")
+    db_session.add(proc)
+    await db_session.flush()
+
+    cat = PurchaseCategory(
+        title="SOF Merge Category",
+        min_amount=1000.0,
+        max_amount=10000.0,
+        procurement_id=proc.id
+    )
+    db_session.add(cat)
+    await db_session.flush()
+
+    # Create a new source of fund specifically for this test
+    sof = SourceOfFund(name="TEST_CAPES", description="Test Capes Fund")
+    db_session.add(sof)
+    await db_session.flush()
+
+    # 3. Add default workflow steps: HOD (1) -> ADPD (2)
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    
+    step1 = AdministrativeApprovalWorkflow(
+        category_id=cat.id,
+        procurement_id=proc.id,
+        purchase_type="department",
+        step_order=1,
+        user_group="HOD",
+        is_enabled=True,
+        source_of_fund_id=None  # default
+    )
+    step2 = AdministrativeApprovalWorkflow(
+        category_id=cat.id,
+        procurement_id=proc.id,
+        purchase_type="department",
+        step_order=2,
+        user_group="ADPD",
+        is_enabled=True,
+        source_of_fund_id=None  # default
+    )
+    db_session.add(step1)
+    db_session.add(step2)
+    await db_session.flush()
+
+    # 4. Add a fund-specific step: Dean (3) with category_id = None, procurement_id = None, source_of_fund_id = sof.id
+    step3 = AdministrativeApprovalWorkflow(
+        category_id=None,
+        procurement_id=None,
+        purchase_type="department",
+        step_order=3,
+        user_group="Dean",
+        is_enabled=True,
+        source_of_fund_id=sof.id
+    )
+    db_session.add(step3)
+    await db_session.flush()
+
+    # 5. Create budget with source_of_fund="TEST_CAPES"
+    fy_res = await db_session.execute(select(FinancialYear).limit(1))
+    fy = fy_res.scalar_one()
+
+    budget = BudgetMaster(
+        department_id=faculty.department_id,
+        financial_year_id=fy.id,
+        source_of_fund="TEST_CAPES",
+        item_name="SOF Merge Board",
+        category="equipment",
+        course_code="CSE-TEST-4",
+        unit_cost=3000.0,
+        quantity=1,
+        total_allocation=5000.0,
+        file_no="NITT/F.No.8888/CAPES/2026-27/CSE",
+        is_revision=False,
+        committed_amount=0.0,
+        utilized_amount=0.0,
+        allocated_initiator_id=faculty.id,
+        expert1_id=None,
+        expert2_id=None,
+        nominee_ids=None
+    )
+    db_session.add(budget)
+    await db_session.flush()
+
+    # 6. Create AA request
+    body = {
+        "budget_file_id": budget.id,
+        "item_description": "Test board for SOF Merge",
+        "gst_rate": 18.0,
+        "mode_of_procurement": "SOF Merge Procurement",
+        "justification": "Required for upgrades",
+        "item_category": "Assets",
+        "stock_availability": "No",
+        "present_stock": "0",
+        "prev_file_no": "None",
+        "justification_procurement": "Required",
+        "generic_specification_declaration": True
+    }
+
+    create_res = await create_aa(body, db_session, faculty)
+    aa_id = create_res["id"]
+
+    # Verify that the workflow resolves to: HOD (1) -> ADPD (2) -> Dean (3)
+    # The first step is HOD
+    aa_res = await db_session.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
+    aa = aa_res.scalar_one()
+    assert aa.pending_with == "HOD"
+
+    # 7. HOD Approves (routes to ADPD)
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "HOD approves"},
+        db=db_session,
+        user=hod
+    )
+    await db_session.refresh(aa)
+    assert aa.pending_with == "ADPD"
+
+    # 8. ADPD Approves (routes to Dean)
+    await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "ADPD approves"},
+        db=db_session,
+        user=adpd
+    )
+    await db_session.refresh(aa)
+    assert aa.pending_with == "Dean"
+
+    # 9. Dean approves (routes to Administrative Approval Granted)
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "Dean approves"},
+        db=db_session,
+        user=dean
+    )
+    await db_session.refresh(aa)
+    assert action_res["status"] == "Administrative Approval Granted"
+    assert aa.pending_with is None
+
