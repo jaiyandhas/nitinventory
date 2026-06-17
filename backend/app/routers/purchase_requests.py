@@ -312,18 +312,20 @@ async def _persist_pr(
         # Allow override of locked quantity by user specified quantity
         item_qty = item_data.quantity if (item_data and item_data.quantity is not None) else bm.quantity
         item_est_total = item_qty * bm.unit_cost
+        item_gst = float(item_data.charges) if item_data.charges else 0.0
+        item_total_cost = item_est_total * (1.0 + item_gst / 100.0)
         
         # If this budget file has a linked AA that has committed budget, add it back for validation
         effective_available = bm.available_balance
         if aa and aa.budget_file_id == fid:
             effective_available += aa.total_cost
 
-        if item_est_total > effective_available:
+        if item_total_cost > effective_available:
             raise HTTPException(
                 status_code=422,
-                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{effective_available:,.2f}."
+                detail=f"Requested amount ₹{item_total_cost:,.2f} (Qty: {item_qty}, incl. GST) for item '{bm.item_name}' exceeds available budget ₹{effective_available:,.2f}."
             )
-        total_amount += item_est_total
+        total_amount += item_total_cost
 
     if len(budget_by_id) > 1:
         sources_of_fund = sorted(list({bm.source_of_fund for bm in budget_by_id.values() if bm.source_of_fund}))
@@ -2599,7 +2601,8 @@ async def cancel_po(
     deltas = defaultdict(float)
     for item in items:
         if item.budget_file_id is not None:
-            deltas[item.budget_file_id] += item.estimated_total
+            item_charges = item.charges if item.charges is not None else 0.0
+            deltas[item.budget_file_id] += item.estimated_total * (1.0 + item_charges / 100.0)
 
     from app.models.budget import BudgetMaster
     from sqlalchemy import update, func
@@ -2888,10 +2891,12 @@ async def allocate_budget_file(
                 old_budget_id = old_bm.id
 
                 # Dec locked amount on old temp budget
-                old_bm.committed_amount = max(0.0, old_bm.committed_amount - item.estimated_total)
+                item_charges = item.charges if item.charges is not None else 0.0
+                transfer_amount = item.estimated_total * (1.0 + item_charges / 100.0)
+                old_bm.committed_amount = max(0.0, old_bm.committed_amount - transfer_amount)
 
                 # Inc locked amount on new selected budget
-                new_bm.committed_amount += item.estimated_total
+                new_bm.committed_amount += transfer_amount
 
                 # Re-link item to the permanent budget
                 item.budget_file_id = new_bm.id

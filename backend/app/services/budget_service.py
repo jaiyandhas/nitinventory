@@ -23,11 +23,12 @@ class BudgetService:
         if not items:
             return
 
-        # Aggregate estimated totals by budget master file ID to minimize database updates
+        # Aggregate estimated totals (including GST) by budget master file ID to minimize database updates
         deltas = defaultdict(float)
         for item in items:
             if item.budget_file_id is not None:
-                deltas[item.budget_file_id] += item.estimated_total
+                item_charges = item.charges if item.charges is not None else 0.0
+                deltas[item.budget_file_id] += item.estimated_total * (1.0 + item_charges / 100.0)
 
         # Apply atomic updates to master balances to prevent concurrent lost updates
         for budget_file_id, delta in deltas.items():
@@ -53,7 +54,8 @@ class BudgetService:
         deltas = defaultdict(float)
         for item in items:
             if item.budget_file_id is not None:
-                deltas[item.budget_file_id] += item.estimated_total
+                item_charges = item.charges if item.charges is not None else 0.0
+                deltas[item.budget_file_id] += item.estimated_total * (1.0 + item_charges / 100.0)
 
         # Apply atomic decrement bounded to never fall below 0
         for budget_file_id, delta in deltas.items():
@@ -79,7 +81,8 @@ class BudgetService:
         deltas = defaultdict(float)
         for item in items:
             if item.budget_file_id is not None:
-                deltas[item.budget_file_id] += item.estimated_total
+                item_charges = item.charges if item.charges is not None else 0.0
+                deltas[item.budget_file_id] += item.estimated_total * (1.0 + item_charges / 100.0)
 
         # Atomically transfer locked allocation into final deducted expenditure balance
         for budget_file_id, delta in deltas.items():
