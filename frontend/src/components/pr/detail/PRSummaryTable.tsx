@@ -172,42 +172,89 @@ export const PRSummaryTable: React.FC<PRSummaryTableProps> = ({ pr, formatCurren
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">S.No</th>
-                  <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">Item Description</th>
+                  <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">Item Description &amp; Specifications</th>
                   <th className="px-4 py-2.5 text-center font-bold text-slate-500 uppercase tracking-wider text-[9px]">Qty</th>
                   <th className="px-4 py-2.5 text-right font-bold text-slate-500 uppercase tracking-wider text-[9px]">Unit Cost</th>
                   <th className="px-4 py-2.5 text-right font-bold text-slate-500 uppercase tracking-wider text-[9px]">Total</th>
                   <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">Budget File</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-100">
                 {items.map((item, idx) => {
                   const fileNo = (item as any).budget_file?.file_no;
                   const formattedFileNo = fileNo ? formatFileNo(fileNo, user?.role?.group_key) : null;
                   const qty = item.quantity ?? 1;
                   const total = item.estimated_total ?? 0;
                   const unitCost = qty > 0 ? total / qty : 0;
+
+                  // Tech spec chips for the sub-row
+                  const specChips: { label: string; value: string }[] = [];
+                  if (item.requirement_type) specChips.push({ label: 'Req. Type', value: item.requirement_type });
+                  if (item.warranty) specChips.push({ label: 'Warranty', value: `${item.warranty} mo` });
+                  if (item.delivery_period) specChips.push({ label: 'Delivery', value: `${item.delivery_period} wk` });
+                  if (item.availability) specChips.push({ label: 'Availability', value: item.availability });
+                  if (item.site_readiness) specChips.push({ label: 'Site Readiness', value: item.site_readiness });
+                  if ((item as any).installation_required) specChips.push({ label: 'Installation', value: 'Required' });
+
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3 font-bold text-slate-400">{idx + 1}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800 max-w-xs">
-                        <div>{item.item_description}</div>
-                        {(item as any).tech_specs_summary && (
-                          <div className="text-[10px] text-slate-400 mt-0.5 italic">{(item as any).tech_specs_summary}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center font-bold text-slate-700">{qty}</td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-600">{formatCurrency(unitCost)}</td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-[#1a3a6b]">{formatCurrency(total)}</td>
-                      <td className="px-4 py-3">
-                        {formattedFileNo ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                            {formattedFileNo}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    </tr>
+                    <React.Fragment key={item.id}>
+                      {/* ── Main item row ── */}
+                      <tr className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3 font-bold text-slate-400 align-top">{idx + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800 max-w-xs align-top">
+                          <div>{item.item_description}</div>
+                          {item.gem_link && (
+                            <a
+                              href={item.gem_link.startsWith('http') ? item.gem_link : `https://${item.gem_link}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-blue-600 hover:underline mt-0.5 block truncate"
+                            >
+                              GeM Link →
+                            </a>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center font-bold text-slate-700 align-top">{qty}</td>
+                        <td className="px-4 py-3 text-right font-mono text-slate-600 align-top">{formatCurrency(unitCost)}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[#1a3a6b] align-top">{formatCurrency(total)}</td>
+                        <td className="px-4 py-3 align-top">
+                          {formattedFileNo ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              {formattedFileNo}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* ── Tech spec sub-row ── */}
+                      {(specChips.length > 0 || item.tech_specs_text) && (
+                        <tr className="bg-slate-50/60">
+                          <td className="px-4 pb-3" />
+                          <td colSpan={5} className="px-4 pb-3 pt-0">
+                            {specChips.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                                {specChips.map(chip => (
+                                  <span
+                                    key={chip.label}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] font-semibold text-slate-600"
+                                  >
+                                    <span className="text-slate-400 font-bold uppercase text-[8px] tracking-wider">{chip.label}:</span>
+                                    {chip.value}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {item.tech_specs_text && (
+                              <p className="text-[11px] text-slate-500 italic leading-relaxed border-l-2 border-slate-200 pl-2">
+                                {item.tech_specs_text}
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -381,30 +428,70 @@ export const PRSummaryTable: React.FC<PRSummaryTableProps> = ({ pr, formatCurren
       )}
 
       {/* ── SECTION 9: Purchase Committee ────────────────────────────────── */}
-      {(pr.faculty1 || pr.faculty2 || pr.faculty3) && (
+      {(pr.faculty1 || pr.faculty2 || pr.faculty3 || pr.initiator) && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
             <SectionHeader icon={<User size={15} />} title="Purchase / Technical Committee" subtitle="Nominated members for technical evaluation" />
           </div>
           <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { label: 'Purchase Initiator', person: pr.initiator },
-              { label: 'Expert 1 (HOD Nominee)', person: pr.faculty1 },
-              { label: 'Expert 2 (HOD Nominee)', person: pr.faculty2 },
-              { label: 'Expert 3 (Director Nominee)', person: pr.faculty3 },
-            ].map(({ label, person }) => (
-              <div key={label} className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
-                {person ? (
-                  <>
-                    <p className="text-xs font-bold text-slate-800">{person.name}</p>
-                    <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{person.email}</p>
-                  </>
-                ) : (
-                  <p className="text-xs text-rose-400 italic font-medium">Not nominated yet</p>
-                )}
-              </div>
-            ))}
+            {/* Purchase Initiator */}
+            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Purchase Initiator</p>
+              {pr.initiator ? (
+                <>
+                  <p className="text-xs font-bold text-slate-800">{pr.initiator.name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.initiator.email}</p>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 italic">—</p>
+              )}
+            </div>
+
+            {/* HOD Expert 1 — mandatory */}
+            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                Expert 1 (HOD Nominee) <span className="text-rose-400">*</span>
+              </p>
+              {pr.faculty1 ? (
+                <>
+                  <p className="text-xs font-bold text-slate-800">{pr.faculty1.name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty1.email}</p>
+                </>
+              ) : (
+                <p className="text-xs text-rose-400 italic font-medium">Not nominated yet</p>
+              )}
+            </div>
+
+            {/* HOD Expert 2 — mandatory */}
+            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                Expert 2 (HOD Nominee) <span className="text-rose-400">*</span>
+              </p>
+              {pr.faculty2 ? (
+                <>
+                  <p className="text-xs font-bold text-slate-800">{pr.faculty2.name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty2.email}</p>
+                </>
+              ) : (
+                <p className="text-xs text-rose-400 italic font-medium">Not nominated yet</p>
+              )}
+            </div>
+
+            {/* Director Nominee — optional */}
+            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                Director Nominee{' '}
+                <span className="text-slate-300 font-normal">(Optional)</span>
+              </p>
+              {pr.faculty3 ? (
+                <>
+                  <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty3.email}</p>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 italic font-medium">Not nominated</p>
+              )}
+            </div>
           </div>
         </div>
       )}

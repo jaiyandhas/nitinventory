@@ -74,7 +74,11 @@ def dedupe_committee_ids(*member_ids: Optional[int]) -> list[int]:
 
 
 async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) -> bool:
-    """Check if the committee is fully configured, either dynamically or legacy."""
+    """Check if the committee is sufficiently configured.
+
+    HOD-nominated Expert 1 and Expert 2 are mandatory.
+    Director Nominee (faculty3) is optional — its absence does not block TE.
+    """
     if pr.committee_nominee_ids is not None:
         nominees = pr.committee_nominee_ids
         if isinstance(nominees, str):
@@ -83,10 +87,11 @@ async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) ->
                 nominees = json.loads(nominees)
             except:
                 nominees = []
-        return len(nominees) > 0
-        
-    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
-    return all(x is not None for x in (expert1_id, expert2_id, director_faculty_id))
+        # At least two nominees (the two HOD experts) must be present
+        return len(nominees) >= 2
+
+    _, expert1_id, expert2_id, _ = await resolve_tech_committee_ids(db, pr)
+    return expert1_id is not None and expert2_id is not None
 
 
 async def get_tech_committee_member_ids(db: AsyncSession, pr: PurchaseRequest) -> List[int]:

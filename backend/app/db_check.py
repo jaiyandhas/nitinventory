@@ -20,62 +20,62 @@ async def main():
         for d in depts:
             print(f"ID: {d.id}, Name: {d.name}, ShortCode: {d.short_code}")
 
-        # Check details of all PRs
+        # Check workflow flow for PR ID 10
+        from app.models.purchase_request import PurchaseRequestFlow, WorkFlowHierarchy
+        from app.models.budget import PhaseManager
+        
+        # Get active PR 10
         res_pr = await conn.execute(
             select(
                 PurchaseRequest.id, 
                 PurchaseRequest.icr_number, 
                 PurchaseRequest.amount, 
-                PurchaseRequest.form_data,
-                PurchaseRequest.administrative_approval_id
-            ).where(PurchaseRequest.id >= 1)
+                PurchaseRequest.category_id,
+                PurchaseRequest.procurement_id,
+                PurchaseRequest.purchase_type
+            ).where(PurchaseRequest.id == 10)
         )
-        prs = res_pr.all()
-        print("\n--- PR INSPECTION ---")
-        for p in prs:
-            print(f"PR ID: {p.id}, ICR: {p.icr_number}, Amount: {p.amount}, AA ID: {p.administrative_approval_id}, Form Data: {p.form_data}")
+        pr = res_pr.first()
+        if pr:
+            print(f"\n--- PR 10 WORKFLOW FLOW DETAILS ---")
+            print(f"PR ID: {pr.id}, ICR: {pr.icr_number}, Category ID: {pr.category_id}, Procurement ID: {pr.procurement_id}, Purchase Type: {pr.purchase_type}")
             
-            if p.administrative_approval_id:
-                from app.models.administrative_approval import AdministrativeApproval
-                res_aa = await conn.execute(
-                    select(
-                        AdministrativeApproval.id,
-                        AdministrativeApproval.total_cost,
-                        AdministrativeApproval.item_description
-                    ).where(AdministrativeApproval.id == p.administrative_approval_id)
-                )
-                aa = res_aa.first()
-                if aa:
-                    print(f"    AA ID: {aa.id}, Item Description: {aa.item_description}, Total Cost: {aa.total_cost}")
-
-            # Get associated items
-            from app.models.purchase_request import PurchaseRequestItem
-            res_items = await conn.execute(
+            res_flow = await conn.execute(
                 select(
-                    PurchaseRequestItem.id,
-                    PurchaseRequestItem.item_description,
-                    PurchaseRequestItem.quantity,
-                    PurchaseRequestItem.estimated_total,
-                    PurchaseRequestItem.budget_file_id
-                ).where(PurchaseRequestItem.purchase_request_id == p.id)
+                    PurchaseRequestFlow.phase_id,
+                    PurchaseRequestFlow.step_order,
+                    PurchaseRequestFlow.rejected
+                ).where(PurchaseRequestFlow.purchase_request_id == pr.id)
             )
-            items = res_items.all()
-            for item in items:
-                print(f"  Item ID: {item.id}, Description: {item.item_description}, Qty: {item.quantity}, Est Total: {item.estimated_total}")
-                # Get the associated budget file
-                from app.models.budget import BudgetMaster
-                res_bm = await conn.execute(
+            flow = res_flow.first()
+            if flow:
+                res_phase = await conn.execute(select(PhaseManager.phase_name).where(PhaseManager.id == flow.phase_id))
+                phase_name = res_phase.scalar()
+                print(f"Current Flow - Phase: {phase_name} (ID: {flow.phase_id}), Step Order: {flow.step_order}, Rejected: {flow.rejected}")
+
+                # Query the workflow hierarchies
+                res_wf = await conn.execute(
                     select(
-                        BudgetMaster.id,
-                        BudgetMaster.item_name,
-                        BudgetMaster.unit_cost,
-                        BudgetMaster.quantity,
-                        BudgetMaster.total_allocation
-                    ).where(BudgetMaster.id == item.budget_file_id)
+                        WorkFlowHierarchy.id,
+                        WorkFlowHierarchy.step_order,
+                        WorkFlowHierarchy.user_group,
+                        WorkFlowHierarchy.role_id,
+                        WorkFlowHierarchy.user_id,
+                        WorkFlowHierarchy.phase_id,
+                        WorkFlowHierarchy.source_of_fund_id,
+                        WorkFlowHierarchy.is_enabled
+                    ).where(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type
+                    ).order_by(WorkFlowHierarchy.phase_id, WorkFlowHierarchy.step_order)
                 )
-                bm = res_bm.first()
-                if bm:
-                    print(f"    Budget File ID: {bm.id}, Item Name: {bm.item_name}, Unit Cost: {bm.unit_cost}, Qty: {bm.quantity}, Total Allocation: {bm.total_allocation}")
+                wf_steps = res_wf.all()
+                print("All Workflow Hierarchy Steps in DB:")
+                for w in wf_steps:
+                    res_p = await conn.execute(select(PhaseManager.phase_name).where(PhaseManager.id == w.phase_id))
+                    p_name = res_p.scalar()
+                    print(f"  ID: {w.id}, Phase: {p_name} (ID: {w.phase_id}), Step: {w.step_order}, Group: {w.user_group}, User ID: {w.user_id}, Role ID: {w.role_id}, SOF ID: {w.source_of_fund_id}, Enabled: {w.is_enabled}")
 
 if __name__ == "__main__":
     asyncio.run(main())

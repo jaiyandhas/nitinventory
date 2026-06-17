@@ -89,14 +89,17 @@ export const PRCommitteePanel: React.FC<PRCommitteePanelProps> = ({
               )}
             </div>
             <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-              <span className="text-[10px] font-bold text-slate-400 tracking-wide uppercase">Director Nominee</span>
+              <span className="text-[10px] font-bold text-slate-400 tracking-wide uppercase">
+                Director Nominee{' '}
+                <span className="text-slate-300 font-normal normal-case">(Optional)</span>
+              </span>
               {pr.faculty3 ? (
                 <>
                   <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
                   <p className="text-[10px] text-slate-500">{pr.faculty3.email}</p>
                 </>
               ) : (
-                <p className="text-xs text-rose-500 italic font-medium">Not nominated</p>
+                <p className="text-xs text-slate-400 italic font-medium">Not nominated</p>
               )}
             </div>
           </div>
@@ -122,7 +125,16 @@ export const PRCommitteePanel: React.FC<PRCommitteePanelProps> = ({
             {renderSigCard('Purchase Initiator', initiatorSig, pr.initiator?.name)}
             {renderSigCard('HOD Nominated Expert 1', faculty1Sig, pr.faculty1?.name)}
             {renderSigCard('HOD Nominated Expert 2', faculty2Sig, pr.faculty2?.name)}
-            {renderSigCard('Director Nominee', faculty3Sig, pr.faculty3?.name)}
+            {/* Director Nominee card — shown only when a nominee was actually assigned */}
+            {pr.faculty3_id
+              ? renderSigCard('Director Nominee', faculty3Sig, pr.faculty3?.name)
+              : (
+                <div className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-200 bg-slate-50/30 rounded-md text-center min-h-[140px]">
+                  <p className="text-[10px] text-slate-400 font-semibold italic">Director Nominee</p>
+                  <p className="text-[9px] text-slate-300 mt-1 uppercase tracking-wider">Not Nominated (Optional)</p>
+                </div>
+              )
+            }
           </div>
         </div>
       )}

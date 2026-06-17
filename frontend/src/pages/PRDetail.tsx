@@ -18,6 +18,7 @@ import { PRItemsTable } from '../components/pr/detail/PRItemsTable';
 import { PRCommitteePanel } from '../components/pr/detail/PRCommitteePanel';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
 import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
+import { CollapsibleIndentPanel } from '../components/pr/detail/CollapsibleIndentPanel';
 
 const STAGES = [
   { key: 'request', label: 'Request', desc: 'Initial Indent' },
@@ -518,6 +519,11 @@ export const PRDetailPage: React.FC = () => {
                 </p>
               </div>
 
+              {/* ── Collapsible Indent Document (visible in every stage except Request) ── */}
+              {selectedStageKey !== 'request' && (
+                <CollapsibleIndentPanel pr={pr} />
+              )}
+
               {/* STAGE: Request — Full PR Summary */}
               {selectedStageKey === 'request' && (
                 <div className="space-y-4">
@@ -880,7 +886,8 @@ export const PRDetailPage: React.FC = () => {
                               { name: pr.initiator?.name, sig: initiatorSig, role: 'Purchase Initiator', id: pr.initiator_id },
                               { name: pr.faculty1?.name, sig: faculty1Sig, role: 'HOD Nominated Expert 1', id: pr.faculty1_id },
                               { name: pr.faculty2?.name, sig: faculty2Sig, role: 'HOD Nominated Expert 2', id: pr.faculty2_id },
-                              { name: pr.faculty3?.name, sig: faculty3Sig, role: 'Director Nominee', id: pr.faculty3_id },
+                              // Director Nominee is optional — only show the card when actually assigned
+                              ...(pr.faculty3_id ? [{ name: pr.faculty3?.name, sig: faculty3Sig, role: 'Director Nominee (Optional)', id: pr.faculty3_id }] : []),
                             ].map((member, i) => {
                               const memberDoc = pr.documents?.find((d: any) => d.doc_key === `tech_eval_doc_${member.id}`);
                               return (

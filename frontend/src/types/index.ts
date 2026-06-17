@@ -112,8 +112,11 @@ export interface PRItem {
   requirement_type?: string;
   tech_specs_text?: string;
   installation_required?: boolean;
-  warranty?: number;
-  delivery_period?: number;
+  warranty?: number;          // months
+  delivery_period?: number;   // weeks
+  availability?: string;
+  site_readiness?: string;
+  gem_link?: string | null;
 }
 
 export type PRStatus =

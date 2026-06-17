@@ -99,20 +99,20 @@ export const AAAction: React.FC<AAActionProps> = ({
               Director Nominee Selection
             </span>
             <p className="text-[11px] text-emerald-800/80 leading-normal mt-0.5">
-              As Director, select a Director Nominee to represent the administration on the TSC.
+              As Director, you may optionally nominate a representative to serve on the TSC. This selection is not mandatory.
             </p>
           </div>
           <div className="max-w-md">
             <label className="block text-xs font-bold text-slate-600 mb-1">
-              Director Nominee <span className="text-rose-500">*</span>
+              Director Nominee{' '}
+              <span className="text-slate-400 font-normal text-[10px]">(Optional)</span>
             </label>
             <select
               value={directorFacultyId}
               onChange={e => setDirectorFacultyId(e.target.value === '' ? '' : Number(e.target.value))}
-              required
               className="input-field w-full bg-white text-xs py-2 shadow-xs"
             >
-              <option value="">Select Director Nominee...</option>
+              <option value="">— No nominee (skip) —</option>
               {allUsers.map((u: any) => (
                 <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
               ))}

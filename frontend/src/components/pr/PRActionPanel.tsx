@@ -111,12 +111,8 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           toast.error('Expert 1 and Expert 2 must be different faculty members');
           return;
         }
-      } else if (isDirector) {
-        if (!directorFacultyId) {
-          toast.error('Director Nominee must be nominated');
-          return;
-        }
       }
+      // Director Nominee is optional — Director can approve without selecting one
     }
 
     if (!window.confirm('Are you sure you want to approve and advance this purchase indent?')) return;
