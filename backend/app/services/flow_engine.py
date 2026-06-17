@@ -13,6 +13,7 @@ from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestFlow, PurchaseRequestHistory,
     WorkFlowHierarchy, RequestStatus,
     CommercialEvaluation, TechnicalEvaluation,
+    PurchaseRequestItem,
 )
 from app.models.budget import PhaseManager, BudgetMaster
 from app.models.user import User, RoleManager
@@ -40,40 +41,95 @@ class FlowEngineService:
         )
         return result.scalar_one_or_none()
 
-    def _wf_filters(self, pr: PurchaseRequest, phase_id: int, **extra):
-        """Generate filtering clauses for matching a workflow hierarchy step schema."""
+    async def resolve_sof_id(self, pr: PurchaseRequest) -> Optional[int]:
+        """Resolve the SourceOfFund.id for this PR by looking at the budget file attached to its items.
+
+        Returns the SourceOfFund.id if fund-specific workflow rows exist for this PR's SOF;
+        otherwise returns None so that the default (source_of_fund_id IS NULL) rows are used.
+        """
+        from app.models.budget import SourceOfFund
+        # Grab the source_of_fund string from the first budget file linked to this PR's items
+        item_res = await self.db.execute(
+            select(PurchaseRequestItem).where(
+                PurchaseRequestItem.purchase_request_id == pr.id
+            ).limit(1)
+        )
+        item = item_res.scalar_one_or_none()
+        if not item:
+            return None
+        bm_res = await self.db.execute(
+            select(BudgetMaster).where(BudgetMaster.id == item.budget_file_id)
+        )
+        bm = bm_res.scalar_one_or_none()
+        if not bm or not bm.source_of_fund:
+            return None
+        sof_res = await self.db.execute(
+            select(SourceOfFund.id).where(SourceOfFund.name == bm.source_of_fund)
+        )
+        sof_id = sof_res.scalar_one_or_none()
+        if sof_id is None:
+            return None
+        # Only return sof_id if fund-specific workflow rows actually exist
+        fund_check = await self.db.execute(
+            select(WorkFlowHierarchy).where(
+                and_(
+                    WorkFlowHierarchy.category_id == pr.category_id,
+                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                    WorkFlowHierarchy.is_enabled == True,
+                    WorkFlowHierarchy.source_of_fund_id == sof_id,
+                )
+            ).limit(1)
+        )
+        return sof_id if fund_check.scalar_one_or_none() else None
+
+    def _wf_filters(self, pr: PurchaseRequest, phase_id: int, sof_id: Optional[int] = None, **extra):
+        """Generate filtering clauses for matching a workflow hierarchy step schema.
+
+        When sof_id is provided, filter by that specific source_of_fund_id.
+        When sof_id is None (default/fallback), filter for rows where source_of_fund_id IS NULL.
+        """
         clauses = [
             WorkFlowHierarchy.category_id == pr.category_id,
             WorkFlowHierarchy.procurement_id == pr.procurement_id,
             WorkFlowHierarchy.purchase_type == pr.purchase_type,
             WorkFlowHierarchy.phase_id == phase_id,
             WorkFlowHierarchy.is_enabled == True,
+            WorkFlowHierarchy.source_of_fund_id == sof_id,
         ]
         for k, v in extra.items():
             clauses.append(getattr(WorkFlowHierarchy, k) == v)
         return and_(*clauses)
 
     async def _get_step_def(
-        self, pr: PurchaseRequest, phase_id: int, step_order: int
+        self, pr: PurchaseRequest, phase_id: int, step_order: int,
+        sof_id: Optional[int] = None,
     ) -> Optional[WorkFlowHierarchy]:
-        """Load specific workflow step definition mapping matching parameters."""
+        """Load specific workflow step definition mapping matching parameters.
+
+        sof_id should be pre-resolved via resolve_sof_id(); when None, the default
+        (source_of_fund_id IS NULL) row is used.
+        """
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(WorkFlowHierarchy).where(
-                self._wf_filters(pr, phase_id, step_order=step_order)
+            select(WorkFlowHierarchy)
+            .options(selectinload(WorkFlowHierarchy.role), selectinload(WorkFlowHierarchy.user))
+            .where(
+                self._wf_filters(pr, phase_id, sof_id=sof_id, step_order=step_order)
             )
         )
         return result.scalar_one_or_none()
 
-    async def _get_first_step(self, pr: PurchaseRequest, phase: PhaseManager) -> Optional[WorkFlowHierarchy]:
+    async def _get_first_step(self, pr: PurchaseRequest, phase: PhaseManager, sof_id: Optional[int] = None) -> Optional[WorkFlowHierarchy]:
         """Helper to get the initial step (order = 1) of a given phase."""
-        return await self._get_step_def(pr, phase.id, 1)
+        return await self._get_step_def(pr, phase.id, 1, sof_id=sof_id)
 
-    async def _get_next_step_in_phase(self, pr: PurchaseRequest, phase: PhaseManager, current_step: int) -> Optional[int]:
+    async def _get_next_step_in_phase(self, pr: PurchaseRequest, phase: PhaseManager, current_step: int, sof_id: Optional[int] = None) -> Optional[int]:
         """Retrieve the sequence step order index for the next step within the active phase."""
         result = await self.db.execute(
             select(WorkFlowHierarchy).where(
                 and_(
-                    self._wf_filters(pr, phase.id),
+                    self._wf_filters(pr, phase.id, sof_id=sof_id),
                     WorkFlowHierarchy.step_order > current_step,
                 )
             ).order_by(WorkFlowHierarchy.step_order)
@@ -190,10 +246,11 @@ class FlowEngineService:
         before the conditional step fires.
         """
         # Find the immediately next step after the partial_approver
+        sof_id = await self.resolve_sof_id(pr)
         result = await self.db.execute(
             select(WorkFlowHierarchy).where(
                 and_(
-                    self._wf_filters(pr, phase.id),
+                    self._wf_filters(pr, phase.id, sof_id=sof_id),
                     WorkFlowHierarchy.step_order > partial_step_order,
                 )
             ).order_by(WorkFlowHierarchy.step_order).limit(1)
@@ -254,9 +311,10 @@ class FlowEngineService:
             ).order_by(PhaseManager.phase_order)
         )
         phases = result.scalars().all()
+        sof_id = await self.resolve_sof_id(pr)
         for phase in phases:
             check = await self.db.execute(
-                select(WorkFlowHierarchy).where(self._wf_filters(pr, phase.id)).limit(1)
+                select(WorkFlowHierarchy).where(self._wf_filters(pr, phase.id, sof_id=sof_id)).limit(1)
             )
             if check.scalar_one_or_none():
                 return phase
@@ -316,8 +374,9 @@ class FlowEngineService:
         await self.db.refresh(user, ["role"])
         if user.role.group_key == "admin":
             return
-            
-        step = await self._get_step_def(pr, flow.phase_id, flow.step_order)
+
+        sof_id = await self.resolve_sof_id(pr)
+        step = await self._get_step_def(pr, flow.phase_id, flow.step_order, sof_id=sof_id)
         if not step:
             raise ValueError("Workflow step not found")
             
@@ -466,7 +525,8 @@ class FlowEngineService:
         # regardless of whether they are linked to an administrative approval.
         # The AA provides the budget commitment context, but the PR still needs its own
         # indent & tech spec verification workflow.
-        first_step = await self._get_first_step(pr, first_phase)
+        sof_id = await self.resolve_sof_id(pr)
+        first_step = await self._get_first_step(pr, first_phase, sof_id=sof_id)
 
         if not first_step:
             raise RuntimeError(f"No workflow step 1 found for PR #{pr.id}")
@@ -518,10 +578,11 @@ class FlowEngineService:
         if current_phase.phase_name == "Purchase Order" and not acted_by.signature_path:
             raise ValueError("You must upload a digital signature in your Profile to approve Purchase Order steps.")
         current_step = flow.step_order
-        next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
+        sof_id = await self.resolve_sof_id(pr)
+        next_step = await self._get_next_step_in_phase(pr, current_phase, current_step, sof_id=sof_id)
 
         # Check if this is the committee technical evaluation step
-        step_def = await self._get_step_def(pr, flow.phase_id, flow.step_order)
+        step_def = await self._get_step_def(pr, flow.phase_id, flow.step_order, sof_id=sof_id)
         is_tech_eval_step = step_def and step_def.user_type == "tech_evaluation"
 
         should_advance = True
@@ -578,7 +639,7 @@ class FlowEngineService:
                 # ── PARTIAL APPROVER AUTO-ADVANCE ──────────────────────────────
                 # If we just landed on a partial_approver step and the conditional
                 # step it guards will NOT fire, skip it immediately.
-                new_step_def = await self._get_step_def(pr, current_phase.id, next_step)
+                new_step_def = await self._get_step_def(pr, current_phase.id, next_step, sof_id=sof_id)
 
                 if new_step_def and new_step_def.user_type == "partial_approver":
                     should_skip = await self._check_partial_approver_auto_advance(
@@ -594,7 +655,7 @@ class FlowEngineService:
                         # conditional step immediately after it will also be
                         # skipped by _get_next_step_in_phase (condition false).
                         next_after = await self._get_next_step_in_phase(
-                            pr, current_phase, next_step
+                            pr, current_phase, next_step, sof_id=sof_id
                         )
                         if next_after is not None:
                             flow.step_order = next_after
@@ -645,7 +706,7 @@ class FlowEngineService:
                             await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
                 else:
                     # Workflow complete — final PO step is faculty goods receipt
-                    completed_step = await self._get_step_def(pr, current_phase.id, current_step)
+                    completed_step = await self._get_step_def(pr, current_phase.id, current_step, sof_id=sof_id)
                     phase_name = current_phase.phase_name or ""
                     is_po_completion = (phase_name == "Purchase Order")
                     
@@ -703,7 +764,7 @@ class FlowEngineService:
                     selectinload(WorkFlowHierarchy.role),
                     selectinload(WorkFlowHierarchy.user)
                 ).where(
-                    self._wf_filters(pr, flow.phase_id, step_order=flow.step_order)
+                    self._wf_filters(pr, flow.phase_id, sof_id=sof_id, step_order=flow.step_order)
                 )
             )
             new_step = new_step_result.scalar_one_or_none()
@@ -883,12 +944,13 @@ class FlowEngineService:
         if not flow:
             return []
         from sqlalchemy.orm import selectinload
+        sof_id = await self.resolve_sof_id(pr)
         result = await self.db.execute(
             select(WorkFlowHierarchy)
             .options(selectinload(WorkFlowHierarchy.role))
             .where(
                 and_(
-                    self._wf_filters(pr, flow.phase_id),
+                    self._wf_filters(pr, flow.phase_id, sof_id=sof_id),
                     WorkFlowHierarchy.step_order < flow.step_order,
                 )
             ).order_by(WorkFlowHierarchy.step_order)
@@ -905,7 +967,8 @@ class FlowEngineService:
         current_phase = result.scalar_one()
 
         current_step = flow.step_order
-        next_step = await self._get_next_step_in_phase(pr, current_phase, current_step)
+        sof_id = await self.resolve_sof_id(pr)
+        next_step = await self._get_next_step_in_phase(pr, current_phase, current_step, sof_id=sof_id)
 
         hist_status = "Force Advanced by Admin"
 
