@@ -266,23 +266,55 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
     candidate_steps = steps_res.scalars().all()
     
     # Specificity Scoring & Merging
-    best_steps = {}
+    steps_by_key = {}
     for step in candidate_steps:
+        key = (step.source_of_fund_id, step.procurement_id, step.category_id, step.purchase_type)
+        if key not in steps_by_key:
+            steps_by_key[key] = []
+        steps_by_key[key].append(step)
+
+    # Check if a key is a refinement of another key (key_a is strictly more specific than key_b)
+    def is_refinement(key_a, key_b):
+        has_strictly_more_specific = False
+        for val_a, val_b in zip(key_a, key_b):
+            if val_b is not None:
+                if val_a != val_b:
+                    return False
+            else:
+                if val_a is not None:
+                    has_strictly_more_specific = True
+        return has_strictly_more_specific
+
+    # Discard keys that are overridden by a more specific refinement key
+    keys_to_discard = set()
+    all_keys = list(steps_by_key.keys())
+    for key_a in all_keys:
+        for key_b in all_keys:
+            if key_a != key_b and is_refinement(key_a, key_b):
+                keys_to_discard.add(key_b)
+
+    active_keys = [k for k in all_keys if k not in keys_to_discard]
+
+    # Specificity Scoring & Merging among active keys
+    best_steps = {}
+    for key in active_keys:
         score = 0
-        if source_of_fund_id is not None and step.source_of_fund_id == source_of_fund_id:
+        if source_of_fund_id is not None and key[0] == source_of_fund_id:
             score += 1000
-        if cat is not None and step.category_id == cat.id:
+        if cat is not None and key[2] == cat.id:
             score += 100
-        if proc_id is not None and step.procurement_id == proc_id:
+        if proc_id is not None and key[1] == proc_id:
             score += 10
-        if step.purchase_type == "department":
+        if key[3] == "department":
             score += 1
-            
-        order = step.step_order
-        if order not in best_steps or score > best_steps[order][1]:
-            best_steps[order] = (step, score)
-            
+
+        for step in steps_by_key[key]:
+            order = step.step_order
+            if order not in best_steps or score > best_steps[order][1]:
+                best_steps[order] = (step, score)
+
     steps = [best_steps[order][0] for order in sorted(best_steps.keys())]
+
     
     if not steps:
         from app.models.user import RoleManager
