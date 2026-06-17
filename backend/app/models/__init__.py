@@ -1,5 +1,5 @@
 from app.models.user import User, Department, RoleManager
-from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings, TCMaster
+from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings, TCMaster, SourceOfFund
 from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestItem, PurchaseRequestFlow,
     PurchaseRequestHistory, PurchaseRequestAssignment,
@@ -19,7 +19,7 @@ from app.models.notification import Notification
 __all__ = [
     "User", "Department", "RoleManager",
     "BudgetMaster", "FinancialYear", "PurchaseCategory", "ProcurementManager",
-    "PhaseManager", "Settings", "TCMaster",
+    "PhaseManager", "Settings", "TCMaster", "SourceOfFund",
     "PurchaseRequest", "PurchaseRequestItem", "PurchaseRequestFlow",
     "PurchaseRequestHistory", "PurchaseRequestAssignment",
     "TechnicalEvaluation", "FinancialEvaluation", "CommercialEvaluation",

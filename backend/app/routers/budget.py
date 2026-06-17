@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_own_department
-from app.models.user import User, RoleManager
+from app.models.user import User, RoleManager, Department
 from app.models.budget import BudgetMaster, FinancialYear, ProcurementManager
 
 router = APIRouter(prefix="/api/budget", tags=["budget"])
@@ -77,7 +77,10 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
         select(BudgetMaster)
         .options(
             selectinload(BudgetMaster.allocated_initiator),
-            selectinload(BudgetMaster.department),
+            selectinload(BudgetMaster.department).selectinload(Department.expert1),
+            selectinload(BudgetMaster.department).selectinload(Department.expert2),
+            selectinload(BudgetMaster.expert1),
+            selectinload(BudgetMaster.expert2),
             selectinload(BudgetMaster.financial_year)
         )
         .where(and_(*filters))
@@ -107,7 +110,9 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
             "source_of_fund": b.source_of_fund,
             "expert1_id": b.expert1_id or (b.department.expert1_id if b.department else None),
+            "expert1_name": b.expert1.name if b.expert1 else (b.department.expert1.name if b.department and b.department.expert1 else None),
             "expert2_id": b.expert2_id or (b.department.expert2_id if b.department else None),
+            "expert2_name": b.expert2.name if b.expert2 else (b.department.expert2.name if b.department and b.department.expert2 else None),
             "department": b.department.name if b.department else None,
             "financial_year": b.financial_year.label if b.financial_year else None,
             "attachment_path": b.attachment_path,

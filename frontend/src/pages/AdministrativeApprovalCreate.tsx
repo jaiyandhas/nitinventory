@@ -5,12 +5,14 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Loader2, Info } from 'lucide-react';
 import { budgetApi, aaApi } from '../services/api';
 import { formatCurrency } from '../utils/format';
+import { useAuth } from '../context/AuthContext';
 
 export const AdministrativeApprovalCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryBudgetId = searchParams.get('budget_id');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
 
   // Form states
@@ -23,9 +25,17 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
       setSelectedBudgetId(Number(queryBudgetId));
     }
   }, [queryBudgetId]);
-  const [itemDescription, setItemDescription] = useState('');
-  const [quantity, setQuantity] = useState<number>(1);
-  const [gstRate, setGstRate] = useState<number>(18); // Default 18%
+  interface ItemDetail {
+    id: string;
+    description: string;
+    qty: number;
+    unitCost: number;
+    gstRate: number;
+  }
+
+  const [itemsList, setItemsList] = useState<ItemDetail[]>([
+    { id: Date.now().toString(), description: '', qty: 1, unitCost: 0, gstRate: 18 }
+  ]);
   const [modeOfProcurement, setModeOfProcurement] = useState('GeM');
   const [justification, setJustification] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -44,10 +54,9 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
   const [pacDeptCertFile, setPacDeptCertFile] = useState<File | null>(null);
   const [pacVendorCertFile, setPacVendorCertFile] = useState<File | null>(null);
 
-  // Declarations
-  const [declGeneric, setDeclGeneric] = useState(false);
-  const [declSpecifications, setDeclSpecifications] = useState(false);
-  const [declMii, setDeclMii] = useState(false);
+  // Declarations (NIT-style)
+  const [declEligibility, setDeclEligibility] = useState(false);
+  const [declDemandDivision, setDeclDemandDivision] = useState(false);
 
   // Fetch PI budget allocations
   const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
@@ -60,21 +69,31 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
     return budgetFiles.find((f: any) => f.id === selectedBudgetId);
   }, [budgetFiles, selectedBudgetId]);
 
-  // Sync quantity from selected budget file
+  // Sync initial item from selected budget file
   useEffect(() => {
     if (selectedBudget) {
-      setQuantity(selectedBudget.quantity);
+      setItemsList([{
+        id: Date.now().toString(),
+        description: selectedBudget.item_name || '',
+        qty: selectedBudget.quantity || 1,
+        unitCost: selectedBudget.unit_cost || 0,
+        gstRate: 18
+      }]);
     }
   }, [selectedBudget]);
 
   // System Calculations
   const calculatedValues = useMemo(() => {
-    if (!selectedBudget) return { gstAmount: 0, totalCost: 0, baseCost: 0 };
-    const baseCost = quantity * selectedBudget.unit_cost;
-    const gstAmount = baseCost * (gstRate / 100);
+    let baseCost = 0;
+    let gstAmount = 0;
+    itemsList.forEach(item => {
+      const itemBase = item.qty * item.unitCost;
+      baseCost += itemBase;
+      gstAmount += itemBase * (item.gstRate / 100);
+    });
     const totalCost = baseCost + gstAmount;
     return { gstAmount, totalCost, baseCost };
-  }, [selectedBudget, quantity, gstRate]);
+  }, [itemsList]);
 
   // Validate preconditions
   const nomineeSelectionCompleted = useMemo(() => {
@@ -95,16 +114,13 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
       toast.error('Please select a Budget Allocation.');
       return;
     }
-    if (quantity <= 0) {
-      toast.error('Quantity must be greater than zero.');
+    if (itemsList.length === 0) {
+      toast.error('At least one item is required.');
       return;
     }
-    if (!itemDescription.trim()) {
-      toast.error('Item Description is mandatory.');
-      return;
-    }
-    if (gstRate < 0) {
-      toast.error('GST (%) must be greater than or equal to zero.');
+    const hasInvalidItem = itemsList.some(i => !i.description.trim() || i.qty <= 0 || i.unitCost < 0 || i.gstRate < 0);
+    if (hasInvalidItem) {
+      toast.error('Please fill all item details correctly.');
       return;
     }
     if (!modeOfProcurement.trim()) {
@@ -154,8 +170,8 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
     }
 
     // Declarations validation
-    if (!declGeneric || !declSpecifications || !declMii) {
-      toast.error('You must read and check all compliance declarations.');
+    if (!declEligibility || !declDemandDivision) {
+      toast.error('You must certify both compliance declarations before submitting.');
       return;
     }
 
@@ -173,9 +189,11 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
     try {
       const response = await aaApi.create({
         budget_file_id: selectedBudgetId as number,
-        quantity,
-        item_description: itemDescription,
-        gst_rate: gstRate,
+        quantity: itemsList.reduce((acc, i) => acc + i.qty, 0),
+        item_description: itemsList.map(i => `${i.description} (Qty: ${i.qty}, Cost: ${i.unitCost}, GST: ${i.gstRate}%)`).join('\n'),
+        gst_rate: itemsList[0]?.gstRate || 18,
+        total_cost: calculatedValues.totalCost,
+        gst_amount: calculatedValues.gstAmount,
         mode_of_procurement: modeOfProcurement,
         justification,
         item_category: itemCategory,
@@ -183,7 +201,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
         present_stock: stockAvailable === 'Yes' ? presentStock : null,
         prev_file_no: stockAvailable === 'Yes' ? prevFileNo : null,
         justification_procurement: stockAvailable === 'Yes' ? justificationProcurement : null,
-        generic_specification_declaration: declGeneric && declSpecifications && declMii,
+        generic_specification_declaration: declEligibility && declDemandDivision,
       });
       const newAaId = response.data.id;
       if (newAaId) {
@@ -288,104 +306,164 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
               </div>
             )}
 
-            {/* Section 1 - Budget Information */}
-            <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
+            {/* Section 1 - Budget Information (Traditional bordered table) */}
+            <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '8px', color: '#000' }}>
                 Section 1 – Budget Information (Retrieved)
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-slate-500 block">PI Name</span>
-                  <span className="font-bold text-slate-800">{selectedBudget.allocated_initiator?.name || 'Retrieved'}</span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', color: '#000' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', width: '22%', background: '#f7f7f7' }}>PI / Indentor Name</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', width: '28%' }}>{selectedBudget.allocated_initiator?.name || '—'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', width: '22%', background: '#f7f7f7' }}>Department</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', width: '28%' }}>{selectedBudget.department || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Designation</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{user?.designation || '—'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Contact (Email)</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{user?.email || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Source of Fund</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget.source_of_fund || '—'}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Financial Year</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget.financial_year || '—'}</td>
+                  </tr>
+                  {selectedBudget.project_code && (
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Project Code</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px' }} colSpan={3}>{selectedBudget.project_code}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Allocated Budget</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{formatCurrency(selectedBudget.total_allocation)}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Available Budget Balance</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{formatCurrency(selectedBudget.available_amount)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Estimated Amount (Incl. GST)</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', color: calculatedValues.totalCost > selectedBudget.available_amount ? '#c00' : '#000' }} colSpan={3}>
+                      {formatCurrency(calculatedValues.totalCost)}
+                      {calculatedValues.totalCost > 0 && (
+                        <span style={{ fontWeight: 'normal', fontSize: '11px', marginLeft: '8px', color: '#555' }}>(auto-calculated from item details)</span>
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Section 2 - Item Information */}
+            <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '10px', color: '#000', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Section 2 – Details of the required items</span>
+                <button 
+                  type="button" 
+                  onClick={() => setItemsList([...itemsList, { id: Date.now().toString(), description: '', qty: 1, unitCost: 0, gstRate: 18 }])}
+                  className="text-xs text-blue-600 hover:underline font-normal normal-case"
+                >
+                  + Add Item
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', color: '#000', textAlign: 'center' }}>
+                  <thead>
+                    <tr style={{ background: '#f7f7f7' }}>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '5%' }}>S.No</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '35%' }}>Description of the Item</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '10%' }}>Qty</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '15%' }}>Unit Cost (Rs.)</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '10%' }}>GST %</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '10%' }}>GST Amount (Rs.)</th>
+                      <th style={{ border: '1px solid #000', padding: '4px', width: '15%' }}>Total Cost (Rs.)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemsList.map((item, index) => {
+                      const itemBase = item.qty * item.unitCost;
+                      const itemGst = itemBase * (item.gstRate / 100);
+                      const itemTotal = itemBase + itemGst;
+                      return (
+                        <tr key={item.id}>
+                          <td style={{ border: '1px solid #000', padding: '4px' }}>
+                            <div className="flex items-center justify-center gap-1">
+                              {index + 1}
+                              {itemsList.length > 1 && (
+                                <button type="button" onClick={() => setItemsList(itemsList.filter(i => i.id !== item.id))} className="text-rose-500 text-xs ml-1" title="Remove row">×</button>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '2px' }}>
+                            <textarea
+                              rows={1}
+                              value={item.description}
+                              onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, description: e.target.value } : i))}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', resize: 'vertical', minHeight: '24px', fontSize: '12.5px', fontFamily: 'inherit', padding: '2px 4px' }}
+                              placeholder="Enter item description..."
+                              required
+                            />
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '2px' }}>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.qty || ''}
+                              onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, qty: Math.max(1, parseInt(e.target.value) || 0) } : i))}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
+                              required
+                            />
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '2px' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unitCost || ''}
+                              onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, unitCost: parseFloat(e.target.value) || 0 } : i))}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
+                              required
+                            />
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '2px' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                              value={item.gstRate || ''}
+                              onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, gstRate: parseFloat(e.target.value) || 0 } : i))}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
+                              required
+                            />
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '4px' }}>
+                            {formatCurrency(itemGst).replace('₹', '')}
+                          </td>
+                          <td style={{ border: '1px solid #000', padding: '4px', fontWeight: 'bold' }}>
+                            {formatCurrency(itemTotal).replace('₹', '')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: '16px', textAlign: 'right', fontSize: '12.5px', color: '#000' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <span style={{ marginRight: '16px' }}>Grand Total Rs.</span>
+                  <span style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '2px', display: 'inline-block', minWidth: '120px', textAlign: 'center' }}>
+                    {formatCurrency(calculatedValues.totalCost).replace('₹', '')}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-slate-500 block">Department</span>
-                  <span className="font-bold text-slate-800">{selectedBudget.department || 'Retrieved'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Source of Fund</span>
-                  <span className="font-bold text-slate-800">{selectedBudget.source_of_fund || 'Retrieved'}</span>
-                </div>
-                {selectedBudget.project_code && (
-                  <div>
-                    <span className="text-slate-500 block">Project Code</span>
-                    <span className="font-bold text-slate-800">{selectedBudget.project_code}</span>
-                  </div>
-                )}
-                <div>
-                  <span className="text-slate-500 block">Financial Year</span>
-                  <span className="font-bold text-slate-800">{selectedBudget.financial_year || 'Retrieved'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Allocated Budget</span>
-                  <span className="font-bold text-slate-800">{formatCurrency(selectedBudget.total_allocation)}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Available Budget Balance</span>
-                  <span className="font-bold text-slate-800">{formatCurrency(selectedBudget.available_amount)}</span>
+                <div style={{ fontStyle: 'italic', fontSize: '11px', color: '#555' }}>
+                  Grand Total (in words): <span style={{ fontWeight: 'normal', borderBottom: '1px solid #ccc', paddingBottom: '2px', display: 'inline-block', minWidth: '300px', textAlign: 'left' }}>
+                    {/* Add words conversion logic later if needed, left blank as placeholder for now */}
+                  </span>
                 </div>
               </div>
-            </div>            {/* Section 2 - Item Information */}
-            <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
-                Section 2 – Item Information
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Item Name (Retrieved)</label>
-                  <input
-                    type="text"
-                    value={selectedBudget.item_name}
-                    disabled
-                    className="w-full border border-slate-200 bg-slate-50 rounded-lg py-2 px-3 text-sm font-medium text-slate-600 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Item Description / Detailed Requirement <span className="text-rose-500">*</span></label>
-                  <textarea
-                    rows={3}
-                    placeholder="Enter detailed specifications or description of the required item..."
-                    value={itemDescription}
-                    onChange={(e) => setItemDescription(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b]"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Quantity <span className="text-rose-500">*</span></label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={quantity || ''}
-                      onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
-                      className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b]"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">GST (%) <span className="text-rose-500">*</span></label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={gstRate}
-                      onChange={(e) => setGstRate(Number(e.target.value))}
-                      className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b]"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold text-slate-505 block mb-1">GST Amount (Auto Calculated)</span>
-                    <span className="font-bold text-slate-800 text-sm block pt-2">{formatCurrency(calculatedValues.gstAmount)}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold text-slate-505 block mb-1">Total Cost (Auto Calculated)</span>
-                    <span className="font-bold text-slate-800 text-sm block pt-2">{formatCurrency(calculatedValues.totalCost)}</span>
-                  </div>
-                </div>
 
                 {/* Compliance additions under Section 2 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
@@ -485,7 +563,6 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                     </div>
                   </div>
                 )}
-              </div>
             </div>
 
             {/* Section 3 - Procurement Information */}
@@ -632,51 +709,75 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 5 – Compliance Declarations */}
-            <div className="card p-6 bg-white shadow rounded-lg border border-slate-200 space-y-4">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
-                Section 5 – Compliance Declarations
-              </h2>
-              <div className="space-y-3">
-                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
+            {/* Section 5 – Compliance Declarations (NIT-style) */}
+            <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '10px', color: '#000' }}>
+                Section 5 – Declaration
+              </div>
+              <p style={{ fontSize: '12.5px', marginBottom: '10px', color: '#000' }}>
+                <strong>Certified that:</strong>
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
                   <input
                     type="checkbox"
-                    checked={declGeneric}
-                    onChange={(e) => setDeclGeneric(e.target.checked)}
-                    className="mt-1 accent-[#1a3a6b] shrink-0"
+                    checked={declEligibility}
+                    onChange={(e) => setDeclEligibility(e.target.checked)}
+                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: 'pointer' }}
                     required
                   />
-                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
-                    Certified that the description of the item/equipment/service indented is generic and does not indicate any particular trade mark, trade name and brand. The specifications are generic and broad based without having any restrictive parameters.
+                  <span>
+                    The eligibility criteria is not unduly restrictive.
                   </span>
                 </label>
 
-                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
                   <input
                     type="checkbox"
-                    checked={declSpecifications}
-                    onChange={(e) => setDeclSpecifications(e.target.checked)}
-                    className="mt-1 accent-[#1a3a6b] shrink-0"
+                    checked={declDemandDivision}
+                    onChange={(e) => setDeclDemandDivision(e.target.checked)}
+                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: 'pointer' }}
                     required
                   />
-                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
-                    Certified that the technical specifications of the item/equipment/service are generic and broad based and are enclosed herewith.
-                  </span>
-                </label>
-
-                <label className="flex items-start gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 select-none">
-                  <input
-                    type="checkbox"
-                    checked={declMii}
-                    onChange={(e) => setDeclMii(e.target.checked)}
-                    className="mt-1 accent-[#1a3a6b] shrink-0"
-                    required
-                  />
-                  <span className="text-xs text-slate-700 leading-relaxed font-medium">
-                    Certified that the item/equipment/service conforms to GFR provisions and local content requirements under Make In India policy.
+                  <span>
+                    The demand for goods is not divided into small quantities to make piecemeal purchases to avoid tendering or the necessity of obtaining the sanction of higher authorities required with references to the estimated value of the total demand.
                   </span>
                 </label>
               </div>
+            </div>
+
+            {/* Committee Note */}
+            <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '10px', color: '#000' }}>
+                Note – Purchase Committee
+              </div>
+              <p style={{ fontSize: '12px', color: '#555', marginBottom: '8px', fontStyle: 'italic' }}>
+                The following committee may finalize the above purchase:
+              </p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', color: '#000' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', width: '30%', background: '#f7f7f7' }}>HOD</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>(As per department, nominated by Director)</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Purchase Indentor</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{user?.name || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Technical Expert 1 (Nominated by HOD)</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget?.expert1_name || '(To be nominated by HOD)'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Technical Expert 2 (Nominated by HOD)</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget?.expert2_name || '(To be nominated by HOD)'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Internal Auditor (IA)</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>(As per institutional roster)</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             {/* Submission Controls */}

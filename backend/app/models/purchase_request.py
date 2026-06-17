@@ -11,7 +11,7 @@ import enum
 
 if TYPE_CHECKING:
     from app.models.user import User, Department, RoleManager
-    from app.models.budget import BudgetMaster, PurchaseCategory, FinancialYear, ProcurementManager, PhaseManager
+    from app.models.budget import BudgetMaster, PurchaseCategory, FinancialYear, ProcurementManager, PhaseManager, SourceOfFund
     from app.models.administrative_approval import AdministrativeApproval
 
 
@@ -292,12 +292,15 @@ class WorkFlowHierarchy(Base):
     condition_field: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     condition_operator: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     condition_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Source of Fund routing: NULL = applies to any fund (fallback), set = fund-specific variant
+    source_of_fund_id: Mapped[Optional[int]] = mapped_column(ForeignKey("source_of_funds.id", ondelete="SET NULL"), nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User")  # type: ignore
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")  # type: ignore
     category: Mapped["PurchaseCategory"] = relationship("PurchaseCategory")  # type: ignore
     phase: Mapped["PhaseManager"] = relationship("PhaseManager")  # type: ignore
     procurement: Mapped["ProcurementManager"] = relationship("ProcurementManager")  # type: ignore
+    source_of_fund: Mapped[Optional["SourceOfFund"]] = relationship("SourceOfFund")  # type: ignore
 
 
 class VendorMaster(Base):

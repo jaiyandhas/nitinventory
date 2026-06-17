@@ -7,7 +7,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.user import User, RoleManager
-    from app.models.budget import BudgetMaster
+    from app.models.budget import BudgetMaster, SourceOfFund
 
 
 class AdministrativeApproval(Base):
@@ -104,6 +104,9 @@ class AdministrativeApprovalWorkflow(Base):
     user_group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     skip_condition: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Source of Fund routing: NULL = applies to any fund (fallback), set = fund-specific variant
+    source_of_fund_id: Mapped[Optional[int]] = mapped_column(ForeignKey("source_of_funds.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")
+    source_of_fund: Mapped[Optional["SourceOfFund"]] = relationship("SourceOfFund")

@@ -61,6 +61,7 @@ export const queryKeys = {
     usersList: ['admin_users_list'] as const,
     financialYears: ['admin_financial_years'] as const,
     aaWorkflows: ['admin_aa_workflows'] as const,
+    sourceOfFunds: ['admin_source_of_funds'] as const,
   },
   users: {
     deptFaculty: ['departmentFaculty'] as const,

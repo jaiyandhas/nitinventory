@@ -10,7 +10,7 @@ import { REQUIREMENT_TYPES } from '../../config/prCreationQuestions';
 
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'workflows' | 'roles' | 'categories' | 'procurement' | 'users' | 'financial_years'>('workflows');
+  const [activeTab, setActiveTab] = useState<'workflows' | 'roles' | 'categories' | 'procurement' | 'users' | 'financial_years' | 'source_of_funds'>('workflows');
   
   // Workflows states
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
@@ -38,6 +38,14 @@ export const SettingsPage: React.FC = () => {
   const [isProcModalOpen, setIsProcModalOpen] = useState(false);
   const [editingProc, setEditingProc] = useState<any>(null);
 
+  // Source of Funds states
+  const [isSofModalOpen, setIsSofModalOpen] = useState(false);
+  const [editingSof, setEditingSof] = useState<any>(null);
+  const [newSofName, setNewSofName] = useState('');
+  const [newSofDescription, setNewSofDescription] = useState('');
+  // Selected SoF filter for workflow tab: null = "Any Source of Fund" (default fallback)
+  const [selectedSofId, setSelectedSofId] = useState<number | null>(null);
+
   // Budget Category states
   const [newBudgetExpVal, setNewBudgetExpVal] = useState('');
   const [newBudgetItemVal, setNewBudgetItemVal] = useState('');
@@ -63,6 +71,10 @@ export const SettingsPage: React.FC = () => {
     queryKey: queryKeys.budgets.categories,
     queryFn: () => adminApi.getCategories().then(res => res.data),
   });
+  const { data: sourceOfFunds = [] } = useQuery({
+    queryKey: queryKeys.admin.sourceOfFunds,
+    queryFn: () => adminApi.sourceOfFunds().then(res => res.data),
+  });
   const { data: designations = [] } = useQuery({
     queryKey: queryKeys.auth.designations,
     queryFn: () => authApi.designations().then(res => res.data)
@@ -71,13 +83,15 @@ export const SettingsPage: React.FC = () => {
   const filteredWfs = workflows.filter((w: any) => 
     w.category_id === selectedCat && 
     w.procurement_id === selectedProc &&
-    w.purchase_type === selectedPurchaseType
+    w.purchase_type === selectedPurchaseType &&
+    w.source_of_fund_id === selectedSofId
   ).sort((a: any, b: any) => a.step_order - b.step_order);
 
   const filteredAaWfs = aaWorkflows.filter((w: any) => 
     w.category_id === selectedCat && 
     w.procurement_id === selectedProc &&
-    w.purchase_type === selectedPurchaseType
+    w.purchase_type === selectedPurchaseType &&
+    w.source_of_fund_id === selectedSofId
   ).sort((a: any, b: any) => a.step_order - b.step_order);
 
   React.useEffect(() => {
@@ -131,7 +145,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const resetWfMutation = useMutation({
-    mutationFn: () => adminApi.resetWorkflow({ category_id: selectedCat, procurement_id: selectedProc, purchase_type: selectedPurchaseType }),
+    mutationFn: () => adminApi.resetWorkflow({ category_id: selectedCat, procurement_id: selectedProc, purchase_type: selectedPurchaseType, source_of_fund_id: selectedSofId }),
     onSuccess: () => {
       toast.success('Workflows reset to default');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
@@ -181,7 +195,8 @@ export const SettingsPage: React.FC = () => {
       return adminApi.resetAaWorkflow({
         category_id: selectedCat,
         procurement_id: selectedProc,
-        purchase_type: selectedPurchaseType
+        purchase_type: selectedPurchaseType,
+        source_of_fund_id: selectedSofId,
       });
     },
     onSuccess: () => {
@@ -189,6 +204,54 @@ export const SettingsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error resetting AA steps')
+  });
+
+  // Source of Funds mutations
+  const createSofMutation = useMutation({
+    mutationFn: (data: any) => adminApi.createSourceOfFund(data),
+    onSuccess: () => {
+      toast.success('Source of fund created');
+      setIsSofModalOpen(false);
+      setNewSofName('');
+      setNewSofDescription('');
+      setEditingSof(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.sourceOfFunds });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error creating source of fund')
+  });
+
+  const updateSofMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateSourceOfFund(id, data),
+    onSuccess: () => {
+      toast.success('Source of fund updated');
+      setIsSofModalOpen(false);
+      setEditingSof(null);
+      setNewSofName('');
+      setNewSofDescription('');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.sourceOfFunds });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error updating source of fund')
+  });
+
+  const toggleSofMutation = useMutation({
+    mutationFn: (id: number) => adminApi.toggleSourceOfFund(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.sourceOfFunds });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error toggling source of fund')
+  });
+
+  const deleteSofMutation = useMutation({
+    mutationFn: (id: number) => adminApi.deleteSourceOfFund(id),
+    onSuccess: () => {
+      toast.success('Source of fund deleted');
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.sourceOfFunds });
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.categories });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error: ' + (err.response?.data?.detail || 'cannot delete'))
   });
 
   // Role mutation
@@ -608,6 +671,12 @@ export const SettingsPage: React.FC = () => {
           >
             Financial Years
           </button>
+          <button 
+            onClick={() => setActiveTab('source_of_funds')} 
+            className={`px-4 py-2 text-sm font-semibold transition ${activeTab === 'source_of_funds' ? 'bg-[#1a3a6b] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+          >
+            Source of Funds
+          </button>
         </div>
       </div>
 
@@ -615,7 +684,7 @@ export const SettingsPage: React.FC = () => {
         <div className="space-y-6">
           {/* Purchase Constraints Selector */}
           <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Procurement Method</label>
                 <select value={selectedProc || ''} onChange={(e) => setSelectedProc(Number(e.target.value))} className="input-field w-full">
@@ -637,6 +706,19 @@ export const SettingsPage: React.FC = () => {
                 <select value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'department' | 'office')} className="input-field w-full">
                   <option value="department">Departmental Purchase</option>
                   <option value="office">Office Purchase</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Source of Fund</label>
+                <select
+                  value={selectedSofId === null ? '' : String(selectedSofId)}
+                  onChange={(e) => setSelectedSofId(e.target.value === '' ? null : Number(e.target.value))}
+                  className="input-field w-full"
+                >
+                  <option value="">Any Source of Fund (Default)</option>
+                  {(sourceOfFunds as any[]).map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name}{!f.is_active ? ' (Inactive)' : ''}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -2287,6 +2369,165 @@ export const SettingsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── SOURCE OF FUNDS TAB ───────────── */}
+      {activeTab === 'source_of_funds' && (
+        <div className="space-y-6">
+          <div className="card p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Source of Funds Master</h3>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Manage funding sources used in budget files and as workflow routing dimensions.
+                  <span className="ml-1 text-amber-600 font-medium">
+                    Active funds appear in budget creation forms.
+                  </span>
+                </p>
+              </div>
+              <button
+                onClick={() => { setEditingSof(null); setNewSofName(''); setNewSofDescription(''); setIsSofModalOpen(true); }}
+                className="btn-primary flex items-center gap-1.5 text-sm py-2 px-4"
+              >
+                <Plus size={16} /> Add Fund
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left py-3 px-4 font-semibold text-slate-600">Name</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-600">Description</th>
+                    <th className="text-center py-3 px-4 font-semibold text-slate-600">Status</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(sourceOfFunds as any[]).map((f: any) => (
+                    <tr key={f.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-800">{f.name}</td>
+                      <td className="py-3 px-4 text-slate-500">{f.description || '—'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${f.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {f.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex justify-end items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingSof(f);
+                              setNewSofName(f.name);
+                              setNewSofDescription(f.description || '');
+                              setIsSofModalOpen(true);
+                            }}
+                            className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                            title="Edit"
+                          >
+                            <Edit size={13} /> Edit
+                          </button>
+                          <button
+                            onClick={() => toggleSofMutation.mutate(f.id)}
+                            className={`text-xs py-1 px-2.5 rounded border font-semibold transition-colors ${f.is_active ? 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100' : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'}`}
+                            title={f.is_active ? 'Deactivate' : 'Activate'}
+                          >
+                            {f.is_active ? <UserX size={13} className="inline mr-1" /> : <UserCheck size={13} className="inline mr-1" />}
+                            {f.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete "${f.name}"? This will fail if it is referenced by any budget file, workflow, or AA workflow.`)) {
+                                deleteSofMutation.mutate(f.id);
+                              }
+                            }}
+                            className="btn-danger text-xs py-1 px-2.5 flex items-center gap-1"
+                            title="Delete"
+                          >
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {(sourceOfFunds as any[]).length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-slate-400 text-sm">
+                        No source of funds configured yet. Click "Add Fund" to get started.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card p-5 bg-blue-50 border border-blue-200 rounded-xl">
+            <h4 className="text-sm font-bold text-blue-800 mb-1.5">ℹ️ How Source of Funds Works</h4>
+            <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+              <li>Active funds appear in the budget file creation form.</li>
+              <li>In the <strong>Workflows</strong> tab, select a fund to view or configure fund-specific workflow routing.</li>
+              <li>If no fund-specific workflow is configured, the system falls back to the <em>Any Source of Fund (Default)</em> workflow.</li>
+              <li>Deactivate a fund to hide it from new budget entries without breaking existing data.</li>
+              <li>A fund cannot be deleted if it is referenced by budget files, PR workflows, or AA workflows.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── SOURCE OF FUNDS MODAL ───────────── */}
+      {isSofModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-fadeIn">
+            <h3 className="text-lg font-bold text-slate-800 mb-5">
+              {editingSof ? 'Edit Source of Fund' : 'Add Source of Fund'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Fund Name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={newSofName}
+                  onChange={(e) => setNewSofName(e.target.value)}
+                  placeholder="e.g. CAPEX (OH-35)"
+                  className="input-field w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Description</label>
+                <input
+                  type="text"
+                  value={newSofDescription}
+                  onChange={(e) => setNewSofDescription(e.target.value)}
+                  placeholder="Optional description"
+                  className="input-field w-full"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button
+                onClick={() => { setIsSofModalOpen(false); setEditingSof(null); setNewSofName(''); setNewSofDescription(''); }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!newSofName.trim()) { toast.error('Name is required'); return; }
+                  if (editingSof) {
+                    updateSofMutation.mutate({ id: editingSof.id, data: { name: newSofName.trim(), description: newSofDescription.trim() || undefined } });
+                  } else {
+                    createSofMutation.mutate({ name: newSofName.trim(), description: newSofDescription.trim() || undefined });
+                  }
+                }}
+                disabled={createSofMutation.isPending || updateSofMutation.isPending}
+                className="btn-primary"
+              >
+                {(createSofMutation.isPending || updateSofMutation.isPending) ? 'Saving...' : editingSof ? 'Save Changes' : 'Create Fund'}
+              </button>
+            </div>
           </div>
         </div>
       )}

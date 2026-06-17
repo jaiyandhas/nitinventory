@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.deps import require_roles, get_current_user
 from app.core.security import get_password_hash
 from app.models.user import User, Department, RoleManager
-from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings
+from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings, SourceOfFund
 from app.models.purchase_request import WorkFlowHierarchy, PurchaseRequest, PurchaseRequestItem, RequestStatus, PurchaseRequestHistory
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -897,13 +897,25 @@ async def budget_summary(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
 
 
 async def get_stored_categories(db: AsyncSession):
-    result_exp = await db.execute(select(Settings).where(Settings.key_name == "budget_source_of_fund_categories"))
-    exp_setting = result_exp.scalar_one_or_none()
-    if exp_setting:
-        exp_list = [c.strip() for c in exp_setting.value.split(",") if c.strip()]
+    # Try new SourceOfFund master table first
+    sof_result = await db.execute(select(SourceOfFund).where(SourceOfFund.is_active == True).order_by(SourceOfFund.name))
+    sof_rows = sof_result.scalars().all()
+    
+    if sof_rows:
+        exp_list = [s.name for s in sof_rows]
     else:
-        exp_list = ["CAPEX (OH-35)", "REVEX (OH-31)", "HOSTEL", "NIMCET", "ID", "PMRF", "SEED-GRANT", "HEFA", "STUDENT-WELFARE", "R&C"]
-        db.add(Settings(key_name="budget_source_of_fund_categories", value="CAPEX (OH-35),REVEX (OH-31),HOSTEL,NIMCET,ID,PMRF,SEED-GRANT,HEFA,STUDENT-WELFARE,R&C"))
+        # Fallback: read from legacy Settings table and seed SourceOfFund
+        result_exp = await db.execute(select(Settings).where(Settings.key_name == "budget_source_of_fund_categories"))
+        exp_setting = result_exp.scalar_one_or_none()
+        if exp_setting:
+            exp_list = [c.strip() for c in exp_setting.value.split(",") if c.strip()]
+        else:
+            exp_list = ["CAPEX (OH-35)", "REVEX (OH-31)", "HOSTEL", "NIMCET", "ID", "PMRF", "SEED-GRANT", "HEFA", "STUDENT-WELFARE", "R&C"]
+            db.add(Settings(key_name="budget_source_of_fund_categories", value="CAPEX (OH-35),REVEX (OH-31),HOSTEL,NIMCET,ID,PMRF,SEED-GRANT,HEFA,STUDENT-WELFARE,R&C"))
+            await db.flush()
+        # Seed SourceOfFund table from the list
+        for name in exp_list:
+            db.add(SourceOfFund(name=name, is_active=True))
         await db.flush()
 
     result_item = await db.execute(select(Settings).where(Settings.key_name == "budget_item_categories"))
@@ -1103,7 +1115,136 @@ async def delete_budget_category(
     return await get_stored_categories(db)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF FUNDS MASTER (Configurable)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/source-of-funds")
+async def list_source_of_funds(db: AsyncSession = Depends(get_db), _=AdminDep):
+    """Return all source of funds (active and inactive)."""
+    result = await db.execute(select(SourceOfFund).order_by(SourceOfFund.name))
+    funds = result.scalars().all()
+    return [
+        {
+            "id": f.id,
+            "name": f.name,
+            "description": f.description,
+            "is_active": f.is_active,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f in funds
+    ]
+
+
+@router.post("/source-of-funds")
+async def create_source_of_fund(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    """Create a new source of fund."""
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    existing = await db.execute(select(SourceOfFund).where(SourceOfFund.name == name))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Source of fund '{name}' already exists")
+
+    sof = SourceOfFund(
+        name=name,
+        description=(body.get("description") or "").strip() or None,
+        is_active=body.get("is_active", True),
+    )
+    db.add(sof)
+    await db.commit()
+    return {"message": "Source of fund created", "id": sof.id}
+
+
+@router.put("/source-of-funds/{sof_id}")
+async def update_source_of_fund(sof_id: int, body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    """Edit a source of fund (name, description, is_active)."""
+    result = await db.execute(select(SourceOfFund).where(SourceOfFund.id == sof_id))
+    sof = result.scalar_one_or_none()
+    if not sof:
+        raise HTTPException(status_code=404, detail="Source of fund not found")
+
+    if "name" in body:
+        new_name = (body["name"] or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="name cannot be empty")
+        # Check uniqueness (excluding self)
+        dup = await db.execute(
+            select(SourceOfFund).where(SourceOfFund.name == new_name, SourceOfFund.id != sof_id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Name '{new_name}' is already used by another fund")
+        sof.name = new_name
+    if "description" in body:
+        sof.description = (body["description"] or "").strip() or None
+    if "is_active" in body:
+        sof.is_active = body["is_active"]
+
+    await db.commit()
+    return {"message": "Source of fund updated"}
+
+
+@router.patch("/source-of-funds/{sof_id}/toggle")
+async def toggle_source_of_fund(sof_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
+    """Toggle is_active for a source of fund."""
+    result = await db.execute(select(SourceOfFund).where(SourceOfFund.id == sof_id))
+    sof = result.scalar_one_or_none()
+    if not sof:
+        raise HTTPException(status_code=404, detail="Source of fund not found")
+    sof.is_active = not sof.is_active
+    await db.commit()
+    return {"message": "Toggled", "is_active": sof.is_active}
+
+
+@router.delete("/source-of-funds/{sof_id}")
+async def delete_source_of_fund(sof_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
+    """
+    Hard-delete a source of fund only if it's not referenced anywhere.
+    If it IS referenced, return 400 suggesting deactivation instead.
+    """
+    result = await db.execute(select(SourceOfFund).where(SourceOfFund.id == sof_id))
+    sof = result.scalar_one_or_none()
+    if not sof:
+        raise HTTPException(status_code=404, detail="Source of fund not found")
+
+    # Check references in BudgetMaster (by string name match for backward compat)
+    bm_count_res = await db.execute(
+        select(func.count(BudgetMaster.id)).where(BudgetMaster.source_of_fund == sof.name)
+    )
+    bm_count = bm_count_res.scalar() or 0
+
+    # Check references in WorkFlowHierarchy (by FK)
+    wf_count_res = await db.execute(
+        select(func.count(WorkFlowHierarchy.id)).where(WorkFlowHierarchy.source_of_fund_id == sof_id)
+    )
+    wf_count = wf_count_res.scalar() or 0
+
+    # Check references in AdministrativeApprovalWorkflow (by FK)
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    aaw_count_res = await db.execute(
+        select(func.count(AdministrativeApprovalWorkflow.id)).where(AdministrativeApprovalWorkflow.source_of_fund_id == sof_id)
+    )
+    aaw_count = aaw_count_res.scalar() or 0
+
+    total_refs = bm_count + wf_count + aaw_count
+    if total_refs > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot delete '{sof.name}': it is referenced by "
+                f"{bm_count} budget file(s), {wf_count} PR workflow step(s), and "
+                f"{aaw_count} AA workflow step(s). Please deactivate it instead."
+            )
+        )
+
+    await db.delete(sof)
+    await db.commit()
+    return {"message": f"Source of fund '{sof.name}' deleted"}
+
+
 @router.get("/budget/next-file-number")
+
 async def get_next_file_number(
     department_id: int,
     source_of_fund: str = Query(None),
@@ -1724,6 +1865,7 @@ async def list_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "condition_field": w.condition_field,
             "condition_operator": w.condition_operator,
             "condition_value": w.condition_value,
+            "source_of_fund_id": w.source_of_fund_id,
         }
         for w in entries
     ]
@@ -1775,6 +1917,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         condition_field=body.get("condition_field"),
         condition_operator=body.get("condition_operator"),
         condition_value=body.get("condition_value"),
+        source_of_fund_id=body.get("source_of_fund_id"),  # None = any fund (default)
     )
     db.add(wf)
     await db.commit()
@@ -1839,6 +1982,8 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         wf.condition_operator = body["condition_operator"]
     if "condition_value" in body:
         wf.condition_value = body["condition_value"]
+    if "source_of_fund_id" in body:
+        wf.source_of_fund_id = body["source_of_fund_id"]
     await db.commit()
     return {"message": "Workflow updated"}
 
@@ -1885,6 +2030,8 @@ async def reset_workflows(body: dict, db: AsyncSession = Depends(get_db), _=Admi
     cat_id = body.get("category_id")
     proc_id = body.get("procurement_id")
     purchase_type = body.get("purchase_type", "department")
+    # source_of_fund_id=None resets the default (any-fund) variant only
+    source_of_fund_id = body.get("source_of_fund_id", None)
     if not cat_id or not proc_id:
         raise HTTPException(status_code=400, detail="Missing category_id or procurement_id")
 
@@ -1898,13 +2045,14 @@ async def reset_workflows(body: dict, db: AsyncSession = Depends(get_db), _=Admi
     if not proc:
         raise HTTPException(status_code=404, detail="Procurement method not found")
 
-    await db.execute(
-        delete(WorkFlowHierarchy).where(
-            WorkFlowHierarchy.category_id == cat_id,
-            WorkFlowHierarchy.procurement_id == proc_id,
-            WorkFlowHierarchy.purchase_type == purchase_type,
-        )
+    # Scope delete to the specific source_of_fund_id variant only
+    delete_filter = and_(
+        WorkFlowHierarchy.category_id == cat_id,
+        WorkFlowHierarchy.procurement_id == proc_id,
+        WorkFlowHierarchy.purchase_type == purchase_type,
+        WorkFlowHierarchy.source_of_fund_id == source_of_fund_id,
     )
+    await db.execute(delete(WorkFlowHierarchy).where(delete_filter))
 
     roles_res = await db.execute(select(RoleManager))
     roles = {r.value: r for r in roles_res.scalars()}
@@ -1929,6 +2077,7 @@ async def reset_workflows(body: dict, db: AsyncSession = Depends(get_db), _=Admi
     all_rows = build_workflow_steps(roles, phases, categories, [proc])
     for w in all_rows:
         if w.purchase_type == purchase_type:
+            w.source_of_fund_id = source_of_fund_id
             db.add(w)
 
     await db.commit()
@@ -2270,6 +2419,7 @@ async def list_aa_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "user_group": s.user_group,
             "is_enabled": s.is_enabled,
             "skip_condition": s.skip_condition,
+            "source_of_fund_id": s.source_of_fund_id,
         }
         for s in steps
     ]
@@ -2313,6 +2463,7 @@ async def create_aa_workflow(body: dict, db: AsyncSession = Depends(get_db), _=A
         procurement_id=procurement_id,
         purchase_type=purchase_type,
         skip_condition=skip_condition,
+        source_of_fund_id=body.get("source_of_fund_id"),  # None = any fund (default)
     )
     db.add(s)
     await db.commit()
@@ -2343,6 +2494,8 @@ async def update_aa_workflow(step_id: int, body: dict, db: AsyncSession = Depend
         s.purchase_type = body["purchase_type"]
     if "skip_condition" in body:
         s.skip_condition = body["skip_condition"]
+    if "source_of_fund_id" in body:
+        s.source_of_fund_id = body["source_of_fund_id"]
         
     await db.commit()
     return {"message": "Workflow step updated"}
@@ -2359,10 +2512,11 @@ async def delete_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _
     cat_id = s.category_id
     proc_id = s.procurement_id
     p_type = s.purchase_type
+    sof_id = s.source_of_fund_id
     
     await db.delete(s)
     
-    # Re-normalize step orders
+    # Re-normalize step orders within same SoF variant
     remaining_res = await db.execute(
         select(AdministrativeApprovalWorkflow)
         .where(
@@ -2370,6 +2524,7 @@ async def delete_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _
                 AdministrativeApprovalWorkflow.category_id == cat_id,
                 AdministrativeApprovalWorkflow.procurement_id == proc_id,
                 AdministrativeApprovalWorkflow.purchase_type == p_type,
+                AdministrativeApprovalWorkflow.source_of_fund_id == sof_id,
             )
         )
         .order_by(AdministrativeApprovalWorkflow.step_order)
@@ -2420,6 +2575,8 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
     category_id = body.get("category_id")
     procurement_id = body.get("procurement_id")
     purchase_type = body.get("purchase_type")
+    # source_of_fund_id=None resets the default (any-fund) variant only
+    source_of_fund_id = body.get("source_of_fund_id", None)
     
     if not category_id or not procurement_id or not purchase_type:
         raise HTTPException(status_code=400, detail="category_id, procurement_id, and purchase_type are required")
@@ -2430,6 +2587,7 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
                 AdministrativeApprovalWorkflow.category_id == category_id,
                 AdministrativeApprovalWorkflow.procurement_id == procurement_id,
                 AdministrativeApprovalWorkflow.purchase_type == purchase_type,
+                AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
             )
         )
     )
@@ -2443,7 +2601,8 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
             purchase_type=purchase_type,
             step_order=1,
             user_group="HOD",
-            role_id=roles["hod"].id
+            role_id=roles["hod"].id,
+            source_of_fund_id=source_of_fund_id
         ),
         AdministrativeApprovalWorkflow(
             category_id=category_id,
@@ -2451,7 +2610,8 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
             purchase_type=purchase_type,
             step_order=2,
             user_group="ADPD",
-            role_id=roles["adpd"].id
+            role_id=roles["adpd"].id,
+            source_of_fund_id=source_of_fund_id
         ),
         AdministrativeApprovalWorkflow(
             category_id=category_id,
@@ -2459,7 +2619,8 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
             purchase_type=purchase_type,
             step_order=3,
             user_group="Director",
-            role_id=roles["director"].id
+            role_id=roles["director"].id,
+            source_of_fund_id=source_of_fund_id
         ),
     ]
     for s in default_aa_steps:

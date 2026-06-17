@@ -59,7 +59,7 @@ async def resolve_next_step(db: AsyncSession, aa: AdministrativeApproval, steps:
     return None
 
 
-async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_procurement: str) -> list:
+async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_procurement: str, source_of_fund_id: Optional[int] = None) -> list:
     from app.models.administrative_approval import AdministrativeApprovalWorkflow
     from app.models.budget import PurchaseCategory, ProcurementManager
     from sqlalchemy import select, and_
@@ -90,6 +90,7 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
         
     steps = []
     if cat and proc_id:
+        # 1. Try to find steps matching the specific source of fund
         steps_res = await db.execute(
             select(AdministrativeApprovalWorkflow)
             .options(selectinload(AdministrativeApprovalWorkflow.role))
@@ -99,13 +100,33 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
                     AdministrativeApprovalWorkflow.procurement_id == proc_id,
                     AdministrativeApprovalWorkflow.purchase_type == "department",
                     AdministrativeApprovalWorkflow.is_enabled == True,
+                    AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
                 )
             )
             .order_by(AdministrativeApprovalWorkflow.step_order)
         )
         steps = steps_res.scalars().all()
         
+        # 2. If not found and a source_of_fund_id was provided, fall back to the default (source_of_fund_id == None)
+        if not steps and source_of_fund_id is not None:
+            steps_res = await db.execute(
+                select(AdministrativeApprovalWorkflow)
+                .options(selectinload(AdministrativeApprovalWorkflow.role))
+                .where(
+                    and_(
+                        AdministrativeApprovalWorkflow.category_id == cat.id,
+                        AdministrativeApprovalWorkflow.procurement_id == proc_id,
+                        AdministrativeApprovalWorkflow.purchase_type == "department",
+                        AdministrativeApprovalWorkflow.is_enabled == True,
+                        AdministrativeApprovalWorkflow.source_of_fund_id == None,
+                    )
+                )
+                .order_by(AdministrativeApprovalWorkflow.step_order)
+            )
+            steps = steps_res.scalars().all()
+        
     if not steps:
+        # Try specific source of fund first for category_id == None fallback
         steps_res = await db.execute(
             select(AdministrativeApprovalWorkflow)
             .options(selectinload(AdministrativeApprovalWorkflow.role))
@@ -113,11 +134,28 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
                 and_(
                     AdministrativeApprovalWorkflow.category_id == None,
                     AdministrativeApprovalWorkflow.is_enabled == True,
+                    AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
                 )
             )
             .order_by(AdministrativeApprovalWorkflow.step_order)
         )
         steps = steps_res.scalars().all()
+        
+        # Fall back to default fund
+        if not steps and source_of_fund_id is not None:
+            steps_res = await db.execute(
+                select(AdministrativeApprovalWorkflow)
+                .options(selectinload(AdministrativeApprovalWorkflow.role))
+                .where(
+                    and_(
+                        AdministrativeApprovalWorkflow.category_id == None,
+                        AdministrativeApprovalWorkflow.is_enabled == True,
+                        AdministrativeApprovalWorkflow.source_of_fund_id == None,
+                    )
+                )
+                .order_by(AdministrativeApprovalWorkflow.step_order)
+            )
+            steps = steps_res.scalars().all()
         
     if not steps:
         from app.models.user import RoleManager
@@ -235,9 +273,18 @@ async def create_aa(
         )
         
     # System Calculations
-    base_cost = quantity * budget_file.unit_cost
-    gst_amount = base_cost * (gst_rate / 100.0)
-    total_cost = base_cost + gst_amount
+    total_cost = body.get("total_cost")
+    gst_amount = body.get("gst_amount")
+    if total_cost is not None and gst_amount is not None:
+        try:
+            total_cost = float(total_cost)
+            gst_amount = float(gst_amount)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid total_cost or gst_amount.")
+    else:
+        base_cost = quantity * budget_file.unit_cost
+        gst_amount = base_cost * (gst_rate / 100.0)
+        total_cost = base_cost + gst_amount
     
     # Validation Rule 2: Total Cost shall not exceed the Available Budget Balance.
     if total_cost > budget_file.available_balance:
@@ -247,7 +294,15 @@ async def create_aa(
         )
         
     # Query workflow steps to set initial status and pending_with
-    steps = await _get_aa_workflow_steps(db, total_cost, mode_of_procurement)
+    source_of_fund_id = None
+    if budget_file.source_of_fund:
+        from app.models.budget import SourceOfFund
+        sof_res = await db.execute(
+            select(SourceOfFund.id).where(SourceOfFund.name == budget_file.source_of_fund)
+        )
+        source_of_fund_id = sof_res.scalar_one_or_none()
+        
+    steps = await _get_aa_workflow_steps(db, total_cost, mode_of_procurement, source_of_fund_id)
 
     # Create the AdministrativeApproval request
     aa = AdministrativeApproval(
@@ -287,7 +342,7 @@ async def create_aa(
             approval_id=aa.id,
             nominee_id=nid,
             step_order=order,
-            status="Pending"
+            status="Notified"
         )
         db.add(nom)
 
@@ -642,7 +697,8 @@ async def action_aa(
         select(AdministrativeApproval)
         .options(
             selectinload(AdministrativeApproval.pi).selectinload(User.department),
-            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year)
+            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
+            selectinload(AdministrativeApproval.history)
         )
         .where(AdministrativeApproval.id == aa_id)
         .with_for_update()
@@ -654,15 +710,69 @@ async def action_aa(
     if aa.status in ("Administrative Approval Granted", "Rejected"):
         raise HTTPException(status_code=400, detail="This request has already been finalized and locked.")
         
+    history_res = await db.execute(
+        select(AdministrativeApprovalHistory)
+        .where(AdministrativeApprovalHistory.approval_id == aa.id)
+    )
+    aa_history = history_res.scalars().all()
+        
     # Validate authorization based on status and pending_with using database configured steps
-    steps = await _get_aa_workflow_steps(db, aa.total_cost, aa.mode_of_procurement)
+    source_of_fund_id = None
+    if aa.budget_file and aa.budget_file.source_of_fund:
+        from app.models.budget import SourceOfFund
+        sof_res = await db.execute(
+            select(SourceOfFund.id).where(SourceOfFund.name == aa.budget_file.source_of_fund)
+        )
+        source_of_fund_id = sof_res.scalar_one_or_none()
+        
+    steps = await _get_aa_workflow_steps(db, aa.total_cost, aa.mode_of_procurement, source_of_fund_id)
 
     current_idx = -1
-    if aa.pending_with:
-        for idx, s in enumerate(steps):
-            if s.user_group.lower() == aa.pending_with.lower():
-                current_idx = idx
-                break
+    
+    # Trace history to find last approved index, then find the current pending index
+    last_approved_idx = -1
+    traced = [(-1, "pi")]
+    sorted_history = sorted(aa_history, key=lambda x: x.acted_at)
+    for h in sorted_history:
+        status = h.status
+        role = h.approver_role.lower()
+        if status == "Submitted":
+            last_approved_idx = -1
+            traced = [(-1, "pi")]
+        elif status == "Approved":
+            found_idx = -1
+            for idx in range(last_approved_idx + 1, len(steps)):
+                if steps[idx].user_group.lower() == role:
+                    found_idx = idx
+                    break
+            if found_idx != -1:
+                last_approved_idx = found_idx
+                traced.append((found_idx, role))
+        elif status in ("Returned", "Returned to PI", "Send Back"):
+            target_idx = -1
+            for t_idx, t_role in reversed(traced):
+                if t_role != role:
+                    target_idx = t_idx
+                    break
+            if target_idx != -1:
+                last_approved_idx = target_idx - 1
+                traced = [t for t in traced if t[0] < target_idx]
+            else:
+                last_approved_idx = -1
+                traced = [(-1, "pi")]
+
+    next_step_data = await resolve_next_step(db, aa, steps, last_approved_idx)
+    resolved_idx = next_step_data["idx"] if next_step_data else -1
+    
+    if resolved_idx != -1 and aa.pending_with and steps[resolved_idx].user_group.lower() == aa.pending_with.lower():
+        current_idx = resolved_idx
+    else:
+        # Fallback to string matching
+        if aa.pending_with:
+            for idx, s in enumerate(steps):
+                if s.user_group.lower() == aa.pending_with.lower():
+                    current_idx = idx
+                    break
 
     is_pi_resub = (aa.status == "Returned to PI" and aa.pending_with and aa.pending_with.upper() == "PI")
 
@@ -689,9 +799,18 @@ async def action_aa(
         if "justification" in body:
             aa.justification = body["justification"]
             
-        aa.total_cost = aa.quantity * aa.budget_file.unit_cost
-        aa.gst_amount = aa.total_cost * (aa.gst_rate / 100.0)
-        aa.total_cost = aa.total_cost + aa.gst_amount
+        total_cost_in = body.get("total_cost")
+        gst_amount_in = body.get("gst_amount")
+        if total_cost_in is not None and gst_amount_in is not None:
+            try:
+                aa.total_cost = float(total_cost_in)
+                aa.gst_amount = float(gst_amount_in)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid total_cost or gst_amount.")
+        else:
+            aa.total_cost = aa.quantity * aa.budget_file.unit_cost
+            aa.gst_amount = aa.total_cost * (aa.gst_rate / 100.0)
+            aa.total_cost = aa.total_cost + aa.gst_amount
         
         if aa.total_cost > aa.budget_file.available_balance:
             raise HTTPException(
@@ -841,7 +960,7 @@ async def action_aa(
         elif action == "Send Back":
             # Search history in reverse for the last Approved/Submitted action from a different role
             prev_role = None
-            sorted_history = sorted(aa.history, key=lambda x: x.acted_at, reverse=True)
+            sorted_history = sorted(aa_history, key=lambda x: x.acted_at, reverse=True)
             for h in sorted_history:
                 if h.status in ("Approved", "Submitted") and h.approver_role != approver_role:
                     prev_role = h.approver_role
@@ -1007,7 +1126,7 @@ async def action_aa(
                             approval_id=aa.id,
                             nominee_id=nid,
                             step_order=order,
-                            status="Pending"
+                            status="Notified"
                         )
                         db.add(nom)
                 
@@ -1017,21 +1136,62 @@ async def action_aa(
                     select(AdministrativeApprovalNominee).where(AdministrativeApprovalNominee.approval_id == aa.id).order_by(AdministrativeApprovalNominee.step_order)
                 )
                 existing_noms = nom_res.scalars().all()
-                if not existing_noms:
-                    raise HTTPException(status_code=400, detail="No committee nominees configured for this request.")
                 
-                aa.status = f"Pending with Nominee {existing_noms[0].step_order}"
-                aa.pending_with = f"Nominee {existing_noms[0].step_order}"
-                hist_status = "Approved"
+                # Update status of existing nominees to Notified if they are not already
+                for nom in existing_noms:
+                    if nom.status != "Notified":
+                        nom.status = "Notified"
                 
-                # Notify first nominee
-                await send_notification(
-                    db,
-                    existing_noms[0].nominee_id,
-                    "Administrative Approval - Nominee Evaluation",
-                    f"Administrative Approval request REQ-{aa.id} has been forwarded to you for nominee evaluation.",
-                    f"/administrative-approvals/{aa.id}"
-                )
+                # Notify all nominees
+                for nom in existing_noms:
+                    await send_notification(
+                        db,
+                        nom.nominee_id,
+                        "Administrative Approval - Committee Nomination",
+                        f"You have been nominated by the HOD for Administrative Approval request REQ-{aa.id}.",
+                        f"/administrative-approvals/{aa.id}"
+                    )
+                
+                # Find the next step in standard workflow, bypassing nominee steps
+                next_step_data = await resolve_next_step(db, aa, steps, current_idx)
+                if next_step_data:
+                    next_step = next_step_data["step"]
+                    next_role = next_step.user_group
+                    aa.status = f"Pending with {next_role}"
+                    aa.pending_with = next_role
+                    hist_status = "Approved"
+                    
+                    # Notify next role group
+                    await notify_group(
+                        db,
+                        next_role,
+                        aa.pi.department_id,
+                        "Administrative Approval Request Awaiting Action",
+                        f"Administrative Approval request REQ-{aa.id} is pending your action.",
+                        f"/administrative-approvals/{aa.id}"
+                    )
+                else:
+                    aa.status = "Administrative Approval Granted"
+                    aa.pending_with = None
+                    aa.approved_at = datetime.now()
+                    
+                    # Generate unique Administrative Approval Number
+                    dept_code = aa.pi.department.short_code if aa.pi.department else "GEN"
+                    fy_label = aa.budget_file.financial_year.label
+                    aa.aa_number = f"AA/{fy_label}/{dept_code}/{aa.id:03d}"
+                    hist_status = "Approved"
+                    
+                    # Commit the budget allocation committed amount
+                    aa.budget_file.committed_amount += aa.total_cost
+                    
+                    # Notify PI
+                    await send_notification(
+                        db,
+                        aa.pi_id,
+                        "Administrative Approval Granted",
+                        f"Administrative Approval has been GRANTED for request {aa.aa_number}.",
+                        f"/administrative-approvals/{aa.id}"
+                    )
             else:
                 next_step_data = await resolve_next_step(db, aa, steps, current_idx)
                 if next_step_data:
@@ -1076,7 +1236,7 @@ async def action_aa(
         elif action == "Send Back":
             # Search history in reverse for the last Approved/Submitted action from a different role
             prev_role = None
-            sorted_history = sorted(aa.history, key=lambda x: x.acted_at, reverse=True)
+            sorted_history = sorted(aa_history, key=lambda x: x.acted_at, reverse=True)
             for h in sorted_history:
                 if h.status in ("Approved", "Submitted") and h.approver_role != approver_role:
                     prev_role = h.approver_role

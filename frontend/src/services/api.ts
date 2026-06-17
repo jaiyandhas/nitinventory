@@ -213,7 +213,13 @@ export const adminApi = {
   deleteAaWorkflow: (id: number) => api.delete(`/admin/aa-workflows/${id}`),
   toggleAaWorkflow: (id: number) => api.patch(`/admin/aa-workflows/${id}/toggle`, {}),
   reorderAaWorkflows: (data: object) => api.post('/admin/aa-workflows/reorder', data),
-  resetAaWorkflow: (data: { category_id: number; procurement_id: number; purchase_type: string }) => api.post('/admin/aa-workflows/reset-defaults', data),
+  resetAaWorkflow: (data: { category_id: number; procurement_id: number; purchase_type: string; source_of_fund_id?: number | null }) => api.post('/admin/aa-workflows/reset-defaults', data),
+  // Source of Funds Master
+  sourceOfFunds: () => api.get('/admin/source-of-funds'),
+  createSourceOfFund: (data: { name: string; description?: string; is_active?: boolean }) => api.post('/admin/source-of-funds', data),
+  updateSourceOfFund: (id: number, data: { name?: string; description?: string; is_active?: boolean }) => api.put(`/admin/source-of-funds/${id}`, data),
+  deleteSourceOfFund: (id: number) => api.delete(`/admin/source-of-funds/${id}`),
+  toggleSourceOfFund: (id: number) => api.patch(`/admin/source-of-funds/${id}/toggle`, {}),
 };
 
 // Administrative Approvals
@@ -226,6 +232,8 @@ export const aaApi = {
     quantity: number;
     item_description: string;
     gst_rate: number;
+    total_cost?: number;
+    gst_amount?: number;
     mode_of_procurement: string;
     justification: string;
     item_category: string;

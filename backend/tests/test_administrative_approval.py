@@ -27,6 +27,14 @@ async def test_administrative_approval_workflow(db_session):
     adpd = adpd_res.scalar_one()
     await db_session.refresh(adpd, ["department", "role"])
 
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+    await db_session.refresh(dean, ["department", "role"])
+
+    ia_res = await db_session.execute(select(User).where(User.email == "ia@nitt.edu"))
+    ia_user = ia_res.scalar_one()
+    await db_session.refresh(ia_user, ["department", "role"])
+
     dir_role_res = await db_session.execute(select(RoleManager).where(RoleManager.value == "director"))
     dir_role = dir_role_res.scalar_one()
     
@@ -77,7 +85,13 @@ async def test_administrative_approval_workflow(db_session):
         "item_description": "Test smart projector for CSE lab",
         "gst_rate": 18.0,
         "mode_of_procurement": "GeM",
-        "justification": "Required for presenting research seminars"
+        "justification": "Required for presenting research seminars",
+        "item_category": "Assets",
+        "stock_availability": "No",
+        "present_stock": "0",
+        "prev_file_no": "None",
+        "justification_procurement": "Required",
+        "generic_specification_declaration": True
     }
 
     create_res = await create_aa(body, db_session, faculty)
@@ -98,30 +112,30 @@ async def test_administrative_approval_workflow(db_session):
         "remarks": "Recommended for purchase."
     }
     action_res = await action_aa(aa_id, hod_action_body, db_session, hod)
-    assert action_res["status"] == "Pending with Nominee 1"
-
-    # 4a. Nominee 1 reviews and approves
-    nom1_action_body = {
-        "action": "Approve",
-        "remarks": "Nominee 1 approves."
-    }
-    action_res = await action_aa(aa_id, nom1_action_body, db_session, faculty)
-    assert action_res["status"] == "Pending with Nominee 2"
-
-    # 4b. Nominee 2 reviews and approves
-    nom2_action_body = {
-        "action": "Approve",
-        "remarks": "Nominee 2 approves."
-    }
-    action_res = await action_aa(aa_id, nom2_action_body, db_session, faculty)
     assert action_res["status"] == "Pending with ADPD"
 
-    # 5. ADPD reviews and approves
+    # 5. ADPD reviews and approves -> goes to Dean
     adpd_action_body = {
         "action": "Approve",
         "remarks": "Budget verified, recommended."
     }
     action_res = await action_aa(aa_id, adpd_action_body, db_session, adpd)
+    assert action_res["status"] == "Pending with Dean"
+
+    # 5a. Dean reviews and approves -> goes to IA
+    dean_action_body = {
+        "action": "Approve",
+        "remarks": "Recommended by Dean."
+    }
+    action_res = await action_aa(aa_id, dean_action_body, db_session, dean)
+    assert action_res["status"] == "Pending with IA"
+
+    # 5b. IA reviews and approves -> goes to Director
+    ia_action_body = {
+        "action": "Approve",
+        "remarks": "Audited and verified."
+    }
+    action_res = await action_aa(aa_id, ia_action_body, db_session, ia_user)
     assert action_res["status"] == "Pending with Director"
 
     # 6. Director approves
@@ -332,18 +346,19 @@ async def test_administrative_approval_admin_endpoints(db_session):
     )
 
     # 1. Reset workflows to default
-    await reset_aa_workflows(db_session, admin_mock)
+    await reset_aa_workflows({"category_id": 1, "procurement_id": 1, "purchase_type": "department"}, db_session, admin_mock)
     
     # 2. List workflows
     steps = await list_aa_workflows(db_session, admin_mock)
-    assert len(steps) == 3
-    assert steps[0]["user_group"] == "HOD"
-    assert steps[1]["user_group"] == "ADPD"
-    assert steps[2]["user_group"] == "Director"
+    my_steps = [s for s in steps if s["category_id"] == 1 and s["procurement_id"] == 1 and s["purchase_type"] == "department"]
+    assert len(my_steps) == 3
+    assert my_steps[0]["user_group"] == "HOD"
+    assert my_steps[1]["user_group"] == "ADPD"
+    assert my_steps[2]["user_group"] == "Director"
 
     # 3. Create a workflow step
     new_step_res = await create_aa_workflow(
-        {"user_group": "Dean", "step_order": 4},
+        {"user_group": "Dean", "step_order": 4, "category_id": 1, "procurement_id": 1, "purchase_type": "department"},
         db_session,
         admin_mock
     )
@@ -352,8 +367,9 @@ async def test_administrative_approval_admin_endpoints(db_session):
 
     # List and check count
     steps = await list_aa_workflows(db_session, admin_mock)
-    assert len(steps) == 4
-    assert steps[3]["user_group"] == "Dean"
+    my_steps = [s for s in steps if s["category_id"] == 1 and s["procurement_id"] == 1 and s["purchase_type"] == "department"]
+    assert len(my_steps) == 4
+    assert my_steps[3]["user_group"] == "Dean"
 
     # 4. Update a workflow step
     update_res = await update_aa_workflow(
@@ -375,7 +391,8 @@ async def test_administrative_approval_admin_endpoints(db_session):
 
     # 6. Reorder workflows
     all_steps = await list_aa_workflows(db_session, admin_mock)
-    step_ids = [s["id"] for s in all_steps]
+    my_steps = [s for s in all_steps if s["category_id"] == 1 and s["procurement_id"] == 1 and s["purchase_type"] == "department"]
+    step_ids = [s["id"] for s in my_steps]
     reversed_ids = list(reversed(step_ids))
     
     reorder_res = await reorder_aa_workflows(
@@ -395,4 +412,178 @@ async def test_administrative_approval_admin_endpoints(db_session):
 
     # List and verify remaining
     steps = await list_aa_workflows(db_session, admin_mock)
-    assert len(steps) == 3
+    my_steps = [s for s in steps if s["category_id"] == 1 and s["procurement_id"] == 1 and s["purchase_type"] == "department"]
+    assert len(my_steps) == 3
+
+
+@pytest.mark.asyncio
+async def test_duplicate_steps_and_nomineeless_routing(db_session):
+    db_session.commit = db_session.flush
+
+    # 1. Fetch Users
+    faculty_res = await db_session.execute(select(User).where(User.email == "faculty.cse@nitt.edu"))
+    faculty = faculty_res.scalar_one()
+    await db_session.refresh(faculty, ["department", "role"])
+
+    hod_res = await db_session.execute(select(User).where(User.email == "hod.cse@nitt.edu"))
+    hod = hod_res.scalar_one()
+    await db_session.refresh(hod, ["department", "role"])
+
+    adpd_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    adpd = adpd_res.scalar_one()
+    await db_session.refresh(adpd, ["department", "role"])
+
+    dean_res = await db_session.execute(select(User).where(User.email == "dean.pd@nitt.edu"))
+    dean = dean_res.scalar_one()
+    await db_session.refresh(dean, ["department", "role"])
+
+    dir_role_res = await db_session.execute(select(RoleManager).where(RoleManager.value == "director"))
+    dir_role = dir_role_res.scalar_one()
+    director_res = await db_session.execute(select(User).where(User.role_id == dir_role.id))
+    director = director_res.scalars().first()
+    if not director:
+        director = User(
+            name="J. Director",
+            email="director@nitt.edu",
+            hashed_password="password",
+            designation="Director",
+            gender="male",
+            role_id=dir_role.id,
+            is_active=True,
+            is_approved=True,
+        )
+        db_session.add(director)
+        await db_session.flush()
+    else:
+        await db_session.refresh(director, ["role"])
+
+    # 2. Setup Category and Procurement Mode
+    from app.models.budget import PurchaseCategory, ProcurementManager
+    proc = ProcurementManager(name="Super Unique Procurement")
+    db_session.add(proc)
+    await db_session.flush()
+
+    cat = PurchaseCategory(
+        title="Special Category",
+        min_amount=1000.0,
+        max_amount=10000.0,
+        procurement_id=proc.id
+    )
+    db_session.add(cat)
+    await db_session.flush()
+
+    # 3. Add steps with duplicate groups: HOD -> ADPD -> Dean -> Dean -> Director
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    steps_data = [
+        ("HOD", 1),
+        ("ADPD", 2),
+        ("Dean", 3),
+        ("Dean", 4),
+        ("Director", 5)
+    ]
+    for grp, order in steps_data:
+        db_session.add(AdministrativeApprovalWorkflow(
+            category_id=cat.id,
+            procurement_id=proc.id,
+            purchase_type="department",
+            step_order=order,
+            user_group=grp,
+            is_enabled=True
+        ))
+    await db_session.flush()
+
+    # 4. Get financial year and create nominee-less budget
+    fy_res = await db_session.execute(select(FinancialYear).limit(1))
+    fy = fy_res.scalar_one()
+
+    budget = BudgetMaster(
+        department_id=faculty.department_id,
+        financial_year_id=fy.id,
+        source_of_fund="OPEX",
+        item_name="Smart Board Boardless",
+        category="equipment",
+        course_code="CSE-TEST-1",
+        unit_cost=3000.0,
+        quantity=1,
+        total_allocation=5000.0,
+        file_no="NITT/F.No.9999/OPEX/2026-27/CSE",
+        is_revision=False,
+        committed_amount=0.0,
+        utilized_amount=0.0,
+        allocated_initiator_id=faculty.id,
+        expert1_id=None,
+        expert2_id=None,
+        nominee_ids=None
+    )
+    db_session.add(budget)
+    await db_session.flush()
+
+    # 5. Create AA request (PI Submission)
+    body = {
+        "budget_file_id": budget.id,
+        "item_description": "Test Smart Board for Super Unique Procurement",
+        "gst_rate": 18.0,
+        "mode_of_procurement": "Super Unique Procurement",
+        "justification": "Required for lab upgrades",
+        "item_category": "Assets",
+        "stock_availability": "No",
+        "present_stock": "0",
+        "prev_file_no": "None",
+        "justification_procurement": "Required",
+        "generic_specification_declaration": True
+    }
+
+    create_res = await create_aa(body, db_session, faculty)
+    assert create_res["message"] == "Administrative Approval request created successfully."
+    aa_id = create_res["id"]
+
+    # 6. Action 1: HOD Approves
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "HOD approval, no nominees"},
+        db=db_session,
+        user=hod
+    )
+    assert action_res["status"] == "Pending with ADPD"
+
+    # 7. Action 2: ADPD Approves -> Pending with Dean (idx 2)
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "ADPD approves"},
+        db=db_session,
+        user=adpd
+    )
+    assert action_res["status"] == "Pending with Dean"
+
+    # Verify that the DB record's pending_with is indeed Dean
+    aa_res = await db_session.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
+    aa = aa_res.scalar_one()
+    assert aa.pending_with == "Dean"
+
+    # 8. Action 3: First Dean Approves -> Pending with Dean (idx 3)
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "First Dean approves"},
+        db=db_session,
+        user=dean
+    )
+    assert action_res["status"] == "Pending with Dean"
+
+    # 9. Action 4: Second Dean Approves -> Pending with Director
+    # Since our state-machine history-tracing keeps track, it must advance to Director
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "Second Dean approves"},
+        db=db_session,
+        user=dean
+    )
+    assert action_res["status"] == "Pending with Director"
+
+    # 10. Action 5: Director Approves -> Granted
+    action_res = await action_aa(
+        aa_id=aa_id,
+        body={"action": "Approve", "remarks": "Director final approval"},
+        db=db_session,
+        user=director
+    )
+    assert action_res["status"] == "Administrative Approval Granted"
