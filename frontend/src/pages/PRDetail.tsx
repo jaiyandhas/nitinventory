@@ -16,6 +16,7 @@ import { PRHeader } from '../components/pr/detail/PRHeader';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
 import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
 import { CollapsibleIndentPanel } from '../components/pr/detail/CollapsibleIndentPanel';
+import { resolveTechCommitteeIds } from '../utils/techCommittee';
 
 const STAGES = [
   { key: 'request', label: 'Request', desc: 'Initial Indent' },
@@ -228,10 +229,18 @@ export const PRDetailPage: React.FC = () => {
   if (user?.role?.group_key === 'admin') {
     canActOn = true;
   } else if (pr.flow) {
-    const phaseName = pr.flow?.phase_name;
-    if (phaseName === 'Technical Evaluation' && pr.flow.step_order === 1) {
-      const committeeIds = [pr.initiator_id, pr.faculty1_id, pr.faculty2_id, pr.faculty3_id].filter(Boolean);
-      canActOn = committeeIds.includes(user?.id);
+    if (pr.flow.step_type === 'tech_evaluation') {
+      const _committeeIds = resolveTechCommitteeIds(pr);
+      const _isCommitteeMember = _committeeIds.includes(user?.id ?? -1);
+      const _teSince = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
+      const _allCommitteeSigned = _committeeIds.length > 0 && _committeeIds.every((id: number) =>
+        pr.history?.some((h: any) =>
+          h.approver_id === id &&
+          (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
+          (!_teSince || !h.acted_at || new Date(h.acted_at) >= _teSince)
+        )
+      );
+      canActOn = _isCommitteeMember || (_allCommitteeSigned && user?.id === pr.initiator?.id);
     } else if (pr.flow.expected_user_id) {
       if (user?.id === pr.flow.expected_user_id) {
         canActOn = true;

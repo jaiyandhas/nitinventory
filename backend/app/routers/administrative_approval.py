@@ -315,19 +315,6 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
 
     steps = [best_steps[order][0] for order in sorted(best_steps.keys())]
 
-    
-    if not steps:
-        from app.models.user import RoleManager
-        roles_res = await db.execute(select(RoleManager).where(RoleManager.value.in_(["hod", "adpd", "dean_pd", "ia", "director"])))
-        roles_dict = {r.value: r for r in roles_res.scalars()}
-        steps = [
-            AdministrativeApprovalWorkflow(step_order=1, user_group="HOD", role_id=roles_dict.get("hod").id if roles_dict.get("hod") else None, role=roles_dict.get("hod")),
-            AdministrativeApprovalWorkflow(step_order=2, user_group="ADPD", role_id=roles_dict.get("adpd").id if roles_dict.get("adpd") else None, role=roles_dict.get("adpd")),
-            AdministrativeApprovalWorkflow(step_order=3, user_group="Dean", role_id=roles_dict.get("dean_pd").id if roles_dict.get("dean_pd") else None, role=roles_dict.get("dean_pd")),
-            AdministrativeApprovalWorkflow(step_order=4, user_group="IA", role_id=roles_dict.get("ia").id if roles_dict.get("ia") else None, role=roles_dict.get("ia")),
-            AdministrativeApprovalWorkflow(step_order=5, user_group="Director", role_id=roles_dict.get("director").id if roles_dict.get("director") else None, role=roles_dict.get("director")),
-        ]
-        
     return steps
 
 
@@ -462,6 +449,8 @@ async def create_aa(
         source_of_fund_id = sof_res.scalar_one_or_none()
         
     steps = await _get_aa_workflow_steps(db, total_cost, mode_of_procurement, source_of_fund_id)
+    if not steps:
+        raise HTTPException(status_code=422, detail="No Administrative Approval workflow configured. Please configure one in Admin Settings → Workflows.")
 
     # Create the AdministrativeApproval request
     aa = AdministrativeApproval(
@@ -906,9 +895,11 @@ async def action_aa(
         source_of_fund_id = sof_res.scalar_one_or_none()
         
     steps = await _get_aa_workflow_steps(db, aa.total_cost, aa.mode_of_procurement, source_of_fund_id)
+    if not steps:
+        raise HTTPException(status_code=422, detail="No Administrative Approval workflow configured. Please configure one in Admin Settings → Workflows.")
 
     current_idx = -1
-    
+
     next_step_data = await resolve_aa_pending_step(db, aa, steps, aa_history)
     resolved_idx = next_step_data["idx"] if next_step_data else -1
     

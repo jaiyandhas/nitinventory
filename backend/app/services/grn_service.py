@@ -16,7 +16,12 @@ class GrnService:
         self.background_tasks = background_tasks
 
     async def create_delivery(self, pr: PurchaseRequest) -> Delivery:
-        """Auto-called when PO_ISSUED. Creates Delivery + DeliveryItems from PR items."""
+        """Auto-called when PO_ISSUED. Creates Delivery + DeliveryItems from PR items. Idempotent."""
+        existing_res = await self.db.execute(select(Delivery).where(Delivery.po_id == pr.id))
+        existing = existing_res.scalar_one_or_none()
+        if existing:
+            return existing
+
         await self.db.refresh(pr, ["initiator"])
         
         from sqlalchemy.orm import selectinload

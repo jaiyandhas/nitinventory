@@ -15,12 +15,14 @@ async def test_resolve_tech_committee_from_budget_file(db_session):
     faculty1 = faculty1_res.scalar_one()
     faculty2_res = await db_session.execute(select(User).where(User.email == "faculty2.cse@nitt.edu"))
     faculty2 = faculty2_res.scalar_one()
+    vg_res = await db_session.execute(select(User).where(User.email == "vg.pd@nitt.edu"))
+    vg = vg_res.scalar_one()
 
     budget_res = await db_session.execute(select(BudgetMaster).limit(1))
     budget = budget_res.scalar_one()
     budget.expert1_id = faculty1.id
     budget.expert2_id = faculty2.id
-    budget.director_faculty_id = faculty2.id
+    budget.director_faculty_id = vg.id
     await db_session.flush()
 
     pr = PurchaseRequest(
@@ -56,10 +58,10 @@ async def test_resolve_tech_committee_from_budget_file(db_session):
     _, e1, e2, d = await resolve_tech_committee_ids(db_session, pr)
     assert e1 == faculty1.id
     assert e2 == faculty2.id
-    assert d == faculty2.id
+    assert d == vg.id
 
     updated = await sync_tech_committee_to_pr(db_session, pr)
     assert updated is True
     assert pr.faculty1_id == faculty1.id
     assert pr.faculty2_id == faculty2.id
-    assert pr.faculty3_id == faculty2.id
+    assert pr.faculty3_id == vg.id

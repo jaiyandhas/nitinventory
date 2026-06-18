@@ -363,14 +363,23 @@ export const GRNAction: React.FC<GRNActionProps> = ({
       );
     }
 
+    // No delivery record exists yet — this can happen if the auto-creation failed or
+    // the PO was issued via an admin force-advance. Contact admin to register the delivery.
+    const isInitiatorOrAdmin = user?.id === pr.initiator_id || user?.role?.group_key === 'admin';
     return (
       <div className="card p-6 bg-slate-50 border-slate-200 text-left space-y-2">
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-          <Clock size={16} className="text-slate-500" /> Awaiting Delivery &amp; Verification
+          <Clock size={16} className="text-slate-500" /> Awaiting Delivery Registration
         </h3>
-        <p className="text-xs text-slate-600 font-medium">
-          Awaiting physical delivery of goods and GRN verification from the Department HOD and Stores.
-        </p>
+        {isInitiatorOrAdmin ? (
+          <p className="text-xs text-slate-600 font-medium">
+            The Purchase Order has been issued. Once the goods arrive, the Stores staff will register the delivery. You will then be prompted to confirm receipt and upload the invoice and challan documents.
+          </p>
+        ) : (
+          <p className="text-xs text-slate-600 font-medium">
+            Awaiting physical delivery of goods and GRN verification.
+          </p>
+        )}
       </div>
     );
   }

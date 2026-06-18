@@ -91,7 +91,7 @@ async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
         await db.refresh(pr, ["flow"])
         if pr.flow:
             flow_engine = FlowEngineService(db)
-            sof_id = await flow_engine.resolve_sof_id(pr)
+            sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
             step_res = await db.execute(
                 select(WorkFlowHierarchy).where(
                     and_(
@@ -212,6 +212,7 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "child_prs": child_prs_data,
         "administrative_approval_id": pr.administrative_approval_id,
         "administrative_approval": aa_data,
+        "committee_nominee_ids": pr.committee_nominee_ids,
     }
 
 
@@ -811,7 +812,7 @@ async def list_prs(
         flow_data = None
         if pr.flow:
             flow_engine = FlowEngineService(db)
-            sof_id = await flow_engine.resolve_sof_id(pr)
+            sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
             res = await db.execute(
                 select(WorkFlowHierarchy).options(
                     selectinload(WorkFlowHierarchy.role),
@@ -840,18 +841,36 @@ async def list_prs(
                         expected_user_id = latest_assignment.assigned_by_id
                         expected_user_name = latest_assignment.assigned_by.name
 
+                expected_role_name = step.role.name if step.role else (step.user_group.replace("_", " ").title() if step.user_group else None)
+                if step.user_type == "tech_evaluation":
+                    from app.services.tech_committee import get_tech_committee_member_ids
+                    committee_ids = await get_tech_committee_member_ids(db, pr)
+                    since = pr.te_initiated_at or pr.created_at or datetime.min
+                    approved_ids = {
+                        h.current_approver_id for h in pr.history
+                        if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                        and (h.acted_at is None or h.acted_at >= since)
+                    }
+                    all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
+                    if all_committee_signed:
+                        expected_role_name = "Purchase Initiator"
+                        expected_user_id = pr.initiator_id
+                        expected_user_name = pr.initiator.name if pr.initiator else None
+                    else:
+                        expected_role_name = "Technical Committee"
+
                 flow_data = {
                     "phase_id": pr.flow.phase_id,
                     "phase_name": phase_name,
                     "step_order": pr.flow.step_order,
                     "expected_group": step.user_group,
                     "expected_role_id": step.role_id,
-                    "expected_role_name": step.role.name if step.role else (step.user_group.replace("_", " ").title() if step.user_group else None),
+                    "expected_role_name": expected_role_name,
                     "expected_user_id": expected_user_id,
                     "expected_user_name": expected_user_name,
                     "step_type": step.user_type,
                 }
-        
+
         referrals_data = []
         for ref in pr.referrals:
             referrals_data.append({
@@ -939,7 +958,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.items).selectinload(PurchaseRequestItem.budget_file),
             selectinload(PurchaseRequest.history),
             selectinload(PurchaseRequest.flow),
-            selectinload(PurchaseRequest.technical_evaluations),
+            selectinload(PurchaseRequest.technical_evaluations).selectinload(TechnicalEvaluation.member),
             selectinload(PurchaseRequest.financial_evaluations),
             selectinload(PurchaseRequest.commercial_evaluations),
             selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by),
@@ -980,7 +999,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     phase_name = None
     if pr.flow:
         flow_engine = FlowEngineService(db)
-        sof_id = await flow_engine.resolve_sof_id(pr)
+        sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
         res = await db.execute(
             select(WorkFlowHierarchy).where(
                 and_(
@@ -1000,14 +1019,32 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             expected_group = step.user_group
             expected_role_id = step.role_id
             expected_role_name = step.role.name if step.role else (step.user_group.replace("_", " ").title() if step.user_group else None)
-            if step.user_type == "user" and step.user_id:
-                expected_user_id = step.user_id
-                expected_user_name = step.user.name if step.user else None
-            if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
-                latest_assignment = pr.assignments[-1]
-                if latest_assignment.assigned_by:
-                    expected_user_id = latest_assignment.assigned_by_id
-                    expected_user_name = latest_assignment.assigned_by.name
+            if step.user_type == "tech_evaluation":
+                from app.services.tech_committee import get_tech_committee_member_ids
+                committee_ids = await get_tech_committee_member_ids(db, pr)
+                since = pr.te_initiated_at or pr.created_at or datetime.min
+                approved_ids = {
+                    h.current_approver_id for h in pr.history
+                    if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                    and (h.acted_at is None or h.acted_at >= since)
+                }
+                all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
+                if all_committee_signed:
+                    expected_role_name = "Purchase Initiator"
+                    expected_user_id = pr.initiator_id
+                    await db.refresh(pr, ["initiator"])
+                    expected_user_name = pr.initiator.name if pr.initiator else None
+                else:
+                    expected_role_name = "Technical Committee"
+            else:
+                if step.user_type == "user" and step.user_id:
+                    expected_user_id = step.user_id
+                    expected_user_name = step.user.name if step.user else None
+                if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
+                    latest_assignment = pr.assignments[-1]
+                    if latest_assignment.assigned_by:
+                        expected_user_id = latest_assignment.assigned_by_id
+                        expected_user_name = latest_assignment.assigned_by.name
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
         phase_name = phase_res.scalar_one_or_none()
 
@@ -1154,6 +1191,8 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "vendor_name": te.vendor_name,
             "is_qualified": te.is_qualified,
             "remarks": te.remarks,
+            "member_id": te.member_id,
+            "member_name": te.member.name if te.member else None,
         }
         for te in pr.technical_evaluations
     ]
@@ -1461,7 +1500,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
             
             # check if the step expects HOD
             flow_engine = FlowEngineService(db)
-            sof_id = await flow_engine.resolve_sof_id(pr)
+            sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
             step_res = await db.execute(
                 select(WorkFlowHierarchy).where(
                     and_(
@@ -1487,9 +1526,9 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                 body_faculty2 = body.get("faculty2_id")
                 body_faculty3 = body.get("faculty3_id")
                 
-                if body_faculty1 and body_faculty2:
-                    pr.faculty1_id = body_faculty1
-                    pr.faculty2_id = body_faculty2
+                if body_faculty1:
+                    pr.faculty1_id = int(body_faculty1)
+                    pr.faculty2_id = int(body_faculty2) if body_faculty2 else None
                 else:
                     await db.refresh(pr, ["initiator"])
                     if pr.initiator:
@@ -1507,14 +1546,14 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                     expert1_id = budget_file.expert1_id if (budget_file and budget_file.expert1_id) else (dept.expert1_id if dept else None)
                     expert2_id = budget_file.expert2_id if (budget_file and budget_file.expert2_id) else (dept.expert2_id if dept else None)
                     pr.faculty1_id = expert1_id
-                    pr.faculty2_id = expert2_id
+                    pr.faculty2_id = expert2_id  # Optional; may be None
 
-                if not pr.faculty1_id or not pr.faculty2_id:
+                if not pr.faculty1_id:
                     raise HTTPException(
                         status_code=400,
-                        detail="The purchase committee experts (Expert 1 & 2) have not been configured yet. HOD must nominate Expert 1 & 2."
+                        detail="Department Expert 1 has not been nominated. HOD must nominate at least Expert 1 to form the purchase committee."
                     )
-                if pr.faculty1_id == pr.faculty2_id:
+                if pr.faculty2_id and pr.faculty1_id == pr.faculty2_id:
                     raise HTTPException(
                         status_code=400,
                         detail="Expert 1 and Expert 2 must be different persons."
@@ -1540,6 +1579,44 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                 else:
                     pr.faculty3_id = None
  
+    # When initiator confirms final vendor qualifications at tech_evaluation step
+    await db.refresh(pr, ["flow"])
+    if pr.flow:
+        _sof_check = FlowEngineService(db)
+        _sof_id = await _sof_check.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
+        _step_res = await db.execute(
+            select(WorkFlowHierarchy).where(
+                and_(
+                    WorkFlowHierarchy.category_id == pr.category_id,
+                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                    WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                    WorkFlowHierarchy.step_order == pr.flow.step_order,
+                    WorkFlowHierarchy.is_enabled == True,
+                    WorkFlowHierarchy.source_of_fund_id == _sof_id,
+                )
+            )
+        )
+        _step = _step_res.scalar_one_or_none()
+        if _step and _step.user_type == "tech_evaluation" and pr.initiator_id == user.id:
+            final_vendors = body.get("vendors", [])
+            if final_vendors:
+                await db.refresh(pr, ["technical_evaluations"])
+                for te in list(pr.technical_evaluations):
+                    if te.member_id is None:
+                        await db.delete(te)
+                await db.flush()
+                for vendor in final_vendors:
+                    db.add(TechnicalEvaluation(
+                        purchase_request_id=pr.id,
+                        vendor_name=vendor["name"],
+                        is_qualified=vendor.get("is_qualified", False),
+                        remarks=vendor.get("remarks"),
+                        member_id=None,
+                        created_at=datetime.utcnow(),
+                    ))
+                await db.flush()
+
     flow_engine = FlowEngineService(db, background_tasks)
     try:
         await flow_engine.advance(pr, user, remarks, body.get("status"))
@@ -1613,7 +1690,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
     phase_name = phase.phase_name if phase else ""
 
     flow_engine = FlowEngineService(db)
-    sof_id = await flow_engine.resolve_sof_id(pr)
+    sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
     result = await db.execute(
         select(WorkFlowHierarchy).where(
             and_(
@@ -1703,19 +1780,27 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
             )
         committee_ids = await get_tech_committee_member_ids(db, pr)
 
-        # Must be one of the committee members
-        if user.id not in committee_ids:
-            raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
-
-        # Check if user has already signed
         since = pr.te_initiated_at or pr.created_at or datetime.min
         await db.refresh(pr, ["history"])
         approved_ids = {
-            h.current_approver_id for h in pr.history 
+            h.current_approver_id for h in pr.history
             if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
             and (h.acted_at is None or h.acted_at >= since)
         }
+        all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
 
+        if all_committee_signed:
+            # Initiator confirms final vendor qualifications and advances
+            if user.id != pr.initiator_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="All committee members have submitted. Waiting for purchase initiator to confirm final vendor qualifications."
+                )
+            return
+
+        # Committee signing phase — only committee members can submit
+        if user.id not in committee_ids:
+            raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
         if user.id in approved_ids:
             raise HTTPException(status_code=400, detail="You have already signed/approved the technical evaluation.")
         return
@@ -2177,11 +2262,13 @@ async def add_technical_eval(
                 detail="Technical Evaluation Report PDF is mandatory. Please upload your signed evaluation document."
             )
 
-    # Prevent duplicate submission
+    # Prevent duplicate submission — scope to current TE round via te_initiated_at
+    since = pr.te_initiated_at or pr.created_at or datetime.min
     await db.refresh(pr, ["history"])
     has_approval_log = any(
         h.current_approver_id == user.id
         and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+        and (h.acted_at is None or h.acted_at >= since)
         for h in pr.history
     )
     if has_approval_log:
@@ -2200,48 +2287,35 @@ async def add_technical_eval(
             await db.delete(existing_te_doc)
         await doc_svc.save_upload(pr, doc_key, tech_eval_file, user.id)
 
-    # Save vendor technical qualifications (only initiator submits the vendor list)
-    if pr.initiator_id == user.id:
-        for vendor in body.get("vendors", []):
-            ev = TechnicalEvaluation(
+    # Every committee member saves their own per-vendor qualifications (tracked by member_id)
+    vendors = body.get("vendors", [])
+    if vendors:
+        await db.refresh(pr, ["technical_evaluations"])
+        for te in list(pr.technical_evaluations):
+            if te.member_id == user.id:
+                await db.delete(te)
+        await db.flush()
+        for vendor in vendors:
+            db.add(TechnicalEvaluation(
                 purchase_request_id=pr.id,
                 vendor_name=vendor["name"],
                 is_qualified=vendor.get("is_qualified", False),
                 remarks=vendor.get("remarks"),
+                member_id=user.id,
                 created_at=datetime.utcnow(),
-            )
-            db.add(ev)
+            ))
 
-    status = "Technical Evaluation Completed" if pr.initiator_id == user.id else "Technical Evaluation Approved"
     history = PurchaseRequestHistory(
         purchase_request_id=pr.id,
         current_approver_id=user.id,
-        status=status,
+        status="Technical Evaluation Approved",
         remarks=body.get("remarks") or f"Technical evaluation submitted by {user.name}.",
         acted_at=datetime.utcnow(),
     )
     db.add(history)
     await db.flush()
 
-    # Auto-advance when every committee member has signed (same request as /advance after submit)
-    from app.services.flow_engine import FlowEngineService
-    from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids, sync_tech_committee_to_pr
-    await sync_tech_committee_to_pr(db, pr)
-    since = pr.te_initiated_at or pr.created_at or datetime.min
-    await db.refresh(pr, ["history", "flow"])
-    if await is_tech_committee_configured(db, pr):
-        required_ids = set(await get_tech_committee_member_ids(db, pr))
-        approved_ids = {
-            h.current_approver_id for h in pr.history
-            if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
-            and (h.acted_at is None or h.acted_at >= since)
-        }
-        if required_ids.issubset(approved_ids) and pr.flow:
-            flow_engine = FlowEngineService(db)
-            try:
-                await flow_engine.advance(pr, user, body.get("remarks") or "All committee members signed — advancing")
-            except ValueError:
-                pass
+    # No auto-advance — initiator confirms final vendor list via /advance after all members sign
 
     await db.commit()
     return {"message": "Technical evaluation saved"}
@@ -2316,8 +2390,8 @@ async def award_bid(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), 
     phase = phase_res.scalar_one_or_none()
     phase_name = phase.phase_name if phase else ""
     
-    if phase_name != "Technical Evaluation":
-        raise HTTPException(status_code=400, detail="Bids can only be selected during Technical Evaluation phase")
+    if phase_name not in ("Technical Evaluation", "Financial Sanction"):
+        raise HTTPException(status_code=400, detail="Bids can only be selected during Technical Evaluation or Financial Sanction phase")
 
     vendor_id = body.get("vendor_id")
     if not vendor_id:
@@ -2952,7 +3026,7 @@ async def allocate_budget_file(
                 selectinload(WorkFlowHierarchy.role),
                 selectinload(WorkFlowHierarchy.user),
             ).where(
-                flow_engine._wf_filters(pr, pr.flow.phase_id, sof_id=await flow_engine.resolve_sof_id(pr), step_order=pr.flow.step_order)
+                flow_engine._wf_filters(pr, pr.flow.phase_id, sof_id=await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id), step_order=pr.flow.step_order)
             )
         )
         new_step = new_step_result.scalar_one_or_none()

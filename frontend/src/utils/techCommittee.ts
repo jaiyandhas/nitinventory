@@ -1,5 +1,6 @@
 /** Resolve effective TSC committee member IDs for a purchase request. */
 export function resolveTechCommitteeIds(pr: {
+  committee_nominee_ids?: number[] | null;
   initiator_id?: number | null;
   faculty1_id?: number | null;
   faculty2_id?: number | null;
@@ -13,10 +14,15 @@ export function resolveTechCommitteeIds(pr: {
   expert2_id?: number | null;
   director_faculty_id?: number | null;
 }): number[] {
+  if (pr.committee_nominee_ids && pr.committee_nominee_ids.length > 0) {
+    return [...new Set(pr.committee_nominee_ids)];
+  }
+
   const expert1 = pr.faculty1_id ?? pr.budget_file?.expert1_id ?? pr.expert1_id;
   const expert2 = pr.faculty2_id ?? pr.budget_file?.expert2_id ?? pr.expert2_id;
   const director = pr.faculty3_id ?? pr.budget_file?.director_faculty_id ?? pr.director_faculty_id;
-  const raw = [pr.initiator_id, expert1, expert2, director].filter(
+  // Initiator is not a committee evaluator — only HOD nominees + optional Director Nominee
+  const raw = [expert1, expert2, director].filter(
     (id): id is number => id !== null && id !== undefined
   );
   return [...new Set(raw)];

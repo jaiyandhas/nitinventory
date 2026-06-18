@@ -38,9 +38,18 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
   if (user?.role?.group_key === 'admin') {
     canActOn = true;
   } else if (pr?.flow) {
-    const phaseName = pr.flow?.phase_name;
     if (pr.flow.step_type === 'tech_evaluation') {
-      canActOn = resolveTechCommitteeIds(pr).includes(user?.id ?? -1);
+      const committeeIds = resolveTechCommitteeIds(pr);
+      const isCommitteeMember = committeeIds.includes(user?.id ?? -1);
+      const teSince = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
+      const allCommitteeSigned = committeeIds.length > 0 && committeeIds.every((id: number) =>
+        pr.history?.some((h: any) =>
+          h.approver_id === id &&
+          (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
+          (!teSince || !h.acted_at || new Date(h.acted_at) >= teSince)
+        )
+      );
+      canActOn = isCommitteeMember || (allCommitteeSigned && user?.id === pr.initiator?.id);
     } else if (pr.flow.expected_user_id) {
       if (user?.id === pr.flow.expected_user_id) {
         canActOn = true;
@@ -102,13 +111,14 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     if (!remarks.trim()) { toast.error('Remarks are required to advance the Purchase Indent'); return; }
 
     if (pr.flow?.phase_name === 'Indent and Detailed Tech Specification') {
-      const nominationDone = !!(pr.faculty1_id && pr.faculty2_id);
+      // Expert 1 is mandatory; Expert 2 and Director Nominee are optional
+      const nominationDone = !!pr.faculty1_id;
       if (isHOD && !nominationDone) {
-        if (!expert1Id || !expert2Id) {
-          toast.error('Both Expert 1 and Expert 2 must be nominated');
+        if (!expert1Id) {
+          toast.error('At least Department Expert 1 must be nominated');
           return;
         }
-        if (expert1Id === expert2Id) {
+        if (expert1Id && expert2Id && expert1Id === expert2Id) {
           toast.error('Expert 1 and Expert 2 must be different faculty members');
           return;
         }
@@ -316,7 +326,92 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
   const renderStageAction = () => {
     switch (phaseName) {
-      case 'Indent and Detailed Tech Specification':
+      case 'Indent and Detailed Tech Specification': {
+        // When the current step is the committee tech-evaluation sub-step, show appropriate UI
+        if (pr.flow?.step_type === 'tech_evaluation') {
+          const committeeIds = resolveTechCommitteeIds(pr);
+          const alreadySigned = (pr.history ?? []).some(
+            (h: any) =>
+              (h.status === 'Technical Evaluation Approved' || h.status === 'Technical Evaluation Completed') &&
+              h.approver_id === user?.id
+          );
+          const signedIds = new Set(
+            (pr.history ?? [])
+              .filter((h: any) =>
+                h.status === 'Technical Evaluation Approved' || h.status === 'Technical Evaluation Completed'
+              )
+              .map((h: any) => h.approver_id)
+          );
+          const pendingCount = committeeIds.filter(id => !signedIds.has(id)).length;
+
+          if (alreadySigned) {
+            return (
+              <div className="pt-2 border-t border-blue-200 text-left">
+                <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-indigo-800">You have approved the Technical Specification.</p>
+                    <p className="text-xs text-indigo-600 mt-1">
+                      {pendingCount === 0
+                        ? 'All committee members have approved.'
+                        : `Awaiting ${pendingCount} more committee member${pendingCount > 1 ? 's' : ''} to approve.`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Committee member has not yet signed — show Approve / Send Back form
+          return (
+            <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left animate-fadeIn">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                Technical Committee — Technical Specification Approval
+              </h4>
+              <p className="text-xs text-slate-500">
+                Review the technical specification in the indent document and approve or send back.
+                {pendingCount > 0 && ` (${pendingCount} member${pendingCount > 1 ? 's' : ''} still pending)`}
+              </p>
+              <div className="space-y-2">
+                <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide your technical review remarks..."
+                  className="input-field min-h-[70px] text-xs py-1.5 bg-white text-sm"
+                  required
+                />
+              </div>
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <button
+                  onClick={() => handleAdvance()}
+                  disabled={actionLoading || !remarks.trim()}
+                  className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
+                >
+                  <CheckCircle2 size={14} /> Approve Technical Specification
+                </button>
+                <button
+                  onClick={() => handleReject()}
+                  disabled={actionLoading || !remarks.trim()}
+                  className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                >
+                  <XCircle size={14} /> Reject
+                </button>
+                {sendBackCandidates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSendBackModal(true)}
+                    disabled={actionLoading}
+                    className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
+                  >
+                    <RotateCcw size={14} /> Send Back
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        }
+
         return (
           <AAAction
             pr={pr}
@@ -329,7 +424,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             setRemarks={setRemarks}
             isHOD={isHOD}
             isDirector={isDirector}
-            nominationDone={!!(pr.faculty1_id && pr.faculty2_id)}
+            nominationDone={!!pr.faculty1_id}
             expert1Id={expert1Id}
             setExpert1Id={setExpert1Id}
             expert2Id={expert2Id}
@@ -340,6 +435,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             allUsers={allUsers}
           />
         );
+      }
       case 'Tendering':
         return (
           <TenderingAction

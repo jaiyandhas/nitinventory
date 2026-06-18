@@ -1990,12 +1990,20 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
 
 @router.post("/workflows/reorder")
 async def reorder_workflows(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
-    steps = body.get("steps", [])
-    for item in steps:
-        res = await db.execute(select(WorkFlowHierarchy).where(WorkFlowHierarchy.id == item["id"]))
-        wf = res.scalar_one_or_none()
-        if wf:
-            wf.step_order = item["step_order"]
+    # Accept either step_ids (ordered list → assign 1,2,3...) or legacy steps [{id,step_order}]
+    step_ids = body.get("step_ids", [])
+    if step_ids:
+        for idx, sid in enumerate(step_ids, start=1):
+            res = await db.execute(select(WorkFlowHierarchy).where(WorkFlowHierarchy.id == sid))
+            wf = res.scalar_one_or_none()
+            if wf:
+                wf.step_order = idx
+    else:
+        for item in body.get("steps", []):
+            res = await db.execute(select(WorkFlowHierarchy).where(WorkFlowHierarchy.id == item["id"]))
+            wf = res.scalar_one_or_none()
+            if wf:
+                wf.step_order = item["step_order"]
     await db.commit()
     return {"message": "Steps reordered"}
 
@@ -2015,9 +2023,31 @@ async def toggle_workflow_step(wf_id: int, db: AsyncSession = Depends(get_db), _
 async def delete_workflow(wf_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
     result = await db.execute(select(WorkFlowHierarchy).where(WorkFlowHierarchy.id == wf_id))
     wf = result.scalar_one_or_none()
-    if wf:
-        await db.delete(wf)
-        await db.commit()
+    if not wf:
+        return {"message": "Workflow deleted"}
+    cat_id = wf.category_id
+    proc_id = wf.procurement_id
+    phase_id = wf.phase_id
+    p_type = wf.purchase_type
+    sof_id = wf.source_of_fund_id
+    await db.delete(wf)
+    await db.flush()
+    # Renumber remaining steps in the same phase sequentially to close the gap
+    remaining_res = await db.execute(
+        select(WorkFlowHierarchy)
+        .where(and_(
+            WorkFlowHierarchy.category_id == cat_id,
+            WorkFlowHierarchy.procurement_id == proc_id,
+            WorkFlowHierarchy.phase_id == phase_id,
+            WorkFlowHierarchy.purchase_type == p_type,
+            WorkFlowHierarchy.source_of_fund_id == sof_id,
+        ))
+        .order_by(WorkFlowHierarchy.step_order)
+    )
+    remaining = remaining_res.scalars().all()
+    for idx, rem in enumerate(remaining, start=1):
+        rem.step_order = idx
+    await db.commit()
     return {"message": "Workflow deleted"}
 
 
@@ -2116,17 +2146,36 @@ async def list_categories(procurement_id: Optional[int] = None, db: AsyncSession
     ]
 
 
+async def _sync_procurement_max_amount(db: AsyncSession, procurement_id: int) -> None:
+    """Sync procurement_managers.max_amount to the highest category max_amount for that procurement.
+    Only updates if the procurement method already has a non-null max_amount (i.e. it has a configured limit)."""
+    pm_res = await db.execute(select(ProcurementManager).where(ProcurementManager.id == procurement_id))
+    pm = pm_res.scalar_one_or_none()
+    if pm is None or pm.max_amount is None:
+        return
+    max_res = await db.execute(
+        select(func.max(PurchaseCategory.max_amount))
+        .where(PurchaseCategory.procurement_id == procurement_id)
+    )
+    highest = max_res.scalar()
+    if highest is not None and pm.max_amount != highest:
+        pm.max_amount = highest
+
+
 @router.post("/categories")
 async def create_category(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep):
+    proc_id = int(body["procurement_id"])
     c = PurchaseCategory(
         title=body["title"],
         min_amount=float(body["min_amount"]),
         max_amount=float(body["max_amount"]),
         is_active=body.get("is_active", True),
-        procurement_id=int(body["procurement_id"]),
+        procurement_id=proc_id,
         requirement_type=body.get("requirement_type") if body.get("requirement_type") else None
     )
     db.add(c)
+    await db.flush()
+    await _sync_procurement_max_amount(db, proc_id)
     await db.commit()
     return {"message": "Category created", "id": c.id}
 
@@ -2149,6 +2198,8 @@ async def update_category(cat_id: int, body: dict, db: AsyncSession = Depends(ge
         c.procurement_id = int(body["procurement_id"])
     if "requirement_type" in body:
         c.requirement_type = body["requirement_type"] if body["requirement_type"] else None
+    await db.flush()
+    await _sync_procurement_max_amount(db, c.procurement_id)
     await db.commit()
     return {"message": "Category updated"}
 
@@ -2571,61 +2622,58 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
     from app.models.administrative_approval import AdministrativeApprovalWorkflow
     from app.models.user import RoleManager
     from sqlalchemy import delete
-    
-    category_id = body.get("category_id")
-    procurement_id = body.get("procurement_id")
-    purchase_type = body.get("purchase_type")
-    # source_of_fund_id=None resets the default (any-fund) variant only
+
+    category_id = body.get("category_id")  # None = global default
+    procurement_id = body.get("procurement_id")  # None = global default
+    purchase_type = body.get("purchase_type")  # None = global default
     source_of_fund_id = body.get("source_of_fund_id", None)
-    
-    if not category_id or not procurement_id or not purchase_type:
-        raise HTTPException(status_code=400, detail="category_id, procurement_id, and purchase_type are required")
-        
-    await db.execute(
-        delete(AdministrativeApprovalWorkflow).where(
-            and_(
-                AdministrativeApprovalWorkflow.category_id == category_id,
-                AdministrativeApprovalWorkflow.procurement_id == procurement_id,
-                AdministrativeApprovalWorkflow.purchase_type == purchase_type,
-                AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
-            )
-        )
-    )
-    
-    roles_res = await db.execute(select(RoleManager))
-    roles = {r.value: r for r in roles_res.scalars()}
-    default_aa_steps = [
-        AdministrativeApprovalWorkflow(
-            category_id=category_id,
-            procurement_id=procurement_id,
-            purchase_type=purchase_type,
-            step_order=1,
-            user_group="HOD",
-            role_id=roles["hod"].id,
-            source_of_fund_id=source_of_fund_id
-        ),
-        AdministrativeApprovalWorkflow(
-            category_id=category_id,
-            procurement_id=procurement_id,
-            purchase_type=purchase_type,
-            step_order=2,
-            user_group="ADPD",
-            role_id=roles["adpd"].id,
-            source_of_fund_id=source_of_fund_id
-        ),
-        AdministrativeApprovalWorkflow(
-            category_id=category_id,
-            procurement_id=procurement_id,
-            purchase_type=purchase_type,
-            step_order=3,
-            user_group="Director",
-            role_id=roles["director"].id,
-            source_of_fund_id=source_of_fund_id
-        ),
+
+    is_global = category_id is None and procurement_id is None
+
+    # Build delete condition matching exact null/non-null values
+    conditions = [
+        AdministrativeApprovalWorkflow.source_of_fund_id == source_of_fund_id,
     ]
-    for s in default_aa_steps:
-        db.add(s)
+    if is_global:
+        conditions += [
+            AdministrativeApprovalWorkflow.category_id == None,
+            AdministrativeApprovalWorkflow.procurement_id == None,
+            AdministrativeApprovalWorkflow.purchase_type == None,
+        ]
+    else:
+        conditions += [
+            AdministrativeApprovalWorkflow.category_id == category_id,
+            AdministrativeApprovalWorkflow.procurement_id == procurement_id,
+            AdministrativeApprovalWorkflow.purchase_type == purchase_type,
+        ]
+
+    await db.execute(delete(AdministrativeApprovalWorkflow).where(and_(*conditions)))
+
+    if is_global:
+        # Re-seed global defaults: NULL/NULL/NULL catch-all steps
+        roles_res = await db.execute(select(RoleManager))
+        roles = {r.value: r for r in roles_res.scalars()}
+        dean_role = roles.get("dean_pd") or roles.get("dean")
+        for step_order, group, role_key in [
+            (1, "HOD", "hod"),
+            (2, "ADPD", "adpd"),
+            (3, "Dean", None),
+        ]:
+            role = roles.get(role_key) if role_key else dean_role
+            db.add(AdministrativeApprovalWorkflow(
+                category_id=None,
+                procurement_id=None,
+                purchase_type=None,
+                step_order=step_order,
+                user_group=group,
+                role_id=role.id if role else None,
+                source_of_fund_id=None,
+            ))
+        await db.commit()
+        return {"message": "Global defaults reset to HOD → ADPD → Dean"}
+
+    # Specific combination: just delete the override — global defaults now apply
     await db.commit()
-    return {"message": "Reset to defaults"}
+    return {"message": "Override removed. Global default flow will now apply."}
 
 

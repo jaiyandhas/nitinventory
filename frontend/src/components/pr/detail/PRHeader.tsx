@@ -382,8 +382,8 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
                       </select>
                     ) : (
                       <span className="font-semibold text-gray-700">
-                        {pr.flow.step_type === 'tech_evaluation' && pr.flow.step_order === 1
-                          ? 'TSC Committee (all members must sign)'
+                        {pr.flow.step_type === 'tech_evaluation'
+                          ? 'Technical Committee (all members must sign)'
                           : pr.flow.expected_user_name
                             ? `${pr.flow.expected_user_name} (User)`
                             : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}

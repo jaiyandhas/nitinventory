@@ -76,8 +76,8 @@ def dedupe_committee_ids(*member_ids: Optional[int]) -> list[int]:
 async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) -> bool:
     """Check if the committee is sufficiently configured.
 
-    HOD-nominated Expert 1 and Expert 2 are mandatory.
-    Director Nominee (faculty3) is optional — its absence does not block TE.
+    At least one HOD-nominated expert (Expert 1) is mandatory.
+    Expert 2 and Director Nominee (faculty3) are optional.
     """
     if pr.committee_nominee_ids is not None:
         nominees = pr.committee_nominee_ids
@@ -87,18 +87,17 @@ async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) ->
                 nominees = json.loads(nominees)
             except:
                 nominees = []
-        # At least two nominees (the two HOD experts) must be present
-        return len(nominees) >= 2
+        return len(nominees) >= 1
 
-    _, expert1_id, expert2_id, _ = await resolve_tech_committee_ids(db, pr)
-    return expert1_id is not None and expert2_id is not None
+    _, expert1_id, _, _ = await resolve_tech_committee_ids(db, pr)
+    return expert1_id is not None
 
 
 async def get_tech_committee_member_ids(db: AsyncSession, pr: PurchaseRequest) -> List[int]:
     """
     Return a deduplicated list of user IDs for the technical committee.
-    If pr.committee_nominee_ids is populated, it returns [pr.initiator_id] + pr.committee_nominee_ids.
-    Otherwise, fallback to legacy [pr.initiator_id, expert1_id, expert2_id, director_faculty_id].
+    Committee = HOD nominees (Expert1 required, Expert2 optional) + Director Nominee (optional).
+    The PR initiator is NOT a committee evaluator.
     """
     if pr.committee_nominee_ids is not None:
         nominees = pr.committee_nominee_ids
@@ -109,10 +108,10 @@ async def get_tech_committee_member_ids(db: AsyncSession, pr: PurchaseRequest) -
             except:
                 nominees = []
         if nominees:
-            return dedupe_committee_ids(pr.initiator_id, *nominees)
+            return dedupe_committee_ids(*nominees)
 
     _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
-    return dedupe_committee_ids(pr.initiator_id, expert1_id, expert2_id, director_faculty_id)
+    return dedupe_committee_ids(expert1_id, expert2_id, director_faculty_id)
 
 
 async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bool:
@@ -146,7 +145,9 @@ async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bo
         pr.faculty2_id = expert2_id
         updated = True
     if not pr.faculty3_id and director_faculty_id:
-        pr.faculty3_id = director_faculty_id
-        updated = True
+        # Only set if Director Nominee doesn't conflict with HOD nominees
+        if director_faculty_id != pr.faculty1_id and director_faculty_id != pr.faculty2_id:
+            pr.faculty3_id = director_faculty_id
+            updated = True
     return updated
 

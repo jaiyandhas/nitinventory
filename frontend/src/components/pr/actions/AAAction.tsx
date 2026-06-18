@@ -54,7 +54,7 @@ export const AAAction: React.FC<AAActionProps> = ({
               Purchase Committee Nomination
             </span>
             <p className="text-[11px] text-indigo-800/80 leading-normal mt-0.5">
-              As HOD, you must nominate two faculty experts from your department to serve on the 5-member TSC.
+              As HOD, nominate faculty experts from your department to serve on the TSC. Expert 1 is required; Expert 2 is optional.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -76,15 +76,15 @@ export const AAAction: React.FC<AAActionProps> = ({
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1">
-                Department Expert 2 <span className="text-rose-500">*</span>
+                Department Expert 2{' '}
+                <span className="text-slate-400 font-normal text-[10px]">(Optional)</span>
               </label>
               <select
                 value={expert2Id}
                 onChange={e => setExpert2Id(e.target.value === '' ? '' : Number(e.target.value))}
-                required
                 className="input-field w-full bg-white text-xs py-2 shadow-xs"
               >
-                <option value="">Select Expert 2...</option>
+                <option value="">— No second expert —</option>
                 {faculties.map((f: any) => (
                   <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
                 ))}
@@ -134,7 +134,7 @@ export const AAAction: React.FC<AAActionProps> = ({
         />
       </div>
 
-      {isHOD && expert1Id && expert2Id && expert1Id === expert2Id && (
+      {isHOD && !!expert1Id && !!expert2Id && expert1Id === expert2Id && (
         <p className="text-xs text-rose-600 font-semibold bg-rose-50 border border-rose-200 rounded px-3 py-2">
           Expert 1 and Expert 2 must be different persons.
         </p>

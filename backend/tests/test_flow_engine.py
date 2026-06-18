@@ -250,36 +250,36 @@ async def test_technical_evaluation_committee_signatures(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # First sign: Initiator (faculty)
-    await flow_service.advance(pr, faculty, remarks="Initiator tech eval sign")
-    await db_session.refresh(flow)
-    await db_session.refresh(pr, ["history"])
-    assert flow.step_order == 1
-    
-    # Check that initiator has a signature history log
-    initiator_history = [h for h in pr.history if h.current_approver_id == faculty.id]
-    assert len(initiator_history) == 1
-    assert initiator_history[0].status == "Technical Evaluation Completed"
-    
-    # Second sign: Faculty 1
+    # First sign: Faculty 1
     await flow_service.advance(pr, faculty1, remarks="Faculty 1 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Third sign: Faculty 2
+    # Second sign: Faculty 2
     await flow_service.advance(pr, faculty2, remarks="Faculty 2 tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
     assert flow.step_order == 1
     
-    # Fourth sign: VG (Director Nominee)
+    # Third sign: VG (Director Nominee)
     await flow_service.advance(pr, vg, remarks="VG tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
+    assert flow.step_order == 1
     
-    # Now all 4 committee members have signed, and flow step order should have advanced to step 2 (HOD review)
+    # Fourth sign: Initiator (faculty) confirms and advances
+    await flow_service.advance(pr, faculty, remarks="Initiator tech eval sign")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr, ["history"])
+    
+    # Now all committee members and initiator have signed, and flow step order should have advanced to step 2 (HOD review)
     assert flow.step_order == 2
+    
+    # Check that initiator has a signature history log
+    initiator_history = [h for h in pr.history if h.current_approver_id == faculty.id]
+    assert len(initiator_history) == 1
+    assert initiator_history[0].status == "Technical Evaluation Completed"
     
     # Verify no redundant "Forwarded" or "Forwarded to next phase" status exists in the history logs for TE step 1
     redundant_logs = [h for h in pr.history if h.status in ("Forwarded", "Forwarded to next phase")]
@@ -331,7 +331,6 @@ async def test_technical_evaluation_advance_after_prior_signature(db_session):
 
     from app.models.purchase_request import PurchaseRequestHistory
     for signer, status in [
-        (faculty, "Technical Evaluation Completed"),
         (faculty1, "Technical Evaluation Approved"),
         (faculty2, "Technical Evaluation Approved"),
         (vg, "Technical Evaluation Approved"),
@@ -347,7 +346,7 @@ async def test_technical_evaluation_advance_after_prior_signature(db_session):
         )
     await db_session.flush()
 
-    await flow_service.advance(pr, vg, remarks="Forward after all committee signed")
+    await flow_service.advance(pr, faculty, remarks="Forward after all committee signed")
     await db_session.refresh(flow)
     assert flow.step_order == 2
 
@@ -412,11 +411,11 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # Sign all 4 in order to advance to step 2
-    await flow_service.advance(pr, faculty, remarks="PI sign")
+    # Sign all in order to advance to step 2
     await flow_service.advance(pr, faculty1, remarks="F1 sign")
     await flow_service.advance(pr, faculty2, remarks="F2 sign")
     await flow_service.advance(pr, vg, remarks="VG sign")
+    await flow_service.advance(pr, faculty, remarks="PI sign")
     await db_session.refresh(flow)
     assert flow.step_order == 2
     

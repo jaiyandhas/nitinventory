@@ -184,6 +184,7 @@ export interface PurchaseRequest {
   assignments?: any[];
   documents?: any[];
   administrative_approval_id?: number | null;
+  committee_nominee_ids?: number[] | null;
   administrative_approval?: {
     id: number;
     aa_number?: string | null;

@@ -45,6 +45,8 @@ export const SettingsPage: React.FC = () => {
   const [newSofDescription, setNewSofDescription] = useState('');
   // Selected SoF filter for workflow tab: null = "Any Source of Fund" (default fallback)
   const [selectedSofId, setSelectedSofId] = useState<number | null>(null);
+  // When true, AA workflow section shows the global default rows (category=null, proc=null)
+  const [aaViewGlobal, setAaViewGlobal] = useState(false);
 
   // Budget Category states
   const [newBudgetExpVal, setNewBudgetExpVal] = useState('');
@@ -87,12 +89,17 @@ export const SettingsPage: React.FC = () => {
     w.source_of_fund_id === selectedSofId
   ).sort((a: any, b: any) => a.step_order - b.step_order);
 
-  const filteredAaWfs = aaWorkflows.filter((w: any) => 
-    w.category_id === selectedCat && 
-    w.procurement_id === selectedProc &&
-    w.purchase_type === selectedPurchaseType &&
-    w.source_of_fund_id === selectedSofId
-  ).sort((a: any, b: any) => a.step_order - b.step_order);
+  const filteredAaWfs = aaWorkflows.filter((w: any) => {
+    if (aaViewGlobal) {
+      return w.category_id === null && w.procurement_id === null && w.source_of_fund_id === null && w.purchase_type === null;
+    }
+    return (
+      w.category_id === selectedCat &&
+      w.procurement_id === selectedProc &&
+      w.purchase_type === selectedPurchaseType &&
+      w.source_of_fund_id === selectedSofId
+    );
+  }).sort((a: any, b: any) => a.step_order - b.step_order);
 
   React.useEffect(() => {
     if (procs.length > 0 && selectedProc === null) {
@@ -189,18 +196,17 @@ export const SettingsPage: React.FC = () => {
 
   const resetAaWfMutation = useMutation({
     mutationFn: () => {
-      if (!selectedCat || !selectedProc || !selectedPurchaseType) {
+      if (!aaViewGlobal && (!selectedCat || !selectedProc || !selectedPurchaseType)) {
         throw new Error('Please select category, procurement method, and purchase type first.');
       }
-      return adminApi.resetAaWorkflow({
-        category_id: selectedCat,
-        procurement_id: selectedProc,
-        purchase_type: selectedPurchaseType,
-        source_of_fund_id: selectedSofId,
-      });
+      return adminApi.resetAaWorkflow(
+        aaViewGlobal
+          ? { category_id: null, procurement_id: null, purchase_type: null, source_of_fund_id: null }
+          : { category_id: selectedCat, procurement_id: selectedProc, purchase_type: selectedPurchaseType, source_of_fund_id: selectedSofId }
+      );
     },
-    onSuccess: () => {
-      toast.success('AA Workflows reset to default');
+    onSuccess: (res: any) => {
+      toast.success(res?.data?.message || 'AA Workflow updated');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error resetting AA steps')
@@ -451,34 +457,27 @@ export const SettingsPage: React.FC = () => {
     const step = workflows.find((w: any) => w.id === stepId);
     if (!step) return;
 
-    const phaseSteps = workflows
-      .filter((w: any) => 
-        w.category_id === step.category_id && 
+    const phaseSteps = [...workflows
+      .filter((w: any) =>
+        w.category_id === step.category_id &&
         w.procurement_id === step.procurement_id &&
         w.purchase_type === step.purchase_type &&
         w.phase_id === step.phase_id
       )
-      .sort((a: any, b: any) => a.step_order - b.step_order);
+      .sort((a: any, b: any) => a.step_order - b.step_order)];
 
     const index = phaseSteps.findIndex((w: any) => w.id === stepId);
     if (index === -1) return;
-
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === phaseSteps.length - 1) return;
 
     const targetIdx = direction === 'up' ? index - 1 : index + 1;
-    
-    const tempOrder = phaseSteps[index].step_order;
-    phaseSteps[index].step_order = phaseSteps[targetIdx].step_order;
-    phaseSteps[targetIdx].step_order = tempOrder;
+    [phaseSteps[index], phaseSteps[targetIdx]] = [phaseSteps[targetIdx], phaseSteps[index]];
 
+    // Send the full ordered list so the backend renumbers 1,2,3... without gaps
+    const stepIds = phaseSteps.map((s: any) => s.id);
     try {
-      await adminApi.reorderWorkflows({
-        steps: [
-          { id: phaseSteps[index].id, step_order: phaseSteps[index].step_order },
-          { id: phaseSteps[targetIdx].id, step_order: phaseSteps[targetIdx].step_order }
-        ]
-      });
+      await adminApi.reorderWorkflows({ step_ids: stepIds });
       toast.success('Workflow reordered');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     } catch (e: any) {
@@ -730,18 +729,29 @@ export const SettingsPage: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-800">1. Administrative Approval Workflow</h3>
-                <p className="text-slate-500 text-xs mt-0.5">This standardized workflow applies to all procurement proposals before purchase request/indent creation.</p>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {aaViewGlobal
+                    ? 'Editing global defaults — these steps apply to ALL combinations that have no specific override.'
+                    : 'Editing override for selected combination. Leave empty to use Global Default steps.'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setAaViewGlobal(v => !v)}
+                  className={`flex items-center gap-1 text-xs py-1.5 px-3 font-semibold rounded border transition-colors ${aaViewGlobal ? 'bg-amber-50 border-amber-400 text-amber-700' : 'bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+                >
+                  {aaViewGlobal ? '← Back to Specific' : 'Edit Global Default'}
+                </button>
+                <button
                   onClick={() => {
-                    if (confirm('Reset Administrative Approval workflow to defaults?')) {
-                      resetAaWfMutation.mutate();
-                    }
+                    const msg = aaViewGlobal
+                      ? 'Reset global defaults to HOD → ADPD → Dean?'
+                      : 'Remove override for this combination? It will fall back to Global Default steps.';
+                    if (confirm(msg)) resetAaWfMutation.mutate();
                   }}
                   className="btn-secondary flex items-center gap-1 text-xs py-1.5 px-3 font-semibold"
                 >
-                  Reset to Default
+                  {aaViewGlobal ? 'Reset Global Defaults' : 'Remove Override'}
                 </button>
                 <button
                   onClick={() => {
@@ -749,10 +759,10 @@ export const SettingsPage: React.FC = () => {
                     createAaWfMutation.mutate({
                       user_group: 'Dean',
                       step_order: nextOrder,
-                      category_id: selectedCat,
-                      procurement_id: selectedProc,
-                      purchase_type: selectedPurchaseType,
-                      source_of_fund_id: selectedSofId
+                      category_id: aaViewGlobal ? null : selectedCat,
+                      procurement_id: aaViewGlobal ? null : selectedProc,
+                      purchase_type: aaViewGlobal ? null : selectedPurchaseType,
+                      source_of_fund_id: aaViewGlobal ? null : selectedSofId
                     });
                   }}
                   className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 font-semibold"
@@ -765,7 +775,9 @@ export const SettingsPage: React.FC = () => {
             <div className="space-y-3 mt-6">
               {filteredAaWfs.length === 0 ? (
                 <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-300 rounded">
-                  No administrative approval steps configured for this combination. Please click "Reset to Default" or "Add Step".
+                  {aaViewGlobal
+                    ? 'No global default steps found. Click "Reset Global Defaults" to restore HOD → ADPD → Dean, or "Add Step" to configure manually.'
+                    : 'No override configured for this combination — Global Default steps will apply. Click "Add Step" to create a combination-specific override.'}
                 </p>
               ) : (
                 [...filteredAaWfs].sort((a: any, b: any) => a.step_order - b.step_order).map((wf: any, idx: number) => (

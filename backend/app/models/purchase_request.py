@@ -219,8 +219,10 @@ class TechnicalEvaluation(Base):
     committee_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     committee_time: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     no_of_bids_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    member_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="technical_evaluations")
+    member: Mapped[Optional["User"]] = relationship("User", foreign_keys=[member_id])
 
 
 class FinancialEvaluation(Base):
