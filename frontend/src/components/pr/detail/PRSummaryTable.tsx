@@ -1,9 +1,5 @@
 import React from 'react';
-import {
-  FileText, User, Building2, Package, DollarSign,
-  Truck, AlertCircle, Link as LinkIcon, Download, Paperclip,
-  ChevronRight, Info, CheckCircle2
-} from 'lucide-react';
+import { FileText, Download, ChevronRight } from 'lucide-react';
 import { PurchaseRequest } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { formatFileNo } from '../../../utils/format';
@@ -13,39 +9,40 @@ interface PRSummaryTableProps {
   formatCurrency: (n?: number) => string;
 }
 
-const FieldRow: React.FC<{ label: string; value?: React.ReactNode; span?: boolean }> = ({ label, value, span }) => {
+const DocRow: React.FC<{ label: string; value?: React.ReactNode; full?: boolean }> = ({ label, value, full }) => {
   if (!value && value !== 0) return null;
   return (
-    <div className={`flex flex-col gap-0.5 ${span ? 'col-span-2' : ''}`}>
-      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-      <span className="text-sm font-semibold text-slate-800 leading-snug">{value}</span>
-    </div>
+    <tr className={full ? 'col-span-2' : ''}>
+      <td className="border border-gray-300 px-3 py-2 text-[11px] font-semibold text-gray-600 bg-gray-50 whitespace-nowrap w-48 align-top">
+        {label}
+      </td>
+      <td className="border border-gray-300 px-3 py-2 text-[12px] text-gray-900 align-top">
+        {value}
+      </td>
+    </tr>
   );
 };
 
-const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string }> = ({ icon, title, subtitle }) => (
-  <div className="flex items-center gap-2 mb-3">
-    <div className="w-7 h-7 rounded-md bg-[#1a3a6b]/10 flex items-center justify-center text-[#1a3a6b] shrink-0">
-      {icon}
-    </div>
-    <div>
-      <h4 className="text-xs font-bold text-[#1a3a6b] uppercase tracking-wider">{title}</h4>
-      {subtitle && <p className="text-[10px] text-slate-400 font-medium">{subtitle}</p>}
-    </div>
-  </div>
+const SectionTitle: React.FC<{ num: number; title: string }> = ({ num, title }) => (
+  <tr>
+    <td
+      colSpan={2}
+      className="border border-gray-400 px-3 py-2 bg-gray-100 text-[11px] font-bold text-gray-800 uppercase tracking-widest"
+    >
+      {num}. {title}
+    </td>
+  </tr>
 );
 
 export const PRSummaryTable: React.FC<PRSummaryTableProps> = ({ pr, formatCurrency }) => {
   const { user } = useAuth();
 
-  // Compute cost summary
   const items = pr.items || [];
   const totalCost = pr.amount || 0;
 
-  // Procurement form_data labels
   const formLabels: Record<string, string> = {
     gem_link: 'GeM Bid / RA Link',
-    gem_nac_attached: 'GeM NAC Attached?',
+    gem_nac_attached: 'GeM NAC Attached',
     tender_id: 'CPPP Tender ID',
     publication_date: 'Publication Date (CPPP)',
     invited_vendors: 'Invited Vendors',
@@ -68,436 +65,365 @@ export const PRSummaryTable: React.FC<PRSummaryTableProps> = ({ pr, formatCurren
   };
 
   const formDataEntries = pr.form_data
-    ? Object.entries(pr.form_data).filter(([, v]) => v !== null && v !== undefined && v !== '')
+    ? Object.entries(pr.form_data).filter(
+        ([, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object' && !Array.isArray(v)
+      )
     : [];
 
   const pr_any = pr as any;
   const linkedAA = pr_any.administrative_approval;
   const financialYear = pr_any.financial_year;
   const isTrainingRequired = pr_any.is_training_required;
-  const isServiceCenter = pr_any.is_service_center_in_south;
+
+  const dateStr = pr.created_at
+    ? new Date(pr.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+    : '—';
+
+  const deptName = pr.initiator?.department?.name || '—';
 
   return (
-    <div className="space-y-5 text-left">
+    <div className="bg-white text-gray-900" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
 
-      {/* ── SECTION 1: Identity & Classification ─────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="bg-gradient-to-r from-[#1a3a6b] to-[#243f7a] px-5 py-3.5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-white font-bold text-sm tracking-wide">
-                Purchase Indent Summary
-              </h3>
-              <p className="text-blue-200 text-[11px] font-medium mt-0.5">
-                {pr.icr_number || `PI-${pr.id}`} · {new Date(pr.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+      {/* ── Letterhead ─────────────────────────────────────────────────── */}
+      <div className="border-2 border-gray-800">
+
+        {/* Institution header */}
+        <div className="border-b-2 border-gray-800 text-center py-4 px-6 bg-[#0f2a54]">
+          <p className="text-white text-[10px] font-bold uppercase tracking-[0.25em] opacity-80">
+            National Institute of Technology · Tiruchirappalli — 620 015
+          </p>
+          <h1 className="text-white text-base font-bold uppercase tracking-wider mt-1" style={{ fontFamily: 'inherit' }}>
+            Purchase Indent Form
+          </h1>
+          <p className="text-blue-200 text-[10px] mt-0.5 tracking-wide">
+            {deptName !== '—' ? `Department of ${deptName}` : 'Department of —'}
+          </p>
+        </div>
+
+        {/* Document meta row */}
+        <div className="border-b border-gray-400 flex items-stretch text-[11px]">
+          <div className="flex-1 px-4 py-2 border-r border-gray-400">
+            <span className="font-bold text-gray-600 uppercase tracking-wider text-[9px]">Indent No.</span>
+            <span className="ml-2 font-bold text-gray-900">{pr.icr_number || `PI-${pr.id}`}</span>
+          </div>
+          <div className="flex-1 px-4 py-2 border-r border-gray-400">
+            <span className="font-bold text-gray-600 uppercase tracking-wider text-[9px]">Date</span>
+            <span className="ml-2 text-gray-900">{dateStr}</span>
+          </div>
+          <div className="flex-1 px-4 py-2 border-r border-gray-400">
+            <span className="font-bold text-gray-600 uppercase tracking-wider text-[9px]">Financial Year</span>
+            <span className="ml-2 text-gray-900">{financialYear?.year || financialYear?.label || '—'}</span>
+          </div>
+          <div className="flex-1 px-4 py-2">
+            <span className="font-bold text-gray-600 uppercase tracking-wider text-[9px]">Total Value</span>
+            <span className="ml-2 font-bold text-gray-900">{formatCurrency(totalCost)}</span>
+          </div>
+        </div>
+
+        {/* ── SECTION 1: Indent Details ─────────────────────────────────── */}
+        <table className="w-full border-collapse">
+          <tbody>
+            <SectionTitle num={1} title="Indent Details" />
+            <DocRow label="Name of Indenter" value={pr.initiator?.name} />
+            <DocRow label="Designation" value={(pr.initiator as any)?.designation} />
+            <DocRow label="Department" value={deptName} />
+            <DocRow label="Purchase Type" value={<span className="capitalize">{pr.purchase_type || '—'}</span>} />
+            <DocRow label="Category" value={pr.category?.title} />
+            <DocRow label="Procurement Method" value={pr.procurement?.name} />
+            {pr.delivery_location && <DocRow label="Delivery Location" value={pr.delivery_location} />}
+            {pr.delivery_mode && <DocRow label="Delivery Mode" value={pr.delivery_mode} />}
+            {pr.basis_of_estimate && <DocRow label="Basis of Estimation" value={pr.basis_of_estimate} />}
+          </tbody>
+        </table>
+
+        {/* ── SECTION 2: Linked Administrative Approval ─────────────────── */}
+        {linkedAA && (
+          <table className="w-full border-collapse">
+            <tbody>
+              <SectionTitle num={2} title="Administrative Approval Reference" />
+              <DocRow label="AA Reference No." value={linkedAA.reference_number || `AA-${linkedAA.id}`} />
+              <DocRow label="AA Status" value={linkedAA.status} />
+              {linkedAA.budget_file && (
+                <DocRow label="Budget File" value={formatFileNo(linkedAA.budget_file.file_no, user?.role?.group_key)} />
+              )}
+              {linkedAA.item_description && <DocRow label="Item Description" value={linkedAA.item_description} />}
+              {linkedAA.total_cost && <DocRow label="AA Approved Amount" value={formatCurrency(linkedAA.total_cost)} />}
+            </tbody>
+          </table>
+        )}
+
+        {/* ── SECTION 3: Items Requested ────────────────────────────────── */}
+        {items.length > 0 && (
+          <div>
+            <div className="border-t border-b border-gray-400 px-3 py-2 bg-gray-100">
+              <p className="text-[11px] font-bold text-gray-800 uppercase tracking-widest">
+                {linkedAA ? '3' : '2'}. Items / Equipment Requested
               </p>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] text-blue-200 font-bold uppercase tracking-widest">Total Value</div>
-              <div className="text-xl font-extrabold text-white">{formatCurrency(totalCost)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4 text-left">
-          <FieldRow label="Initiator (Purchase Initiator)" value={
-            <span className="flex items-center gap-1.5">
-              <User size={12} className="text-slate-400" />
-              {pr.initiator?.name || '—'}
-            </span>
-          } />
-          <FieldRow label="Department" value={
-            <span className="flex items-center gap-1.5">
-              <Building2 size={12} className="text-slate-400" />
-              {pr.initiator?.department?.name || '—'}
-            </span>
-          } />
-          <FieldRow label="Purchase Type" value={
-            <span className="capitalize">{pr.purchase_type || '—'}</span>
-          } />
-          <FieldRow label="Category" value={pr.category?.title} />
-          <FieldRow label="Procurement Method" value={pr.procurement?.name} />
-          <FieldRow label="Financial Year" value={financialYear?.year || financialYear?.label || '—'} />
-          {pr.delivery_location && (
-            <FieldRow label="Delivery Location" value={pr.delivery_location} />
-          )}
-          {pr.delivery_mode && (
-            <FieldRow label="Delivery Mode" value={pr.delivery_mode} />
-          )}
-          {pr.basis_of_estimate && (
-            <FieldRow label="Basis of Estimation" value={pr.basis_of_estimate} span />
-          )}
-        </div>
-      </div>
-
-      {/* ── SECTION 2: Linked Administrative Approval ─────────────────────── */}
-      {linkedAA && (
-        <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 space-y-3">
-          <SectionHeader
-            icon={<CheckCircle2 size={15} />}
-            title="Linked Administrative Approval"
-            subtitle="Pre-approved via standalone AA module"
-          />
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <FieldRow label="AA Reference" value={linkedAA.reference_number || `AA-${linkedAA.id}`} />
-            <FieldRow label="Status" value={
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                {linkedAA.status}
-              </span>
-            } />
-            <FieldRow label="Budget File" value={
-              linkedAA.budget_file ? formatFileNo(linkedAA.budget_file.file_no, user?.role?.group_key) : '—'
-            } />
-            {linkedAA.item_description && (
-              <FieldRow label="Item Description" value={linkedAA.item_description} span />
-            )}
-            {linkedAA.total_cost && (
-              <FieldRow label="AA Approved Amount" value={formatCurrency(linkedAA.total_cost)} />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── SECTION 3: Item-wise Breakdown ────────────────────────────────── */}
-      {items.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <SectionHeader icon={<Package size={15} />} title="Items Requested" />
-            <span className="text-[10px] font-bold text-slate-400 bg-white border border-slate-200 px-2.5 py-1 rounded-full">
-              {items.length} item{items.length > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full border-collapse text-[11px]">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">S.No</th>
-                  <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">Item Description &amp; Specifications</th>
-                  <th className="px-4 py-2.5 text-center font-bold text-slate-500 uppercase tracking-wider text-[9px]">Qty</th>
-                  <th className="px-4 py-2.5 text-right font-bold text-slate-500 uppercase tracking-wider text-[9px]">Unit Cost</th>
-                  <th className="px-4 py-2.5 text-right font-bold text-slate-500 uppercase tracking-wider text-[9px]">Total</th>
-                  <th className="px-4 py-2.5 text-left font-bold text-slate-500 uppercase tracking-wider text-[9px]">Budget File</th>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-300 px-2 py-2 text-center text-[10px] font-bold text-gray-600 uppercase tracking-wider w-8">Sl.</th>
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Item Description &amp; Technical Specifications</th>
+                  <th className="border border-gray-300 px-2 py-2 text-center text-[10px] font-bold text-gray-600 uppercase tracking-wider w-12">Qty</th>
+                  <th className="border border-gray-300 px-2 py-2 text-right text-[10px] font-bold text-gray-600 uppercase tracking-wider w-28">Unit Cost (₹)</th>
+                  <th className="border border-gray-300 px-2 py-2 text-right text-[10px] font-bold text-gray-600 uppercase tracking-wider w-28">Total (₹)</th>
+                  <th className="border border-gray-300 px-2 py-2 text-center text-[10px] font-bold text-gray-600 uppercase tracking-wider w-16">GST %</th>
+                  <th className="border border-gray-300 px-2 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider w-28">Budget File</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {items.map((item, idx) => {
                   const fileNo = (item as any).budget_file?.file_no;
-                  const formattedFileNo = fileNo ? formatFileNo(fileNo, user?.role?.group_key) : null;
+                  const formattedFileNo = fileNo ? formatFileNo(fileNo, user?.role?.group_key) : '—';
                   const qty = item.quantity ?? 1;
                   const total = item.estimated_total ?? 0;
                   const unitCost = qty > 0 ? total / qty : 0;
+                  const gst = item.charges ?? 0;
 
-                  // Tech spec chips for the sub-row
-                  const specChips: { label: string; value: string }[] = [];
-                  if (item.requirement_type) specChips.push({ label: 'Req. Type', value: item.requirement_type });
-                  if (item.warranty) specChips.push({ label: 'Warranty', value: `${item.warranty} mo` });
-                  if (item.delivery_period) specChips.push({ label: 'Delivery', value: `${item.delivery_period} wk` });
-                  if (item.availability) specChips.push({ label: 'Availability', value: item.availability });
-                  if (item.site_readiness) specChips.push({ label: 'Site Readiness', value: item.site_readiness });
-                  if ((item as any).installation_required) specChips.push({ label: 'Installation', value: 'Required' });
+                  const specLines: string[] = [];
+                  if (item.requirement_type) specLines.push(`Requirement: ${item.requirement_type}`);
+                  if (item.warranty) specLines.push(`Warranty: ${item.warranty} months`);
+                  if (item.delivery_period) specLines.push(`Delivery Period: ${item.delivery_period} weeks`);
+                  if (item.availability) specLines.push(`Availability: ${item.availability}`);
+                  if (item.site_readiness) specLines.push(`Site Readiness: ${item.site_readiness}`);
+                  if ((item as any).installation_required === true || (item as any).installation_required === 'Yes')
+                    specLines.push('Installation: Required');
 
                   return (
                     <React.Fragment key={item.id}>
-                      {/* ── Main item row ── */}
-                      <tr className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-4 py-3 font-bold text-slate-400 align-top">{idx + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-800 max-w-xs align-top">
-                          <div>{item.item_description}</div>
+                      <tr>
+                        <td className="border border-gray-300 px-2 py-2 text-center align-top text-gray-700 font-semibold">{idx + 1}</td>
+                        <td className="border border-gray-300 px-3 py-2 align-top">
+                          <p className="font-semibold text-gray-900">{item.item_description}</p>
                           {item.gem_link && (
-                            <a
-                              href={item.gem_link.startsWith('http') ? item.gem_link : `https://${item.gem_link}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-blue-600 hover:underline mt-0.5 block truncate"
-                            >
-                              GeM Link →
-                            </a>
+                            <p className="text-[10px] text-blue-700 mt-0.5">GeM Link: {item.gem_link}</p>
+                          )}
+                          {specLines.length > 0 && (
+                            <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                              {specLines.join(' · ')}
+                            </p>
+                          )}
+                          {item.tech_specs_text && (
+                            <p className="text-[10px] text-gray-600 mt-1 italic border-l-2 border-gray-300 pl-2 leading-relaxed">
+                              {item.tech_specs_text}
+                            </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center font-bold text-slate-700 align-top">{qty}</td>
-                        <td className="px-4 py-3 text-right font-mono text-slate-600 align-top">{formatCurrency(unitCost)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#1a3a6b] align-top">{formatCurrency(total)}</td>
-                        <td className="px-4 py-3 align-top">
-                          {formattedFileNo ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                              {formattedFileNo}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </td>
+                        <td className="border border-gray-300 px-2 py-2 text-center align-top font-semibold text-gray-800">{qty}</td>
+                        <td className="border border-gray-300 px-2 py-2 text-right align-top font-mono text-gray-800">{formatCurrency(unitCost)}</td>
+                        <td className="border border-gray-300 px-2 py-2 text-right align-top font-mono font-bold text-gray-900">{formatCurrency(total)}</td>
+                        <td className="border border-gray-300 px-2 py-2 text-center align-top text-gray-700">{gst > 0 ? `${gst}%` : '—'}</td>
+                        <td className="border border-gray-300 px-2 py-2 align-top text-[10px] text-gray-700">{formattedFileNo}</td>
                       </tr>
-
-                      {/* ── Tech spec sub-row ── */}
-                      {(specChips.length > 0 || item.tech_specs_text) && (
-                        <tr className="bg-slate-50/60">
-                          <td className="px-4 pb-3" />
-                          <td colSpan={5} className="px-4 pb-3 pt-0">
-                            {specChips.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mb-1.5">
-                                {specChips.map(chip => (
-                                  <span
-                                    key={chip.label}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] font-semibold text-slate-600"
-                                  >
-                                    <span className="text-slate-400 font-bold uppercase text-[8px] tracking-wider">{chip.label}:</span>
-                                    {chip.value}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {item.tech_specs_text && (
-                              <p className="text-[11px] text-slate-500 italic leading-relaxed border-l-2 border-slate-200 pl-2">
-                                {item.tech_specs_text}
-                              </p>
-                            )}
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-200 bg-slate-50">
-                  <td colSpan={4} className="px-4 py-3 text-right font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                    Grand Total
+                {/* Grand total row */}
+                <tr className="bg-gray-50">
+                  <td colSpan={4} className="border border-gray-300 px-3 py-2 text-right font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Grand Total (Estimated Cost)
                   </td>
-                  <td className="px-4 py-3 text-right font-extrabold text-[#1a3a6b] text-base font-mono">
+                  <td className="border border-gray-300 px-2 py-2 text-right font-bold font-mono text-gray-900 text-sm">
                     {formatCurrency(totalCost)}
                   </td>
-                  <td></td>
+                  <td colSpan={2} className="border border-gray-300" />
                 </tr>
-              </tfoot>
+              </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── SECTION 4: Procurement Method Details ─────────────────────────── */}
-      {formDataEntries.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <SectionHeader icon={<Info size={15} />} title="Procurement Method Specifics" subtitle={pr.procurement?.name} />
-          </div>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            {formDataEntries.map(([key, val]) => {
-              const label = formLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const displayVal = formatFormValue(key, val);
-              const isLink = key === 'gem_link' || (typeof val === 'string' && val.startsWith('http'));
-              return (
-                <div key={key} className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-                  {isLink ? (
-                    <a
-                      href={displayVal.startsWith('http') ? displayVal : `https://${displayVal}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1 break-all"
-                    >
-                      <LinkIcon size={11} />
-                      {displayVal}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-800">{displayVal}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        {/* ── SECTION 4: Procurement Method Specifics ───────────────────── */}
+        {formDataEntries.length > 0 && (
+          <table className="w-full border-collapse">
+            <tbody>
+              <SectionTitle num={items.length > 0 ? (linkedAA ? 4 : 3) : (linkedAA ? 3 : 2)} title={`Procurement Method Details (${pr.procurement?.name || 'Details'})`} />
+              {formDataEntries.map(([key, val]) => {
+                const label = formLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const displayVal = formatFormValue(key, val);
+                const isLink = key === 'gem_link' || (typeof val === 'string' && val.startsWith('http'));
+                return (
+                  <DocRow
+                    key={key}
+                    label={label}
+                    value={
+                      isLink ? (
+                        <a
+                          href={displayVal.startsWith('http') ? displayVal : `https://${displayVal}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-700 hover:underline break-all text-[11px]"
+                        >
+                          {displayVal}
+                        </a>
+                      ) : displayVal
+                    }
+                  />
+                );
+              })}
+            </tbody>
+          </table>
+        )}
 
-      {/* ── SECTION 5: Financial & Compliance Fields ──────────────────────── */}
-      {(pr.emd != null || pr.performance_security != null || pr.exemption || pr.is_item_split || pr.is_quantity_split) && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <SectionHeader icon={<DollarSign size={15} />} title="Financial & Compliance Details" />
-          </div>
-          <div className="p-5 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
-            {pr.emd != null && pr.emd !== undefined && (
-              <FieldRow label="EMD (Earnest Money Deposit)" value={`${pr.emd}%`} />
-            )}
-            {pr.performance_security != null && pr.performance_security !== undefined && (
-              <FieldRow label="Performance Security" value={`${pr.performance_security}%`} />
-            )}
-            {pr.exemption && (
-              <div className="col-span-2 flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Proprietary / Exemption</span>
-                <span className="text-sm font-semibold text-orange-700 bg-orange-50 border border-orange-100 px-2.5 py-1.5 rounded">
-                  {pr.exemption_remarks || 'Exempted — No remarks provided'}
-                </span>
-              </div>
-            )}
-            {pr.is_item_split && (
-              <div className="col-span-2 flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Item Split Justification</span>
-                <span className="text-sm font-semibold text-slate-800">{pr.item_split_justification || 'Yes'}</span>
-              </div>
-            )}
-            {pr.is_quantity_split && (
-              <div className="col-span-2 flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Quantity Split Details</span>
-                <span className="text-sm font-semibold text-slate-800">{pr.quantity_split_details || 'Yes'}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        {/* ── SECTION 5: Financial & Compliance ────────────────────────── */}
+        {(pr.emd != null || pr.performance_security != null || pr.exemption || pr.is_item_split || pr.is_quantity_split) && (
+          <table className="w-full border-collapse">
+            <tbody>
+              <tr>
+                <td colSpan={2} className="border border-gray-400 px-3 py-2 bg-gray-100 text-[11px] font-bold text-gray-800 uppercase tracking-widest">
+                  Financial &amp; Compliance Details
+                </td>
+              </tr>
+              {pr.emd != null && <DocRow label="EMD (Earnest Money Deposit)" value={`${pr.emd}%`} />}
+              {pr.performance_security != null && <DocRow label="Performance Security" value={`${pr.performance_security}%`} />}
+              {pr.exemption && <DocRow label="Exemption / Proprietary Remarks" value={pr.exemption_remarks || 'Exempted'} />}
+              {pr.is_item_split && <DocRow label="Item Split Justification" value={pr.item_split_justification || 'Yes'} />}
+              {pr.is_quantity_split && <DocRow label="Quantity Split Details" value={pr.quantity_split_details || 'Yes'} />}
+            </tbody>
+          </table>
+        )}
 
-      {/* ── SECTION 6: Training Details ───────────────────────────────────── */}
-      {isTrainingRequired && (
-        <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
-          <SectionHeader icon={<AlertCircle size={15} />} title="Training Requirement" />
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <FieldRow label="Training Type" value={pr_any.training_type} />
-            <FieldRow label="Training Vendor" value={pr_any.training_vendor} />
-            {pr_any.training_comments && <FieldRow label="Training Comments" value={pr_any.training_comments} span />}
-          </div>
-        </div>
-      )}
+        {/* ── SECTION 6: Training ───────────────────────────────────────── */}
+        {isTrainingRequired && (
+          <table className="w-full border-collapse">
+            <tbody>
+              <tr>
+                <td colSpan={2} className="border border-gray-400 px-3 py-2 bg-gray-100 text-[11px] font-bold text-gray-800 uppercase tracking-widest">
+                  Training Requirement
+                </td>
+              </tr>
+              {pr_any.training_type && <DocRow label="Training Type" value={pr_any.training_type} />}
+              {pr_any.training_vendor && <DocRow label="Training Vendor" value={pr_any.training_vendor} />}
+              {pr_any.training_comments && <DocRow label="Training Comments" value={pr_any.training_comments} />}
+            </tbody>
+          </table>
+        )}
 
-      {/* ── SECTION 7: Service Center Info ───────────────────────────────── */}
-      {isServiceCenter && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-          <SectionHeader icon={<Truck size={15} />} title="Service Center (Southern Region)" />
-          <p className="text-sm font-semibold text-slate-700">{pr_any.service_center_south_desc || 'Service center available in southern region.'}</p>
-        </div>
-      )}
-
-      {/* ── SECTION 8: Uploaded Attachments ──────────────────────────────── */}
-      {pr.documents && pr.documents.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <SectionHeader icon={<Paperclip size={15} />} title="Uploaded Documents & Attachments" />
-            <span className="text-[10px] font-bold text-slate-400 bg-white border border-slate-200 px-2.5 py-1 rounded-full">
-              {pr.documents.length} file{pr.documents.length > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            {pr.documents.map((doc: any) => {
-              const isEvalDoc = doc.doc_key?.startsWith('tech_eval_doc_');
-              const label = isEvalDoc
-                ? (doc.uploaded_by_name ? `Technical Evaluation — ${doc.uploaded_by_name}` : 'Technical Evaluation Report')
-                : doc.doc_key?.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Document';
-
-              return (
-                <div
-                  key={doc.id}
-                  className="flex items-start justify-between gap-3 p-3 bg-slate-50 border border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/20 rounded-lg transition-all group"
-                >
-                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                    <div className="w-8 h-8 shrink-0 rounded-md bg-indigo-100 flex items-center justify-center">
-                      <FileText size={14} className="text-indigo-600" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-700 truncate" title={doc.original_name}>
-                        {doc.original_name}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wider">
-                        {label}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <a
-                      href={doc.path}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="View file"
-                      className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-[#1a3a6b] border border-slate-200 hover:border-[#1a3a6b] px-2 py-1 rounded transition-colors"
-                    >
-                      <ChevronRight size={11} />
-                      View
-                    </a>
-                    <a
-                      href={doc.path}
-                      download={doc.original_name}
-                      title="Download file"
-                      className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
-                    >
-                      <Download size={11} />
-                      Download
-                    </a>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── SECTION 9: Purchase Committee ────────────────────────────────── */}
-      {(pr.faculty1 || pr.faculty2 || pr.faculty3 || pr.initiator) && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <SectionHeader icon={<User size={15} />} title="Purchase / Technical Committee" subtitle="Nominated members for technical evaluation" />
-          </div>
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Purchase Initiator */}
-            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Purchase Initiator</p>
-              {pr.initiator ? (
-                <>
-                  <p className="text-xs font-bold text-slate-800">{pr.initiator.name}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.initiator.email}</p>
-                </>
-              ) : (
-                <p className="text-xs text-slate-400 italic">—</p>
-              )}
-            </div>
-
-            {/* HOD Expert 1 — mandatory */}
-            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                Expert 1 (HOD Nominee) <span className="text-rose-400">*</span>
+        {/* ── SECTION 7: Purchase / Technical Committee ─────────────────── */}
+        {(pr.initiator || pr.faculty1 || pr.faculty2 || pr.faculty3) && (
+          <div>
+            <div className="border-t border-gray-400 px-3 py-2 bg-gray-100">
+              <p className="text-[11px] font-bold text-gray-800 uppercase tracking-widest">
+                Purchase / Technical Sub-Committee (TSC) Members
               </p>
-              {pr.faculty1 ? (
-                <>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty1.name}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty1.email}</p>
-                </>
-              ) : (
-                <p className="text-xs text-rose-400 italic font-medium">Not nominated yet</p>
-              )}
             </div>
-
-            {/* HOD Expert 2 — mandatory */}
-            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                Expert 2 (HOD Nominee) <span className="text-rose-400">*</span>
-              </p>
-              {pr.faculty2 ? (
-                <>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty2.name}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty2.email}</p>
-                </>
-              ) : (
-                <p className="text-xs text-rose-400 italic font-medium">Not nominated yet</p>
-              )}
-            </div>
-
-            {/* Director Nominee — optional */}
-            <div className="p-3 border border-slate-100 rounded-lg bg-slate-50/60">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                Director Nominee{' '}
-                <span className="text-slate-300 font-normal">(Optional)</span>
-              </p>
-              {pr.faculty3 ? (
-                <>
-                  <p className="text-xs font-bold text-slate-800">{pr.faculty3.name}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{pr.faculty3.email}</p>
-                </>
-              ) : (
-                <p className="text-xs text-slate-400 italic font-medium">Not nominated</p>
-              )}
-            </div>
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Role</th>
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Name</th>
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pr.initiator && (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Purchase Initiator</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-900 font-semibold">{pr.initiator.name}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-mono text-[10px]">{pr.initiator.email}</td>
+                  </tr>
+                )}
+                {pr.faculty1 ? (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Expert 1 — HOD Nominee</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-900 font-semibold">{pr.faculty1.name}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-mono text-[10px]">{pr.faculty1.email}</td>
+                  </tr>
+                ) : (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Expert 1 — HOD Nominee</td>
+                    <td colSpan={2} className="border border-gray-300 px-3 py-2 text-gray-400 italic text-[10px]">Not yet nominated</td>
+                  </tr>
+                )}
+                {pr.faculty2 ? (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Expert 2 — HOD Nominee</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-900 font-semibold">{pr.faculty2.name}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-mono text-[10px]">{pr.faculty2.email}</td>
+                  </tr>
+                ) : (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Expert 2 — HOD Nominee</td>
+                    <td colSpan={2} className="border border-gray-300 px-3 py-2 text-gray-400 italic text-[10px]">Not yet nominated</td>
+                  </tr>
+                )}
+                {pr.faculty3 && (
+                  <tr>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-semibold bg-gray-50">Director Nominee <span className="font-normal text-gray-400">(Optional)</span></td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-900 font-semibold">{pr.faculty3.name}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600 font-mono text-[10px]">{pr.faculty3.email}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
+        )}
+
+        {/* ── SECTION 8: Attachments ────────────────────────────────────── */}
+        {pr.documents && pr.documents.length > 0 && (
+          <div>
+            <div className="border-t border-gray-400 px-3 py-2 bg-gray-100">
+              <p className="text-[11px] font-bold text-gray-800 uppercase tracking-widest">
+                Enclosures / Attached Documents ({pr.documents.length})
+              </p>
+            </div>
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-300 px-2 py-2 text-center text-[10px] font-bold text-gray-600 uppercase tracking-wider w-8">No.</th>
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Document Name</th>
+                  <th className="border border-gray-300 px-3 py-2 text-left text-[10px] font-bold text-gray-600 uppercase tracking-wider">Category</th>
+                  <th className="border border-gray-300 px-3 py-2 text-center text-[10px] font-bold text-gray-600 uppercase tracking-wider w-24">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pr.documents.map((doc: any, i: number) => {
+                  const isEvalDoc = doc.doc_key?.startsWith('tech_eval_doc_');
+                  const label = isEvalDoc
+                    ? (doc.uploaded_by_name ? `Technical Evaluation — ${doc.uploaded_by_name}` : 'Technical Evaluation')
+                    : doc.doc_key?.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Document';
+                  return (
+                    <tr key={doc.id}>
+                      <td className="border border-gray-300 px-2 py-2 text-center text-gray-600">{i + 1}</td>
+                      <td className="border border-gray-300 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <FileText size={11} className="text-gray-400 shrink-0" />
+                          <span className="text-gray-800 font-medium truncate">{doc.original_name}</span>
+                        </div>
+                      </td>
+                      <td className="border border-gray-300 px-3 py-2 text-gray-500">{label}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <a href={doc.path} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 hover:underline">
+                            <ChevronRight size={10} /> View
+                          </a>
+                          <a href={doc.path} download={doc.original_name}
+                            className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-600 hover:underline">
+                            <Download size={10} /> Save
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Document footer */}
+        <div className="border-t border-gray-400 px-4 py-2 bg-gray-50 flex justify-between items-center">
+          <p className="text-[9px] text-gray-400 uppercase tracking-widest">
+            Generated by IRIS — NIT Tiruchirappalli Procurement System
+          </p>
+          <p className="text-[9px] text-gray-400">
+            Indent No.: {pr.icr_number || `PI-${pr.id}`}
+          </p>
         </div>
-      )}
 
-      {/* Delivery info is already shown in Section 1 (Identity) */}
-
+      </div>
     </div>
   );
 };

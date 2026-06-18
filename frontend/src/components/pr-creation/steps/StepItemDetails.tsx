@@ -92,11 +92,20 @@ export const StepItemDetails: React.FC<Props> = ({
                   onChange={(e) => onUpdate(fid, { quantity: e.target.value })}
                   disabled={!!administrativeApprovalId}
                 />
-                <span className="text-xs text-slate-500 mt-1 block font-medium">
-                  Base Cost: <span className="text-slate-700 font-bold">{formatCurrency((Number(item.quantity) || 0) * file.unit_cost)}</span>
-                  {' | '}
-                  Total Cost (incl. GST): <strong className="text-[#1a3a6b] font-bold">{formatCurrency(((Number(item.quantity) || 0) * file.unit_cost) * (1 + (Number(item.charges) || 0) / 100))}</strong>
-                </span>
+                {(() => {
+                  const baseCost = (Number(item.quantity) || 0) * file.unit_cost;
+                  const gstAmt = baseCost * (Number(item.charges) || 0) / 100;
+                  const overBudget = baseCost > availableAmount;
+                  return (
+                    <span className={`text-xs mt-1 block font-medium ${overBudget ? 'text-rose-600' : 'text-slate-500'}`}>
+                      Estimated Cost: <span className={`font-bold ${overBudget ? 'text-rose-700' : 'text-slate-700'}`}>{formatCurrency(baseCost)}</span>
+                      {gstAmt > 0 && (
+                        <> {' '}+ GST: <span className="font-bold text-amber-700">{formatCurrency(gstAmt)}</span></>
+                      )}
+                      {overBudget && <span className="ml-2 text-rose-600 font-bold">⚠ Exceeds available balance!</span>}
+                    </span>
+                  );
+                })()}
               </div>
 
               <div>

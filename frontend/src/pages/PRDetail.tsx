@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  ChevronDown, ChevronUp, ShieldAlert, Search, Layers, AlertTriangle, FileText, Clock, Paperclip, ChevronRight, Download
+import {
+  ShieldAlert, Search, FileText, Clock, Paperclip, ChevronRight, Download
 } from 'lucide-react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { formatCurrency } from '../utils/format';
 import { prApi, budgetApi, adminApi, assetsApi } from '../services/api';
 import { queryKeys } from '../config/queryKeys';
@@ -13,16 +13,13 @@ import toast from 'react-hot-toast';
 
 // Modular Detail Components
 import { PRHeader } from '../components/pr/detail/PRHeader';
-import { PRItemsTable } from '../components/pr/detail/PRItemsTable';
-
-import { PRCommitteePanel } from '../components/pr/detail/PRCommitteePanel';
 import { PRActionPanel } from '../components/pr/PRActionPanel';
 import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
 import { CollapsibleIndentPanel } from '../components/pr/detail/CollapsibleIndentPanel';
 
 const STAGES = [
   { key: 'request', label: 'Request', desc: 'Initial Indent' },
-  { key: 'aa', label: 'AA', desc: 'Admin Approval' },
+  { key: 'aa', label: 'Indent', desc: 'Indent Approval' },
   { key: 'tendering', label: 'Tendering', desc: 'Tender Prep' },
   { key: 'tech_eval', label: 'Tech Eval', desc: 'TSC Evaluation' },
   { key: 'fin_sanction', label: 'Fin Sanction', desc: 'Financial Sanction' },
@@ -271,12 +268,7 @@ export const PRDetailPage: React.FC = () => {
 
   const activeReferral = pr.referrals?.find((ref: any) => ref.status === 'pending');
 
-  const completedApprovers = pr.history?.filter((h: any) => 
-    !h.status?.includes('Voided') &&
-    !['Forwarded', 'Forwarded to next phase', 'Initiated', 'pr_submitted', 'Tender Details Registered', 'Technical Evaluation Completed', 'Technical Evaluation Approved', 'Financial Bids Submitted', 'Bid Selected', 'PO Cancelled', 'Tender Cancelled', 'Bill Passed (PR Completed)'].includes(h.status)
-  ) || [];
-
-  const activeStageObj = STAGES.find(s => s.key === selectedStageKey);
+const activeStageObj = STAGES.find(s => s.key === selectedStageKey);
 
   // Signatures resolved from history snapshot logs
   const findSignature = (roleVal?: string, statusKeyword?: string, userId?: number): any | null => {
@@ -302,9 +294,6 @@ export const PRDetailPage: React.FC = () => {
   const faculty1Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty1_id) || findSignature(undefined, 'Completed', pr.faculty1_id);
   const faculty2Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty2_id) || findSignature(undefined, 'Completed', pr.faculty2_id);
   const faculty3Sig = findSignature(undefined, 'Technical Evaluation', pr.faculty3_id) || findSignature(undefined, 'Completed', pr.faculty3_id);
-  const hodSig = findSignature('hod') || findSignature('head of department') || (pr.hod_id ? findSignature(undefined, undefined, pr.hod_id) : null);
-  const deanSig = findSignature('dean_pd') || findSignature('dean');
-  const directorSig = findSignature('director');
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -417,7 +406,6 @@ export const PRDetailPage: React.FC = () => {
                       {pr.items
                         .filter((item: any) => item.budget_file?.file_no?.toUpperCase().startsWith('TEMP'))
                         .map((item: any, i: number) => {
-                          const hasEditPermission = ['dean_approver', 'admin'].includes(user?.role?.group_key || '');
                           const permanentNum = item.budget_file.file_no.replace(/^TEMP\//i, 'NITT/');
                           return (
                             <div key={i} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs bg-white border border-amber-200/80 p-3 rounded-lg shadow-sm">
@@ -512,10 +500,12 @@ export const PRDetailPage: React.FC = () => {
             <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm text-left space-y-6">
               <div className="border-b border-slate-100 pb-3">
                 <h2 className="text-base font-extrabold text-[#1a3a6b] uppercase tracking-wide">
-                  Stage: {activeStageObj?.label} - {activeStageObj?.desc}
+                  {activeStageObj?.label}{activeStageObj?.desc ? ` — ${activeStageObj.desc}` : ''}
                 </h2>
                 <p className="text-xs text-slate-500 font-medium">
-                  Procurement process state and compliance execution desk.
+                  {selectedStageKey === 'aa'
+                    ? 'Indent & Tech Specification approval workflow.'
+                    : 'Procurement process state and compliance execution desk.'}
                 </p>
               </div>
 
@@ -534,22 +524,12 @@ export const PRDetailPage: React.FC = () => {
               {/* STAGE: AA */}
               {selectedStageKey === 'aa' && (
                 <div className="space-y-6">
-                  <PRCommitteePanel
-                    pr={pr}
-                    initiatorSig={initiatorSig}
-                    hodSig={hodSig}
-                    deanSig={deanSig}
-                    directorSig={directorSig}
-                    faculty1Sig={faculty1Sig}
-                    faculty2Sig={faculty2Sig}
-                    faculty3Sig={faculty3Sig}
-                  />
-                  {selectedStageKey === activeStageKey && isActionable ? (
+                  {selectedStageKey === activeStageKey && (isActionable || pr.current_status === 'rejected') ? (
                     <PRActionPanel pr={pr} user={user} refetch={refetch} faculties={faculties} />
                   ) : (
                     <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl space-y-5">
                       <div className="text-center text-xs text-slate-500 font-semibold italic">
-                        Administrative approval stage has completed or is not actively awaiting actions.
+                        Indent approval stage has completed or is not actively awaiting actions.
                       </div>
                       
                       {pr.administrative_approval_id && (
@@ -837,7 +817,7 @@ export const PRDetailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {selectedStageKey === activeStageKey && (isActionable || (pr.flow?.phase_name === 'Tendering' && user?.id === pr.initiator_id)) ? (
+                  {selectedStageKey === activeStageKey && (isActionable || pr.current_status === 'rejected' || (pr.flow?.phase_name === 'Tendering' && user?.id === pr.initiator_id)) ? (
                     <PRActionPanel pr={pr} user={user} refetch={refetch} faculties={faculties} />
                   ) : null}
                 </div>
@@ -1161,64 +1141,18 @@ export const PRDetailPage: React.FC = () => {
           {/* Right column: Status details / history */}
           <div className="lg:col-span-4 space-y-6">
 
-            
-            {/* Case status details */}
-            <div className="card text-left">
-              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Procurement Case Summary</h3>
-              </div>
-              <div className="p-5 space-y-4 text-xs font-semibold text-slate-600">
-                
-                {/* Active bottleneck referral warning */}
-                {activeReferral && (
-                  <div className="p-3 bg-amber-50 border-l-4 border-l-amber-500 border border-amber-200 rounded-r-md text-amber-800 space-y-1.5 shadow-xs text-left">
-                    <span className="font-bold flex items-center gap-1 uppercase tracking-wider text-[9px]">
-                      Active Bottleneck Referral
-                    </span>
-                    <p className="font-normal text-amber-900 leading-normal">
-                      The workflow is currently frozen awaiting an opinion referral query response from <strong className="text-slate-800">{activeReferral.referred_to?.name}</strong>.
-                    </p>
-                    <div className="text-[10px] font-mono bg-white p-2 border border-amber-200 rounded">
-                      <span className="font-bold text-slate-400">Query: </span>"{activeReferral.query}"
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Current active phase</span>
-                  <p className="font-extrabold text-[#1a3a6b] text-sm">
-                    {pr.flow ? `${pr.flow.phase_name} (Step ${pr.flow.step_order})` : pr.current_status.toUpperCase()}
-                  </p>
+            {/* Active bottleneck referral warning */}
+            {activeReferral && (
+              <div className="p-3 bg-amber-50 border-l-4 border-l-amber-500 border border-amber-200 rounded-r-md text-amber-800 space-y-1.5 shadow-xs text-left">
+                <span className="font-bold flex items-center gap-1 uppercase tracking-wider text-[9px]">Active Bottleneck Referral</span>
+                <p className="font-normal text-amber-900 leading-normal text-xs">
+                  The workflow is frozen awaiting a referral query response from <strong>{activeReferral.referred_to?.name}</strong>.
+                </p>
+                <div className="text-[10px] font-mono bg-white p-2 border border-amber-200 rounded">
+                  <span className="font-bold text-slate-400">Query: </span>"{activeReferral.query}"
                 </div>
-
-                {pr.flow && (
-                  <div className="space-y-1 pt-1.5 border-t border-slate-100">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pending Approver</span>
-                    <p className="font-bold text-slate-800 text-xs">
-                      {pr.flow.expected_user_name 
-                        ? `${pr.flow.expected_user_name} (User)`
-                        : pr.flow.expected_role_name || pr.flow.expected_group || 'N/A'}
-                    </p>
-                  </div>
-                )}
-
-                {completedApprovers.length > 0 && (
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Completed Approvers</span>
-                    <div className="space-y-1 mt-1">
-                      {completedApprovers.map(h => (
-                        <div key={h.id} className="flex justify-between items-center text-[10px] text-slate-600 bg-slate-50 border border-slate-100 px-2 py-1 rounded">
-                          <span className="font-bold">{h.frozen_actor_name || 'Approver'}</span>
-                          <span className="font-mono text-[9px] text-slate-400">{h.frozen_designation || 'Signed'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
-
-            {/* Workflow Timeline history moved to main column */}
+            )}
 
             {/* Quick Admin user role editor */}
             {isAdmin && (
@@ -1376,68 +1310,6 @@ export const PRDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Procurement Mode Form Details */}
-      {pr.form_data && Object.keys(pr.form_data).length > 0 && (
-        <div className="card p-6 bg-white border border-slate-200 shadow-sm space-y-4 text-left">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2 flex items-center gap-2">
-            <span className="w-1.5 h-3 bg-[#1a3a6b] rounded-xs"></span>
-            Procurement Method Form Data ({pr.procurement?.name || 'Details'})
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-            {Object.entries(pr.form_data).map(([key, val]) => {
-              if (val === undefined || val === null || val === '') return null;
-              
-              const labels: Record<string, string> = {
-                gem_link: 'GeM Bid / RA Link',
-                gem_nac_attached: 'GeM Non-Availability Certificate (NAC) Attached?',
-                tender_id: 'CPPP Tender ID',
-                publication_date: 'Publication Date (CPPP)',
-                invited_vendors: 'Invited Vendors',
-                manufacturer_name: 'OEM Manufacturer Name',
-                manufacturer_address: 'OEM Address',
-                justification_type: 'PAC Justification Basis',
-                finance_concurrence_ref: 'Finance Concurrence Reference',
-              };
-
-              const label = labels[key] || key.replace(/_/g, ' ').toUpperCase();
-              
-              let displayVal = String(val);
-              if (typeof val === 'boolean') {
-                displayVal = val ? 'Yes' : 'No';
-              } else if (key === 'justification_type') {
-                const map: Record<string, string> = {
-                  sole_manufacturer: 'Sole Manufacturer',
-                  no_alternative: 'No Alternative Product Acceptable',
-                  similar_unavailable: 'Similar Product Unavailable',
-                };
-                displayVal = map[val] || val;
-              }
-
-              return (
-                <div key={key} className="space-y-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    {label}
-                  </span>
-                  {key === 'gem_link' ? (
-                    <a
-                      href={displayVal.startsWith('http') ? displayVal : `https://${displayVal}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                    >
-                      {displayVal}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-800 break-words">
-                      {displayVal}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

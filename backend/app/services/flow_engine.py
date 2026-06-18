@@ -67,6 +67,15 @@ class FlowEngineService:
             select(SourceOfFund.id).where(SourceOfFund.name == bm.source_of_fund)
         )
         sof_id = sof_res.scalar_one_or_none()
+        if sof_id is None and bm.source_of_fund:
+            # Fallback: prefix match for cases where budget_master stores a short form
+            # (e.g. "CAPEX") but source_of_funds uses the canonical name ("CAPEX (OH-35)").
+            sof_res2 = await self.db.execute(
+                select(SourceOfFund.id)
+                .where(SourceOfFund.name.istartswith(bm.source_of_fund + " "))
+                .limit(1)
+            )
+            sof_id = sof_res2.scalar_one_or_none()
         if sof_id is None:
             return None
         # Only return sof_id if fund-specific workflow rows actually exist
@@ -121,6 +130,13 @@ class FlowEngineService:
         for h in sorted_history:
             status_lower = h.status.lower() if h.status else ""
             if "sent back" in status_lower or "returned" in status_lower:
+                approved_indices = set()
+                te_signed_user_ids = set()
+                continue
+            # Phase transitions reset approved state — history from prior phases must not
+            # pollute the current phase's step matching (e.g. indent PI auto-submit should
+            # not count as the tendering PI step being completed).
+            if "next phase" in status_lower or "technical evaluation phase completed" in status_lower:
                 approved_indices = set()
                 te_signed_user_ids = set()
                 continue

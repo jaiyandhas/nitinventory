@@ -192,7 +192,14 @@ def _serialize_pr(pr: PurchaseRequest) -> dict:
         "amount": pr.amount,
         "purchase_type": pr.purchase_type,
         "created_at": pr.created_at.isoformat() + "Z" if pr.created_at else None,
-        "initiator": {"id": pr.initiator.id, "name": pr.initiator.name, "email": pr.initiator.email} if pr.initiator else None,
+        "initiator": {
+            "id": pr.initiator.id,
+            "name": pr.initiator.name,
+            "email": pr.initiator.email,
+            "department": (lambda d: {"id": d.id, "name": d.name, "short_code": d.short_code} if d else None)(
+                pr.initiator.__dict__.get("department")
+            ),
+        } if pr.initiator else None,
         "category": {
             "id": pr.purchase_category.id,
             "title": pr.purchase_category.title,
@@ -312,20 +319,19 @@ async def _persist_pr(
         # Allow override of locked quantity by user specified quantity
         item_qty = item_data.quantity if (item_data and item_data.quantity is not None) else bm.quantity
         item_est_total = item_qty * bm.unit_cost
-        item_gst = float(item_data.charges) if item_data.charges else 0.0
-        item_total_cost = item_est_total * (1.0 + item_gst / 100.0)
-        
-        # If this budget file has a linked AA that has committed budget, add it back for validation
+
+        # Budget files are sanctioned with a total amount that already covers taxes.
+        # Compare and lock using the pre-GST estimated total only.
         effective_available = bm.available_balance
         if aa and aa.budget_file_id == fid:
             effective_available += aa.total_cost
 
-        if item_total_cost > effective_available:
+        if item_est_total > effective_available:
             raise HTTPException(
                 status_code=422,
-                detail=f"Requested amount ₹{item_total_cost:,.2f} (Qty: {item_qty}, incl. GST) for item '{bm.item_name}' exceeds available budget ₹{effective_available:,.2f}."
+                detail=f"Requested amount ₹{item_est_total:,.2f} (Qty: {item_qty}) for item '{bm.item_name}' exceeds available budget ₹{effective_available:,.2f}."
             )
-        total_amount += item_total_cost
+        total_amount += item_est_total
 
     if len(budget_by_id) > 1:
         sources_of_fund = sorted(list({bm.source_of_fund for bm in budget_by_id.values() if bm.source_of_fund}))
@@ -929,6 +935,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.initiator).selectinload(User.department),
             selectinload(PurchaseRequest.purchase_category),
             selectinload(PurchaseRequest.procurement),
+            selectinload(PurchaseRequest.financial_year),
             selectinload(PurchaseRequest.items).selectinload(PurchaseRequestItem.budget_file),
             selectinload(PurchaseRequest.history),
             selectinload(PurchaseRequest.flow),
@@ -1225,6 +1232,11 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     return {
         **_serialize_pr(pr),
         "is_potential_split": is_potential_split,
+        "financial_year": {
+            "id": pr.financial_year.id,
+            "year": pr.financial_year.label,
+            "label": pr.financial_year.label,
+        } if pr.financial_year else None,
         "initiator_id": pr.initiator_id,
         "faculty1_id": pr.faculty1_id,
         "faculty2_id": pr.faculty2_id,
@@ -1479,12 +1491,11 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                     pr.faculty1_id = body_faculty1
                     pr.faculty2_id = body_faculty2
                 else:
-                    # Auto-assign from department default if budget master doesn't have it
                     await db.refresh(pr, ["initiator"])
                     if pr.initiator:
                         await db.refresh(pr.initiator, ["department"])
                     dept = pr.initiator.department if pr.initiator else None
-                    
+
                     budget_file = None
                     await db.refresh(pr, ["items"])
                     if pr.items:
@@ -1492,20 +1503,21 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                         if budget_file_id:
                             budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
                             budget_file = budget_res.scalar_one_or_none()
-  
+
                     expert1_id = budget_file.expert1_id if (budget_file and budget_file.expert1_id) else (dept.expert1_id if dept else None)
                     expert2_id = budget_file.expert2_id if (budget_file and budget_file.expert2_id) else (dept.expert2_id if dept else None)
-                    
                     pr.faculty1_id = expert1_id
                     pr.faculty2_id = expert2_id
-
-                if body_faculty3:
-                    pr.faculty3_id = body_faculty3
 
                 if not pr.faculty1_id or not pr.faculty2_id:
                     raise HTTPException(
                         status_code=400,
                         detail="The purchase committee experts (Expert 1 & 2) have not been configured yet. HOD must nominate Expert 1 & 2."
+                    )
+                if pr.faculty1_id == pr.faculty2_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Expert 1 and Expert 2 must be different persons."
                     )
 
     user_group = user.role.group_key if user.role else None
@@ -1520,30 +1532,13 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
             if phase and phase.phase_name in ("Indent and Detailed Tech Specification", "Administrative Approval"):
                 body_faculty3 = body.get("faculty3_id")
                 if body_faculty3:
+                    if body_faculty3 == pr.faculty1_id:
+                        raise HTTPException(status_code=400, detail="Director Nominee must be different from Expert 1 (HOD Nominee).")
+                    if body_faculty3 == pr.faculty2_id:
+                        raise HTTPException(status_code=400, detail="Director Nominee must be different from Expert 2 (HOD Nominee).")
                     pr.faculty3_id = body_faculty3
                 else:
-                    # Auto-assign from department default if budget master doesn't have it
-                    await db.refresh(pr, ["initiator"])
-                    if pr.initiator:
-                        await db.refresh(pr.initiator, ["department"])
-                    dept = pr.initiator.department if pr.initiator else None
-                    
-                    budget_file = None
-                    await db.refresh(pr, ["items"])
-                    if pr.items:
-                        budget_file_id = pr.items[0].budget_file_id
-                        if budget_file_id:
-                            budget_res = await db.execute(select(BudgetMaster).where(BudgetMaster.id == budget_file_id))
-                            budget_file = budget_res.scalar_one_or_none()
-                            
-                    faculty3_id = budget_file.director_faculty_id if (budget_file and budget_file.director_faculty_id) else (dept.director_faculty_id if dept else None)
-                    pr.faculty3_id = faculty3_id
-                
-                if not pr.faculty3_id:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Director nominee has not been configured yet. Director must nominate a faculty representative."
-                    )
+                    pr.faculty3_id = None
  
     flow_engine = FlowEngineService(db, background_tasks)
     try:
@@ -2601,8 +2596,7 @@ async def cancel_po(
     deltas = defaultdict(float)
     for item in items:
         if item.budget_file_id is not None:
-            item_charges = item.charges if item.charges is not None else 0.0
-            deltas[item.budget_file_id] += item.estimated_total * (1.0 + item_charges / 100.0)
+            deltas[item.budget_file_id] += item.estimated_total
 
     from app.models.budget import BudgetMaster
     from sqlalchemy import update, func
@@ -2891,8 +2885,7 @@ async def allocate_budget_file(
                 old_budget_id = old_bm.id
 
                 # Dec locked amount on old temp budget
-                item_charges = item.charges if item.charges is not None else 0.0
-                transfer_amount = item.estimated_total * (1.0 + item_charges / 100.0)
+                transfer_amount = item.estimated_total
                 old_bm.committed_amount = max(0.0, old_bm.committed_amount - transfer_amount)
 
                 # Inc locked amount on new selected budget

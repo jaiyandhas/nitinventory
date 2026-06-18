@@ -13,6 +13,7 @@ interface AAActionProps {
   setRemarks: (val: string) => void;
   isHOD?: boolean;
   isDirector?: boolean;
+  nominationDone?: boolean;
   expert1Id?: number | '';
   setExpert1Id?: (val: number | '') => void;
   expert2Id?: number | '';
@@ -34,6 +35,7 @@ export const AAAction: React.FC<AAActionProps> = ({
   setRemarks,
   isHOD = false,
   isDirector = false,
+  nominationDone = false,
   expert1Id = '',
   setExpert1Id,
   expert2Id = '',
@@ -45,7 +47,7 @@ export const AAAction: React.FC<AAActionProps> = ({
 }) => {
   return (
     <div className="space-y-6 pt-2 border-t border-blue-200 text-left">
-      {isHOD && setExpert1Id && setExpert2Id && (
+      {isHOD && !nominationDone && setExpert1Id && setExpert2Id && (
         <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-lg space-y-4">
           <div>
             <span className="text-xs font-bold text-indigo-950 uppercase tracking-wider block">
@@ -132,10 +134,27 @@ export const AAAction: React.FC<AAActionProps> = ({
         />
       </div>
 
+      {isHOD && expert1Id && expert2Id && expert1Id === expert2Id && (
+        <p className="text-xs text-rose-600 font-semibold bg-rose-50 border border-rose-200 rounded px-3 py-2">
+          Expert 1 and Expert 2 must be different persons.
+        </p>
+      )}
+      {isDirector && directorFacultyId && (
+        (directorFacultyId === pr.faculty1_id || directorFacultyId === pr.faculty2_id) && (
+          <p className="text-xs text-rose-600 font-semibold bg-rose-50 border border-rose-200 rounded px-3 py-2">
+            Director Nominee must be different from Expert 1 and Expert 2.
+          </p>
+        )
+      )}
+
       <div className="flex gap-3">
-        <button 
-          onClick={onAdvance} 
-          disabled={actionLoading || !remarks.trim()} 
+        <button
+          onClick={onAdvance}
+          disabled={
+            actionLoading || !remarks.trim() ||
+            (isHOD && !nominationDone && !!expert1Id && !!expert2Id && expert1Id === expert2Id) ||
+            (isDirector && !!directorFacultyId && (directorFacultyId === pr.faculty1_id || directorFacultyId === pr.faculty2_id))
+          }
           className="btn-primary flex items-center gap-2"
         >
           <CheckCircle2 size={16} /> Approve &amp; Forward

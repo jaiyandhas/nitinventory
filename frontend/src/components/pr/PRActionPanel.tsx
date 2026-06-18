@@ -39,7 +39,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     canActOn = true;
   } else if (pr?.flow) {
     const phaseName = pr.flow?.phase_name;
-    if (phaseName === 'Technical Evaluation' && pr.flow.step_order === 1) {
+    if (pr.flow.step_type === 'tech_evaluation') {
       canActOn = resolveTechCommitteeIds(pr).includes(user?.id ?? -1);
     } else if (pr.flow.expected_user_id) {
       if (user?.id === pr.flow.expected_user_id) {
@@ -102,7 +102,8 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     if (!remarks.trim()) { toast.error('Remarks are required to advance the Purchase Indent'); return; }
 
     if (pr.flow?.phase_name === 'Indent and Detailed Tech Specification') {
-      if (isHOD) {
+      const nominationDone = !!(pr.faculty1_id && pr.faculty2_id);
+      if (isHOD && !nominationDone) {
         if (!expert1Id || !expert2Id) {
           toast.error('Both Expert 1 and Expert 2 must be nominated');
           return;
@@ -186,6 +187,50 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
       setActionLoading(false);
     }
   };
+
+  if (pr.current_status === 'rejected') {
+    const rejectionEntry = [...(pr.history ?? [])]
+      .reverse()
+      .find(h => h.status?.toLowerCase().includes('rejected'));
+    const isInitiator = user?.id === pr.initiator_id;
+
+    return (
+      <div className="card p-6 bg-red-50 border-red-200 space-y-4 text-left">
+        <h3 className="text-sm font-bold text-red-800 uppercase tracking-wide border-b border-red-100 pb-2 flex items-center gap-2">
+          <XCircle size={18} /> Purchase Indent Returned
+        </h3>
+        <p className="text-xs text-red-700 font-semibold">
+          This Purchase Indent was returned by the approving authority. The budget allocation has been refunded.
+        </p>
+        {rejectionEntry && (
+          <div className="bg-white border border-red-200 rounded-lg p-3 space-y-1">
+            <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Returned By</p>
+            <p className="text-xs font-bold text-slate-800">{rejectionEntry.frozen_actor_name}</p>
+            {rejectionEntry.frozen_designation && (
+              <p className="text-[10px] text-slate-500">{rejectionEntry.frozen_designation}</p>
+            )}
+            {rejectionEntry.remarks && (
+              <p className="text-xs text-red-800 italic mt-1">"{rejectionEntry.remarks}"</p>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-slate-600">
+          You may re-initiate this procurement with revised details. A new Purchase Indent will be created with all items carried over.
+        </p>
+        {isInitiator && (
+          <div className="pt-2">
+            <button
+              onClick={handleReinitiate}
+              disabled={actionLoading}
+              className="btn-primary py-2 px-6 font-semibold shadow-md flex items-center gap-2 bg-orange-600 hover:bg-orange-700 border-none text-white"
+            >
+              <RotateCcw size={16} /> Re-initiate Purchase Indent
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (pr.current_status === 'cancelled') {
     return (
@@ -284,6 +329,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             setRemarks={setRemarks}
             isHOD={isHOD}
             isDirector={isDirector}
+            nominationDone={!!(pr.faculty1_id && pr.faculty2_id)}
             expert1Id={expert1Id}
             setExpert1Id={setExpert1Id}
             expert2Id={expert2Id}
