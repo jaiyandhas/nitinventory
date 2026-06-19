@@ -26,7 +26,7 @@ export function buildPRCreateFormData(
   const payload = {
     selected_file_ids: selectedFileIds,
     mop: procurementMethodId,
-    purchase_type: common.purchase_type || 'departmental',
+    purchase_type: common.purchase_type || 'department',
     nominee_id: common.nominee_id ? Number(common.nominee_id) : null,
     initiator_id: common.initiator_id ? Number(common.initiator_id) : null,
     administrative_approval_id: administrativeApprovalId || null,

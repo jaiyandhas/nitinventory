@@ -67,18 +67,10 @@ export const DeliveryDetailPage: React.FC = () => {
       toast.error('Invoice number is required');
       return;
     }
-    if (!invoiceFile) {
-      toast.error('Invoice PDF file is required');
-      return;
-    }
-    if (!challanFile) {
-      toast.error('Challan PDF file is required');
-      return;
-    }
     const formData = new FormData();
     formData.append('invoice_number', invoiceNo);
-    formData.append('invoice_pdf', invoiceFile);
-    formData.append('challan_pdf', challanFile);
+    if (invoiceFile) formData.append('invoice_pdf', invoiceFile);
+    if (challanFile) formData.append('challan_pdf', challanFile);
     confirmMutation.mutate(formData);
   };
 
@@ -210,7 +202,7 @@ export const DeliveryDetailPage: React.FC = () => {
               <h3 className="text-md font-bold text-amber-800">Awaiting Initiator Confirmation</h3>
               <p className="text-sm text-amber-700 mt-1">
                 This delivery is currently pending confirmation from the purchase indent initiator (faculty/staff).
-                Once the initiator uploads the invoice number, invoice PDF, and delivery challan PDF, you will be enabled to log your receipts and verify the items.
+                Once the initiator confirms receipt by providing the invoice number, you will be enabled to log your receipts and verify the items.
               </p>
             </div>
           </div>
@@ -224,7 +216,7 @@ export const DeliveryDetailPage: React.FC = () => {
               Confirm Delivery Receipt
             </h3>
             <p className="text-sm text-slate-600 mb-6">
-              As the initiator of the purchase indent, please confirm that the items have been received. Upload the vendor's invoice PDF and the delivery challan PDF, and provide the invoice number to proceed.
+              As the initiator of the purchase indent, please confirm that the items have been received. Provide the invoice number to proceed. You may also upload the vendor's invoice PDF and delivery challan PDF (optional — can be added later).
             </p>
             <form onSubmit={handleConfirmSubmit} className="space-y-4 max-w-xl">
               <div>
@@ -240,21 +232,19 @@ export const DeliveryDetailPage: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Invoice PDF <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Invoice PDF <span className="text-slate-400 font-normal text-xs">(optional)</span></label>
                   <input
                     type="file"
                     accept="application/pdf"
-                    required
                     onChange={e => setInvoiceFile(e.target.files?.[0] || null)}
                     className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Delivery Challan PDF <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Delivery Challan PDF <span className="text-slate-400 font-normal text-xs">(optional)</span></label>
                   <input
                     type="file"
                     accept="application/pdf"
-                    required
                     onChange={e => setChallanFile(e.target.files?.[0] || null)}
                     className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                   />

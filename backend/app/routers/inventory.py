@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form, Fi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from datetime import datetime
+from typing import Optional
 import os
 import uuid
 
@@ -293,8 +294,8 @@ async def list_discrepancies(db: AsyncSession = Depends(get_db), user: User = De
 async def confirm_delivery(
     delivery_id: int,
     invoice_number: str = Form(...),
-    invoice_pdf: UploadFile = File(...),
-    challan_pdf: UploadFile = File(...),
+    invoice_pdf: Optional[UploadFile] = File(None),
+    challan_pdf: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_own_department()),
 ):
@@ -306,31 +307,32 @@ async def confirm_delivery(
     delivery = result.scalar_one_or_none()
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
-        
+
     if not delivery.purchase_request or delivery.purchase_request.initiator_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied. Only the PR initiator can confirm delivery.")
 
-    # Save invoice PDF
-    invoice_ext = os.path.splitext(invoice_pdf.filename or "")[1].lower() or ".pdf"
-    invoice_filename = f"invoice_{uuid.uuid4().hex}{invoice_ext}"
-    invoice_rel_path = os.path.join("deliveries", str(delivery_id), invoice_filename)
-    invoice_abs_path = os.path.join(settings.STORAGE_PATH, invoice_rel_path)
-    os.makedirs(os.path.dirname(invoice_abs_path), exist_ok=True)
-    
-    invoice_content = await invoice_pdf.read()
-    with open(invoice_abs_path, "wb") as f:
-        f.write(invoice_content)
+    invoice_rel_path = delivery.invoice_pdf_path
+    challan_rel_path = delivery.challan_pdf_path
 
-    # Save challan PDF
-    challan_ext = os.path.splitext(challan_pdf.filename or "")[1].lower() or ".pdf"
-    challan_filename = f"challan_{uuid.uuid4().hex}{challan_ext}"
-    challan_rel_path = os.path.join("deliveries", str(delivery_id), challan_filename)
-    challan_abs_path = os.path.join(settings.STORAGE_PATH, challan_rel_path)
-    os.makedirs(os.path.dirname(challan_abs_path), exist_ok=True)
-    
-    challan_content = await challan_pdf.read()
-    with open(challan_abs_path, "wb") as f:
-        f.write(challan_content)
+    if invoice_pdf and invoice_pdf.filename:
+        invoice_ext = os.path.splitext(invoice_pdf.filename)[1].lower() or ".pdf"
+        invoice_filename = f"invoice_{uuid.uuid4().hex}{invoice_ext}"
+        invoice_rel_path = os.path.join("deliveries", str(delivery_id), invoice_filename)
+        invoice_abs_path = os.path.join(settings.STORAGE_PATH, invoice_rel_path)
+        os.makedirs(os.path.dirname(invoice_abs_path), exist_ok=True)
+        invoice_content = await invoice_pdf.read()
+        with open(invoice_abs_path, "wb") as f:
+            f.write(invoice_content)
+
+    if challan_pdf and challan_pdf.filename:
+        challan_ext = os.path.splitext(challan_pdf.filename)[1].lower() or ".pdf"
+        challan_filename = f"challan_{uuid.uuid4().hex}{challan_ext}"
+        challan_rel_path = os.path.join("deliveries", str(delivery_id), challan_filename)
+        challan_abs_path = os.path.join(settings.STORAGE_PATH, challan_rel_path)
+        os.makedirs(os.path.dirname(challan_abs_path), exist_ok=True)
+        challan_content = await challan_pdf.read()
+        with open(challan_abs_path, "wb") as f:
+            f.write(challan_content)
 
     delivery.invoice_number = invoice_number
     delivery.invoice_pdf_path = invoice_rel_path

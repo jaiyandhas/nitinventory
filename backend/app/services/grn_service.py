@@ -98,12 +98,13 @@ class GrnService:
         )
         self.db.add(log)
 
-        # Update delivery status
+        # Advance delivery status (never regress)
         di_result = await self.db.execute(select(DeliveryItem).where(DeliveryItem.id == delivery_item_id))
         di = di_result.scalar_one()
         delivery_result = await self.db.execute(select(Delivery).where(Delivery.id == di.delivery_id))
         delivery = delivery_result.scalar_one()
-        delivery.status = DeliveryStatus.DEPT_LOGGED
+        if delivery.status == DeliveryStatus.INITIATOR_CONFIRMED:
+            delivery.status = DeliveryStatus.DEPT_LOGGED
 
         await self.db.flush()
         await self._try_reconcile(delivery_item_id)
@@ -184,7 +185,7 @@ class GrnService:
         return log
 
     async def _try_reconcile(self, delivery_item_id: int) -> None:
-        """Compare quantities. Create discrepancy or auto-create assets."""
+        """Compare quantities for one item. If all items in delivery reconcile, set VERIFIED."""
         di_result = await self.db.execute(
             select(DeliveryItem).where(DeliveryItem.id == delivery_item_id)
         )
@@ -201,7 +202,7 @@ class GrnService:
         stores_log = stores_result.scalar_one_or_none()
 
         if not dept_log or not stores_log:
-            return  # Both logs not yet submitted
+            return  # Both logs not yet submitted for this item
 
         challan_qty = di.challan_quantity
         dept_qty = dept_log.quantity
@@ -212,33 +213,8 @@ class GrnService:
         )
         delivery = delivery_result.scalar_one()
 
-        if dept_qty == stores_qty == challan_qty:
-            # All match → create assets
-            delivery.status = DeliveryStatus.VERIFIED
-            from app.services.asset_service import AssetService
-            asset_svc = AssetService(self.db)
-            await asset_svc.create_assets_from_grn(di, dept_log)
-
-            # Trigger payment
-            payment = Payment(
-                delivery_id=delivery.id,
-                invoice_number=delivery.invoice_number or f"INV-{delivery.id}",
-                amount=di.unit_price * di.challan_quantity,
-                status=PaymentStatus.PENDING,
-            )
-            self.db.add(payment)
-            await self.db.flush()
-
-            if self.background_tasks:
-                from app.services.email_service import EmailService
-                email_svc = EmailService()
-                self.background_tasks.add_task(
-                    email_svc.notify_assets_created,
-                    asset_tags=[f"NIT-AUTO-{delivery_item_id}"],
-                    to_email="admin@nitt.edu",
-                )
-        else:
-            # Mismatch → discrepancy
+        if dept_qty != stores_qty or stores_qty != challan_qty:
+            # Mismatch on this item → discrepancy
             delivery.status = DeliveryStatus.DISCREPANCY
             disc = Discrepancy(
                 delivery_item_id=delivery_item_id,
@@ -265,3 +241,54 @@ class GrnService:
                     delivery_item_id=delivery_item_id,
                     to_email="admin@nitt.edu",
                 )
+            return
+
+        # This item matches — check if ALL items in this delivery are now reconciled
+        all_items_result = await self.db.execute(
+            select(DeliveryItem).where(DeliveryItem.delivery_id == di.delivery_id)
+        )
+        all_items = all_items_result.scalars().all()
+
+        for item in all_items:
+            d_log = await self.db.execute(select(DeptAssetLog).where(DeptAssetLog.delivery_item_id == item.id))
+            s_log = await self.db.execute(select(StoresAssetLog).where(StoresAssetLog.delivery_item_id == item.id))
+            d = d_log.scalar_one_or_none()
+            s = s_log.scalar_one_or_none()
+            if not d or not s:
+                return  # Some items still awaiting both logs
+            if d.quantity != s.quantity or s.quantity != item.challan_quantity:
+                return  # Another item has a mismatch (discrepancy already recorded)
+
+        # All items reconciled and matched → set VERIFIED and create assets for each
+        delivery.status = DeliveryStatus.VERIFIED
+        from app.services.asset_service import AssetService
+        asset_svc = AssetService(self.db)
+
+        for item in all_items:
+            d_log_r = await self.db.execute(select(DeptAssetLog).where(DeptAssetLog.delivery_item_id == item.id))
+            d_log_obj = d_log_r.scalar_one_or_none()
+            if d_log_obj:
+                await asset_svc.create_assets_from_grn(item, d_log_obj)
+
+        # Trigger payment (single record for the delivery total)
+        existing_payment = await self.db.execute(select(Payment).where(Payment.delivery_id == delivery.id))
+        if not existing_payment.scalar_one_or_none():
+            total_amount = sum(i.unit_price * i.challan_quantity for i in all_items)
+            payment = Payment(
+                delivery_id=delivery.id,
+                invoice_number=delivery.invoice_number or f"INV-{delivery.id}",
+                amount=total_amount,
+                status=PaymentStatus.PENDING,
+            )
+            self.db.add(payment)
+
+        await self.db.flush()
+
+        if self.background_tasks:
+            from app.services.email_service import EmailService
+            email_svc = EmailService()
+            self.background_tasks.add_task(
+                email_svc.notify_assets_created,
+                asset_tags=[f"NIT-AUTO-{delivery_item_id}"],
+                to_email="admin@nitt.edu",
+            )

@@ -908,10 +908,9 @@ class FlowEngineService:
                     budget_svc = BudgetService(self.db)
                     await budget_svc.deduct_amount(pr)
 
-                    if is_po_completion:
-                        from app.services.grn_service import GrnService
-                        grn_svc = GrnService(self.db)
-                        await grn_svc.create_delivery(pr)
+                    from app.services.grn_service import GrnService
+                    grn_svc = GrnService(self.db)
+                    await grn_svc.create_delivery(pr)
 
         if db_flush:
             await self.db.flush()

@@ -297,8 +297,8 @@ export const GRNAction: React.FC<GRNActionProps> = ({
       if (activeDelivery.status === 'pending') {
         if (user?.id === pr.initiator_id || user?.role?.group_key === 'admin') {
           title = "Action Required: Confirm Delivery Receipt";
-          description = "The Purchase Order has been generated. As the Purchase Initiator, please confirm physical receipt of goods by uploading the vendor's invoice PDF and delivery challan PDF.";
-          buttonText = "Confirm Receipt & Upload Docs";
+          description = "The Purchase Order has been generated. As the Purchase Initiator, please confirm physical receipt of goods and provide the invoice number. PDFs can be uploaded now or later.";
+          buttonText = "Confirm Delivery Receipt";
           showButton = true;
         } else {
           title = "Awaiting Initiator Confirmation";
@@ -325,14 +325,14 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           description = "The department HOD has verified the receipt. Awaiting Central Stores to verify and log the stores receipt.";
         }
       } else if (activeDelivery.status === 'stores_logged') {
-        if (user?.role?.group_key === 'apex_approver' || user?.role?.group_key === 'admin') {
-          title = "Action Required: Approve Stores Verification";
-          description = "Stores has logged the receipt. As the Apex Authority, please approve the stores verification to generate assets and unlock payment.";
-          buttonText = "Approve Stores Verification";
+        if (user?.role?.group_key === 'verifier_sp' || user?.role?.group_key === 'admin') {
+          title = "Action Required: Complete Stores Verification";
+          description = "Some items have been logged by Stores. Please complete the verification for all remaining items.";
+          buttonText = "Complete Stores Verification";
           showButton = true;
         } else {
-          title = "Awaiting Apex Approval";
-          description = "Stores has logged the receipt. Awaiting Apex Authority (Director/Registrar) approval of stores verification.";
+          title = "Awaiting Central Stores Verification";
+          description = "Department HOD has logged receipt. Awaiting Central Stores to complete verification for all items.";
         }
       } else if (activeDelivery.status === 'discrepancy') {
         title = "Quantity Discrepancy Found";

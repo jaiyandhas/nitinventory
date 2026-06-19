@@ -982,6 +982,22 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
 
     await check_pr_access(pr, user, db)
 
+    # Recovery: if PR reached po_issued/completed without a delivery record, create one now
+    if pr.current_status in (RequestStatus.PO_ISSUED, RequestStatus.COMPLETED) and not pr.deliveries:
+        from app.services.grn_service import GrnService
+        grn_svc = GrnService(db)
+        await grn_svc.create_delivery(pr)
+        await db.commit()
+        # Reload PR with deliveries after recovery
+        result2 = await db.execute(
+            select(PurchaseRequest)
+            .options(selectinload(PurchaseRequest.deliveries).selectinload(Delivery.items))
+            .where(PurchaseRequest.id == pr_id)
+        )
+        pr_with_delivery = result2.scalar_one_or_none()
+        if pr_with_delivery:
+            pr.deliveries = pr_with_delivery.deliveries
+
     if pr.flow:
         from app.models.budget import PhaseManager
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
@@ -1338,6 +1354,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "payment_terms": pr.bill_passing.payment_terms,
             "passed_by_id": pr.bill_passing.passed_by_id,
             "remarks": pr.bill_passing.remarks,
+            "extra_info": pr.bill_passing.extra_info or {},
         } if pr.bill_passing else None,
         # Deliveries
         "deliveries": [
