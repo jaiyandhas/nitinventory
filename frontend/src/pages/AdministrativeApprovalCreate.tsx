@@ -58,6 +58,9 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
   const [declEligibility, setDeclEligibility] = useState(false);
   const [declDemandDivision, setDeclDemandDivision] = useState(false);
 
+  // GEM sub-classification for special modes
+  const [gemSubCategory, setGemSubCategory] = useState<'GEM' | 'Not GEM'>('GEM');
+
   // Fetch PI budget allocations
   const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
     queryKey: ['pi-budget-files'],
@@ -107,6 +110,11 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
     return calculatedValues.totalCost <= selectedBudget.available_amount;
   }, [selectedBudget, calculatedValues]);
 
+  const GEM_SUB_MODES = ['PAC', 'Limited Tender Enquiry', 'Nomination', 'Global Tender Enquiry'];
+  const needsGemSubCategory = GEM_SUB_MODES.includes(modeOfProcurement);
+  // Effectively not using GeM: mode is not 'GeM', and either it's not a special mode or user chose 'Not GEM'
+  const isEffectivelyNotGem = modeOfProcurement !== 'GeM' && (!needsGemSubCategory || gemSubCategory === 'Not GEM');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -153,7 +161,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
       toast.error('Basis of estimation file must be attached.');
       return;
     }
-    if (modeOfProcurement !== 'GeM' && !gemNonAvailabilityFile) {
+    if (isEffectivelyNotGem && !gemNonAvailabilityFile) {
       toast.error('GeM Non-Availability report is required for procurement outside GeM.');
       return;
     }
@@ -575,7 +583,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Mode of Procurement <span className="text-rose-500">*</span></label>
                   <select
                     value={modeOfProcurement}
-                    onChange={(e) => setModeOfProcurement(e.target.value)}
+                    onChange={(e) => { setModeOfProcurement(e.target.value); setGemSubCategory('GEM'); }}
                     className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
                     required
                   >
@@ -589,11 +597,69 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                     <option value="Global Tender Enquiry">Global Tender Enquiry</option>
                   </select>
                 </div>
+
+                {/* GEM / Not GEM sub-classification for special modes */}
+                {needsGemSubCategory && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Will this {modeOfProcurement} procurement be done via GeM Portal or outside GeM? <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="gemSubCategory"
+                          value="GEM"
+                          checked={gemSubCategory === 'GEM'}
+                          onChange={() => setGemSubCategory('GEM')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Via GeM Portal
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="gemSubCategory"
+                          value="Not GEM"
+                          checked={gemSubCategory === 'Not GEM'}
+                          onChange={() => setGemSubCategory('Not GEM')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Outside GeM (Not via GeM)
+                      </label>
+                    </div>
+                    {gemSubCategory === 'GEM' && (
+                      <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                        Procurement will be processed through the Government e-Marketplace. Justify why {modeOfProcurement} is being used via GeM for this item.
+                      </p>
+                    )}
+                    {gemSubCategory === 'Not GEM' && (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        Procurement is outside GeM. A <strong>GeM Non-Availability Report</strong> is mandatory. Justify why GeM cannot be used and why {modeOfProcurement} is the chosen method.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Justification for Purchase <span className="text-rose-500">*</span></label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {needsGemSubCategory
+                      ? (gemSubCategory === 'GEM'
+                          ? `Justification for ${modeOfProcurement} via GeM`
+                          : `Justification for ${modeOfProcurement} outside GeM`)
+                      : 'Justification for Purchase'
+                    }
+                    {' '}<span className="text-rose-500">*</span>
+                  </label>
                   <textarea
                     rows={3}
-                    placeholder="Enter detailed reason and justification for selecting this item and procurement mode..."
+                    placeholder={
+                      needsGemSubCategory
+                        ? (gemSubCategory === 'GEM'
+                            ? `Explain why ${modeOfProcurement} via GeM is the appropriate procurement method for this item...`
+                            : `Explain why GeM is not applicable and why ${modeOfProcurement} outside GeM is being chosen. Include details about non-availability on GeM...`)
+                        : 'Enter detailed reason and justification for selecting this item and procurement mode...'
+                    }
                     value={justification}
                     onChange={(e) => setJustification(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b]"
@@ -624,8 +690,8 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   />
                 </div>
 
-                {/* GeM Non-Availability (Required for non-GeM) */}
-                {modeOfProcurement !== 'GeM' && (
+                {/* GeM Non-Availability (Required for non-GeM; for special modes, only when 'Not GEM' chosen) */}
+                {isEffectivelyNotGem && (
                   <div className="border border-rose-100 rounded-lg p-3 bg-rose-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-slate-800">GeM Non-Availability Report <span className="text-rose-500">*</span></label>
@@ -636,7 +702,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                       accept=".pdf,.png,.jpg,.jpeg"
                       onChange={(e) => setGemNonAvailabilityFile(e.target.files?.[0] || null)}
                       className="text-xs text-slate-600"
-                      required={modeOfProcurement !== 'GeM'}
+                      required={isEffectivelyNotGem}
                     />
                   </div>
                 )}

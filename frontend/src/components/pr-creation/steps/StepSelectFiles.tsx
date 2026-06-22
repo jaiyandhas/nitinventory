@@ -2,9 +2,41 @@ import React, { useEffect, useState } from 'react';
 import type { BudgetFile, ProcurementMethod } from '../../../types';
 import type { PRWizardSelection } from '../../../types/prCreation';
 import { Link } from 'react-router-dom';
-import { Plus, Info, CheckCircle2 } from 'lucide-react';
+import { Plus, Info, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { formatFileNo, formatCurrency, formatIndianNumber } from '../../../utils/format';
+
+// Maps AA mode_of_procurement labels to PR workflow method canonical names
+const AA_TO_PR_METHOD: Record<string, string> = {
+  pac: 'proprietary purchase',
+  'proprietary purchase': 'proprietary purchase',
+  nomination: 'proprietary purchase',
+  'single tender': 'proprietary purchase',
+  'limited tender enquiry': 'limited tender',
+  'limited tender': 'limited tender',
+  'global tender enquiry': 'cppp',
+  'global tender': 'cppp',
+  'open tender': 'cppp',
+  gem: 'gem',
+  cppp: 'cppp',
+  'direct purchase (gfr 154)': 'direct purchase',
+  'direct purchase': 'direct purchase',
+  'committee purchase (gfr 155)': 'direct purchase',
+  'committee purchase': 'direct purchase',
+  'rate contract': 'direct purchase',
+  'local purchase': 'direct purchase',
+};
+
+function resolveMethod(mopName: string, methods: ProcurementMethod[]): ProcurementMethod | undefined {
+  const key = mopName.toLowerCase().trim();
+  const target = AA_TO_PR_METHOD[key];
+  if (target) {
+    const hit = methods.find((m) => m.name.toLowerCase() === target ||
+      m.name.toLowerCase().includes(target) || target.includes(m.name.toLowerCase()));
+    if (hit) return hit;
+  }
+  return methods.find((m) => m.name.toLowerCase().includes(key) || key.includes(m.name.toLowerCase()));
+}
 
 interface Props {
   budgetFiles: BudgetFile[];
@@ -171,7 +203,8 @@ export const StepSelectFiles: React.FC<Props> = ({
             </div>
           </div>
         ) : (
-          <div className="pt-2">
+          <div className="pt-2 space-y-3">
+            <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
               Choose Approved Administrative Reference <span className="text-rose-500">*</span>
             </label>
@@ -192,14 +225,7 @@ export const StepSelectFiles: React.FC<Props> = ({
                 const id = Number(val);
                 const aa = approvedAAs.find((a) => a.id === id);
                 if (aa) {
-                  // Resolve procurement method
-                  const mopName = aa.mode_of_procurement;
-                  const method = procurementMethods.find(
-                    (m) =>
-                      m.name.toLowerCase().includes(mopName.toLowerCase()) ||
-                      mopName.toLowerCase().includes(m.name.toLowerCase())
-                  );
-
+                  const method = resolveMethod(aa.mode_of_procurement || '', procurementMethods);
                   onChange({
                     administrativeApprovalId: id,
                     selectedFileIds: [aa.budget_file_id],
@@ -217,6 +243,46 @@ export const StepSelectFiles: React.FC<Props> = ({
                 </option>
               ))}
             </select>
+            </div>
+
+            {/* Show selected AA details + procurement method resolved */}
+            {selectedAA && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1 text-xs">
+                <div className="font-bold text-slate-700 text-[11px] uppercase tracking-wider mb-1">Administrative Approval Reference Details</div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-600">
+                  <span className="font-semibold">File No:</span><span>{selectedAA.file_no || '—'}</span>
+                  <span className="font-semibold">Name of the Department:</span><span>{selectedAA.department || selectedAA.pi_department_name || '—'}</span>
+                  <span className="font-semibold">Name of the purchase Indentor:</span><span>{selectedAA.pi_name || '—'}</span>
+                  <span className="font-semibold">Source of Fund:</span><span>{selectedAA.source_of_fund || '—'}</span>
+                  <span className="font-semibold">Mode of Purchase:</span><span>{selectedAA.mode_of_procurement || '—'}</span>
+                  <span className="font-semibold">Estimated amount:</span><span>{formatCurrency(selectedAA.total_cost)}</span>
+                </div>
+                {selection.procurementMethodId ? (
+                  <div className="flex items-center gap-1.5 pt-1 text-emerald-700">
+                    <CheckCircle2 size={13} />
+                    <span className="font-semibold">Procurement method auto-selected: <span className="text-emerald-800">{procurementMethods.find((m) => m.id === selection.procurementMethodId)?.name}</span></span>
+                  </div>
+                ) : (
+                  <div className="pt-2 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-amber-700">
+                      <AlertCircle size={13} />
+                      <span className="font-semibold">Could not auto-map &quot;{selectedAA.mode_of_procurement}&quot; to a PR workflow method. Please select manually:</span>
+                    </div>
+                    <select
+                      className="w-full border border-amber-300 rounded-lg py-1.5 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                      value={selection.procurementMethodId ?? ''}
+                      onChange={(e) => onChange({ procurementMethodId: e.target.value ? Number(e.target.value) : null })}
+                      required
+                    >
+                      <option value="">-- Select procurement method --</option>
+                      {procurementMethods.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

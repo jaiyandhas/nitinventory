@@ -98,12 +98,23 @@ export const NewPRPage: React.FC = () => {
       const aaId = Number(aaIdParam);
       const aa = approvedAAs.find((a: any) => a.id === aaId);
       if (aa && wizard.selection.administrativeApprovalId !== aaId) {
-        const mopName = aa.mode_of_procurement;
-        const method = procurementMethods.find(
-          (m: any) =>
-            m.name.toLowerCase().includes(mopName.toLowerCase()) ||
-            mopName.toLowerCase().includes(m.name.toLowerCase())
-        );
+        const mop = (aa.mode_of_procurement || '').toLowerCase().trim();
+        const aaMethodMap: Record<string, string> = {
+          pac: 'proprietary purchase', nomination: 'proprietary purchase',
+          'single tender': 'proprietary purchase', 'proprietary purchase': 'proprietary purchase',
+          'limited tender enquiry': 'limited tender', 'limited tender': 'limited tender',
+          'global tender enquiry': 'cppp', 'open tender': 'cppp',
+          gem: 'gem', cppp: 'cppp',
+          'direct purchase (gfr 154)': 'direct purchase', 'direct purchase': 'direct purchase',
+          'committee purchase (gfr 155)': 'direct purchase', 'committee purchase': 'direct purchase',
+          'rate contract': 'direct purchase', 'local purchase': 'direct purchase',
+        };
+        const target = aaMethodMap[mop];
+        const method = target
+          ? (procurementMethods as any[]).find((m: any) => m.name.toLowerCase() === target ||
+              m.name.toLowerCase().includes(target) || target.includes(m.name.toLowerCase()))
+          : (procurementMethods as any[]).find((m: any) =>
+              m.name.toLowerCase().includes(mop) || mop.includes(m.name.toLowerCase()));
         wizard.setSelection({
           administrativeApprovalId: aaId,
           selectedFileIds: [aa.budget_file_id],

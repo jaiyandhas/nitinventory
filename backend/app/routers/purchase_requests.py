@@ -400,9 +400,33 @@ async def _persist_pr(
 
     # Ensure AA mode of procurement matches the selected procurement method (mop)
     if aa:
-        mopName = aa.mode_of_procurement.lower()
+        _AA_TO_PR_METHOD: dict[str, str] = {
+            'pac': 'proprietary purchase',
+            'proprietary purchase': 'proprietary purchase',
+            'nomination': 'proprietary purchase',
+            'single tender': 'proprietary purchase',
+            'limited tender enquiry': 'limited tender',
+            'limited tender': 'limited tender',
+            'global tender enquiry': 'cppp',
+            'global tender': 'cppp',
+            'open tender': 'cppp',
+            'gem': 'gem',
+            'cppp': 'cppp',
+            'direct purchase (gfr 154)': 'direct purchase',
+            'direct purchase': 'direct purchase',
+            'committee purchase (gfr 155)': 'direct purchase',
+            'committee purchase': 'direct purchase',
+            'rate contract': 'direct purchase',
+            'local purchase': 'direct purchase',
+        }
+        mopKey = aa.mode_of_procurement.lower().strip()
         procName = procurement.name.lower()
-        if not (mopName in procName or procName in mopName):
+        canonical = _AA_TO_PR_METHOD.get(mopKey)
+        if canonical:
+            method_ok = procName == canonical or procName in canonical or canonical in procName
+        else:
+            method_ok = mopKey in procName or procName in mopKey
+        if not method_ok:
             raise HTTPException(
                 status_code=400,
                 detail=f"Selected Procurement Method '{procurement.name}' does not match the Administrative Approval's Mode of Procurement '{aa.mode_of_procurement}'."
@@ -797,7 +821,8 @@ async def list_prs(
         selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_by),
         selectinload(PurchaseRequest.referrals).selectinload(PRReferral.referred_to),
         selectinload(PurchaseRequest.history),
-        selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by)
+        selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by),
+        selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_da)
     ).order_by(PurchaseRequest.created_at.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
@@ -835,6 +860,10 @@ async def list_prs(
             if step:
                 expected_user_id = step.user_id
                 expected_user_name = step.user.name if step.user else None
+                if (step.user_type == "verifier_da" or step.user_group == "verifier_da") and pr.assignments:
+                    latest_assignment = pr.assignments[-1]
+                    expected_user_id = latest_assignment.assigned_da_id
+                    expected_user_name = latest_assignment.assigned_da.name if latest_assignment.assigned_da else None
                 if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
                     latest_assignment = pr.assignments[-1]
                     if latest_assignment.assigned_by:
@@ -962,6 +991,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             selectinload(PurchaseRequest.financial_evaluations),
             selectinload(PurchaseRequest.commercial_evaluations),
             selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_by),
+            selectinload(PurchaseRequest.assignments).selectinload(PurchaseRequestAssignment.assigned_da),
             selectinload(PurchaseRequest.documents),
             selectinload(PurchaseRequest.faculty1),
             selectinload(PurchaseRequest.faculty2),
@@ -1060,6 +1090,10 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                 if step.user_type == "user" and step.user_id:
                     expected_user_id = step.user_id
                     expected_user_name = step.user.name if step.user else None
+                if (step.user_type == "verifier_da" or step.user_group == "verifier_da") and pr.assignments:
+                    latest_assignment = pr.assignments[-1]
+                    expected_user_id = latest_assignment.assigned_da_id
+                    expected_user_name = latest_assignment.assigned_da.name if latest_assignment.assigned_da else None
                 if step.role and step.role.value == "superintendent" and pr.flow.step_order > 1 and pr.assignments:
                     latest_assignment = pr.assignments[-1]
                     if latest_assignment.assigned_by:
