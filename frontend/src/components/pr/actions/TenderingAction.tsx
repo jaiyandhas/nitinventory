@@ -14,6 +14,7 @@ interface TenderingActionProps {
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onReject: (remarks: string) => Promise<void>;
   onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;
@@ -91,6 +92,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   actionLoading,
   setActionLoading,
   hasPrevStep,
+  isLastStep,
   onReject,
   onSendBack,
   showSendBackModal,
@@ -418,13 +420,15 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                     <CheckCircle2 size={14} /> Submit Tender Schedule &amp; Advance
                   </button>
 
-                  <button
-                    onClick={() => onReject(remarks)}
-                    disabled={actionLoading || !remarks.trim()}
-                    className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
-                  >
-                    <XCircle size={14} /> Reject
-                  </button>
+                  {isLastStep && (
+                    <button
+                      onClick={() => onReject(remarks)}
+                      disabled={actionLoading || !remarks.trim()}
+                      className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                    >
+                      <XCircle size={14} /> Reject
+                    </button>
+                  )}
 
                   {hasPrevStep && (
                     <button
@@ -754,13 +758,15 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                     <CheckCircle2 size={14} /> Submit Tender Details &amp; Advance
                   </button>
 
-                  <button
-                    onClick={() => onReject(remarks)}
-                    disabled={actionLoading || !remarks.trim()}
-                    className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
-                  >
-                    <XCircle size={14} /> Reject
-                  </button>
+                  {isLastStep && (
+                    <button
+                      onClick={() => onReject(remarks)}
+                      disabled={actionLoading || !remarks.trim()}
+                      className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                    >
+                      <XCircle size={14} /> Reject
+                    </button>
+                  )}
 
                   {hasPrevStep && (
                     <button
@@ -896,13 +902,15 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                 <CheckCircle2 size={14} /> Approve &amp; Forward
               </button>
 
-              <button 
-                onClick={() => onReject(remarks)} 
-                disabled={actionLoading || !remarks.trim()} 
-                className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
-              >
-                <XCircle size={14} /> Reject
-              </button>
+              {isLastStep && (
+                <button
+                  onClick={() => onReject(remarks)}
+                  disabled={actionLoading || !remarks.trim()}
+                  className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                >
+                  <XCircle size={14} /> Reject
+                </button>
+              )}
 
               {hasPrevStep && (
                 <button 

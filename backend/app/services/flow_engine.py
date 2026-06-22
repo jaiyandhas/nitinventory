@@ -102,7 +102,7 @@ class FlowEngineService:
 
     async def realign_pr_flow(self, pr: PurchaseRequest) -> None:
         """Dynamic alignment of PurchaseRequestFlow based on history and active WorkFlowHierarchy."""
-        if pr.current_status in (RequestStatus.COMPLETED, RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED):
+        if pr.current_status in (RequestStatus.COMPLETED, RequestStatus.PO_ISSUED, RequestStatus.REJECTED, RequestStatus.CANCELLED, RequestStatus.SENT_BACK):
             return
 
         flow = await self._get_current_flow(pr)
@@ -1011,10 +1011,10 @@ class FlowEngineService:
             return list(result.scalars().all())
 
     async def reject(self, pr: PurchaseRequest, rejected_by: User, reason: str) -> bool:
-        """Roll back the PR to the start of the previous phase.
+        """Reset the PR to the first step of the current phase.
 
-        If there is no previous phase (PR is at its first phase), this performs a
-        terminal rejection: budget is unlocked and the PR is permanently closed.
+        If the PR is at the first phase, performs a terminal rejection:
+        budget is unlocked and the PR is permanently closed.
         """
         if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
             raise ValueError("This request is currently paused waiting for Budget File Allocation.")
@@ -1028,20 +1028,16 @@ class FlowEngineService:
         result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
         current_phase = result.scalar_one()
 
-        prev_phase = await self._get_prev_valid_phase(pr, current_phase)
-
-        if prev_phase is None:
-            # No previous phase — permanent terminal rejection
+        # Check if this is the first phase — if so, terminal rejection
+        first_phase = await self._get_first_phase()
+        if current_phase.id == first_phase.id:
             flow.rejected = True
             pr.current_status = RequestStatus.REJECTED
             await self._add_history(pr, rejected_by, f"PR Rejected by {rejected_by.name}", reason)
-
             from app.services.budget_service import BudgetService
             budget_svc = BudgetService(self.db)
             await budget_svc.unlock_amount(pr)
-
             await self.db.flush()
-
             await self.db.refresh(pr, ["initiator"])
             if pr.initiator and pr.initiator.email:
                 from app.services.email_service import EmailService
@@ -1049,20 +1045,20 @@ class FlowEngineService:
                 email_svc.notify_rejection(pr.id, pr.icr_number, rejected_by.name, reason, pr.initiator.email)
             return True
 
-        # Phase rollback — move to start of the previous phase
-        prev_sof_id = await self.resolve_sof_id(pr, phase_id=prev_phase.id)
-        first_step = await self._get_first_step(pr, prev_phase, prev_sof_id)
+        # Reset to the first step of the current phase
+        sof_id = await self.resolve_sof_id(pr, phase_id=current_phase.id)
+        first_step = await self._get_first_step(pr, current_phase, sof_id)
 
-        # Determine cutoff: void all history from when the PREVIOUS phase started
-        # (so both the previous phase's approvals and the current phase's approvals are voided)
-        if prev_phase.phase_name == "Indent and Detailed Tech Specification":
-            t_cutoff = pr.created_at
-        elif prev_phase.phase_name == "Tendering":
-            t_cutoff = pr.aa_approved_at or pr.created_at
-        elif prev_phase.phase_name == "Technical Evaluation":
+        # Void all history from when the current phase started
+        phase_name = current_phase.phase_name
+        if phase_name == "Technical Evaluation":
             t_cutoff = pr.te_initiated_at or pr.aa_approved_at or pr.created_at
-        elif prev_phase.phase_name == "Financial Sanction":
+        elif phase_name == "Financial Sanction":
             t_cutoff = pr.fs_initiated_at or pr.te_approved_at or pr.created_at
+        elif phase_name == "Purchase Order":
+            t_cutoff = pr.po_initiated_at or pr.fs_approved_at or pr.created_at
+        elif phase_name == "Tendering":
+            t_cutoff = pr.aa_approved_at or pr.created_at
         else:
             t_cutoff = pr.created_at
 
@@ -1075,28 +1071,22 @@ class FlowEngineService:
                 if "Voided" not in (h.status or ""):
                     h.status = f"{h.status} (Voided)"
 
-        # Clear phase timestamps for phases being rolled back
-        if current_phase.phase_name in ("Purchase Order",):
-            pr.fs_approved_at = None
-            pr.fs_initiated_at = None
+        # Reset the current phase's timestamps so the next round starts fresh
+        if phase_name == "Technical Evaluation":
             pr.te_approved_at = None
-            pr.te_initiated_at = None
-        elif current_phase.phase_name in ("Financial Sanction",):
+            pr.te_initiated_at = datetime.utcnow()
+        elif phase_name == "Financial Sanction":
             pr.fs_approved_at = None
-            pr.fs_initiated_at = None
-            if prev_phase.phase_name == "Technical Evaluation":
-                pr.te_approved_at = None
-                pr.te_initiated_at = datetime.utcnow()
-        elif current_phase.phase_name in ("Technical Evaluation",):
-            pr.te_approved_at = None
-            pr.te_initiated_at = datetime.utcnow() if prev_phase.phase_name == "Technical Evaluation" else None
+            pr.fs_initiated_at = datetime.utcnow()
+        elif phase_name == "Purchase Order":
+            pr.po_approved_at = None
 
-        flow.phase_id = prev_phase.id
+        flow.phase_id = current_phase.id
         flow.step_order = first_step.step_order if first_step else 1
         flow.rejected = False
         pr.current_status = RequestStatus.SENT_BACK
 
-        await self._add_history(pr, rejected_by, f"Returned to {prev_phase.phase_name}", reason)
+        await self._add_history(pr, rejected_by, f"Returned to start of {phase_name}", reason)
         await self.db.flush()
 
         await self.db.refresh(pr, ["initiator"])

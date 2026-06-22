@@ -9,6 +9,7 @@ interface CommitteeSignActionProps {
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onReject: (remarks: string) => Promise<void>;
   onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;

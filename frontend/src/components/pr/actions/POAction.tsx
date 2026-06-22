@@ -8,6 +8,7 @@ interface POActionProps {
   user: any;
   actionLoading: boolean;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onAdvance: () => void;
   onReject: () => void;
   onSendBackClick: () => void;
@@ -20,6 +21,7 @@ export const POAction: React.FC<POActionProps> = ({
   user,
   actionLoading,
   hasPrevStep,
+  isLastStep,
   onAdvance,
   onReject,
   onSendBackClick,
@@ -62,13 +64,15 @@ export const POAction: React.FC<POActionProps> = ({
           <CheckCircle2 size={16} /> Approve &amp; Forward (PO)
         </button>
         
-        <button 
-          onClick={onReject} 
-          disabled={actionLoading || !remarks.trim()} 
-          className="btn-danger flex items-center gap-2"
-        >
-          <XCircle size={16} /> Reject
-        </button>
+        {isLastStep && (
+          <button
+            onClick={onReject}
+            disabled={actionLoading || !remarks.trim()}
+            className="btn-danger flex items-center gap-2"
+          >
+            <XCircle size={16} /> Reject
+          </button>
+        )}
 
         {hasPrevStep && (
           <button 

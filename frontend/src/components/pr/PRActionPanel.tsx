@@ -85,9 +85,10 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     enabled: !!isDirector && pr.flow?.phase_name === 'Indent and Detailed Tech Specification',
   });
 
-  // Send back states
+  // Send back / reject states
   const [showSendBackModal, setShowSendBackModal] = useState(false);
   const hasPrevStep = !!(pr.flow && pr.flow.step_order > 1);
+  const isLastStep = !!(pr.flow?.is_last_step_in_phase);
 
   // Cancellation states
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -376,13 +377,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 >
                   <CheckCircle2 size={14} /> Approve Technical Specification
                 </button>
-                <button
-                  onClick={() => handleReject()}
-                  disabled={actionLoading || !remarks.trim()}
-                  className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
-                >
-                  <XCircle size={14} /> Reject
-                </button>
+                {isLastStep && (
+                  <button
+                    onClick={() => handleReject()}
+                    disabled={actionLoading || !remarks.trim()}
+                    className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
+                  >
+                    <XCircle size={14} /> Reject
+                  </button>
+                )}
                 {hasPrevStep && (
                   <button
                     type="button"
@@ -403,6 +406,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             pr={pr}
             actionLoading={actionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}
@@ -431,6 +435,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onReject={(r) => handleReject(r)}
             onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
@@ -448,6 +453,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onReject={(r) => handleReject(r)}
             onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
@@ -465,6 +471,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onReject={(r) => handleReject(r)}
             onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
@@ -480,6 +487,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             user={user}
             actionLoading={actionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}
@@ -493,6 +501,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             pr={pr}
             actionLoading={actionLoading}
             hasPrevStep={hasPrevStep}
+            isLastStep={isLastStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}

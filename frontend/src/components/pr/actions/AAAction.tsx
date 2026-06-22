@@ -6,6 +6,7 @@ interface AAActionProps {
   pr: PurchaseRequest;
   actionLoading: boolean;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onAdvance: () => void;
   onReject: () => void;
   onSendBackClick: () => void;
@@ -28,6 +29,7 @@ export const AAAction: React.FC<AAActionProps> = ({
   pr,
   actionLoading,
   hasPrevStep,
+  isLastStep,
   onAdvance,
   onReject,
   onSendBackClick,
@@ -160,13 +162,15 @@ export const AAAction: React.FC<AAActionProps> = ({
           <CheckCircle2 size={16} /> Approve &amp; Forward
         </button>
         
-        <button 
-          onClick={onReject} 
-          disabled={actionLoading || !remarks.trim()} 
-          className="btn-danger flex items-center gap-2"
-        >
-          <XCircle size={16} /> Reject
-        </button>
+        {isLastStep && (
+          <button
+            onClick={onReject}
+            disabled={actionLoading || !remarks.trim()}
+            className="btn-danger flex items-center gap-2"
+          >
+            <XCircle size={16} /> Reject
+          </button>
+        )}
 
         {hasPrevStep && (
           <button 

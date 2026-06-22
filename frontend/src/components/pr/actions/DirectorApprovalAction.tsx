@@ -6,6 +6,7 @@ interface DirectorApprovalActionProps {
   pr: PurchaseRequest;
   actionLoading: boolean;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onAdvance: () => void;
   onReject: () => void;
   onSendBackClick: () => void;
@@ -21,6 +22,7 @@ export const DirectorApprovalAction: React.FC<DirectorApprovalActionProps> = ({
   pr,
   actionLoading,
   hasPrevStep,
+  isLastStep,
   onAdvance,
   onReject,
   onSendBackClick,
@@ -82,13 +84,15 @@ export const DirectorApprovalAction: React.FC<DirectorApprovalActionProps> = ({
           <CheckCircle2 size={16} /> Approve &amp; Forward (Director/Apex)
         </button>
         
-        <button 
-          onClick={onReject} 
-          disabled={actionLoading || !remarks.trim()} 
-          className="btn-danger flex items-center gap-2"
-        >
-          <XCircle size={16} /> Reject
-        </button>
+        {isLastStep && (
+          <button
+            onClick={onReject}
+            disabled={actionLoading || !remarks.trim()}
+            className="btn-danger flex items-center gap-2"
+          >
+            <XCircle size={16} /> Reject
+          </button>
+        )}
 
         {hasPrevStep && (
           <button 

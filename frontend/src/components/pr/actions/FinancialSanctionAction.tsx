@@ -14,6 +14,7 @@ interface FinancialSanctionActionProps {
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
   hasPrevStep: boolean;
+  isLastStep: boolean;
   onReject: (remarks: string) => Promise<void>;
   onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;
@@ -29,6 +30,7 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
   actionLoading,
   setActionLoading,
   hasPrevStep,
+  isLastStep,
   onReject,
   showSendBackModal,
   setShowSendBackModal,
@@ -155,10 +157,12 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
             className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs">
             <CheckCircle2 size={14} /> Confirm Vendor &amp; Advance
           </button>
-          <button onClick={() => onReject(remarks)} disabled={actionLoading || !remarks.trim()}
-            className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4">
-            <XCircle size={14} /> Reject
-          </button>
+          {isLastStep && (
+            <button onClick={() => onReject(remarks)} disabled={actionLoading || !remarks.trim()}
+              className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4">
+              <XCircle size={14} /> Reject
+            </button>
+          )}
           {hasPrevStep && (
             <button onClick={() => setShowSendBackModal(true)} disabled={actionLoading}
               className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition">

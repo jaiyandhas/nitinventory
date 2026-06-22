@@ -101,6 +101,7 @@ export interface PRFlow {
   condition_field?: string | null;
   condition_operator?: string | null;
   condition_value?: number | null;
+  is_last_step_in_phase?: boolean;
 }
 
 export interface PRItem {

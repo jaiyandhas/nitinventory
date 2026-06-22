@@ -1068,6 +1068,24 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
         phase_name = phase_res.scalar_one_or_none()
 
+        # Check if current step is the last step in the phase
+        is_last_step_in_phase = False
+        if step:
+            next_in_phase = await db.execute(
+                select(WorkFlowHierarchy).where(
+                    and_(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                        WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                        WorkFlowHierarchy.step_order > pr.flow.step_order,
+                        WorkFlowHierarchy.is_enabled == True,
+                        WorkFlowHierarchy.source_of_fund_id == sof_id,
+                    )
+                ).limit(1)
+            )
+            is_last_step_in_phase = next_in_phase.scalar_one_or_none() is None
+
         # Get threshold and comparison if exists in the current phase
         from sqlalchemy import or_
         threshold_res = await db.execute(
@@ -1444,6 +1462,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "condition_field": condition_field,
             "condition_operator": condition_operator,
             "condition_value": condition_value,
+            "is_last_step_in_phase": is_last_step_in_phase,
         } if pr.flow else None,
         "commercial_evaluations": commercial_evaluations,
         "technical_evaluations": technical_evaluations,
