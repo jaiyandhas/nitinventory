@@ -882,6 +882,13 @@ async def seed():
         else:
             print("  All workflow hierarchies are already present.")
 
+        # Ensure unique index exists to prevent duplicate workflow steps from admin API
+        await db.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_hierarchy_step
+            ON workflow_hierarchies (category_id, procurement_id, purchase_type, phase_id, step_order, source_of_fund_id)
+            NULLS NOT DISTINCT
+        """))
+
         # 8.5. Seed Administrative Approval Workflow
         await db.execute(text("DELETE FROM administrative_approval_workflows;"))
         print("  Seeding default category-specific Administrative Approval workflow steps...")

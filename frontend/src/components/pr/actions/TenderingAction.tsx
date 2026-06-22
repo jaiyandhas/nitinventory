@@ -13,13 +13,11 @@ interface TenderingActionProps {
   refetch: () => void;
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
-  sendBackCandidates: any[];
+  hasPrevStep: boolean;
   onReject: (remarks: string) => Promise<void>;
-  onSendBack: (step: number, remarks: string) => Promise<void>;
+  onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;
   setShowSendBackModal: (show: boolean) => void;
-  selectedSendBackStep: number | '';
-  setSelectedSendBackStep: (step: number | '') => void;
   remarks: string;
   setRemarks: (val: string) => void;
 }
@@ -92,13 +90,11 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   refetch,
   actionLoading,
   setActionLoading,
-  sendBackCandidates,
+  hasPrevStep,
   onReject,
   onSendBack,
   showSendBackModal,
   setShowSendBackModal,
-  selectedSendBackStep,
-  setSelectedSendBackStep,
   remarks,
   setRemarks
 }) => {
@@ -430,7 +426,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                     <XCircle size={14} /> Reject
                   </button>
 
-                  {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                  {hasPrevStep && (
                     <button
                       onClick={() => setShowSendBackModal(true)}
                       disabled={actionLoading}
@@ -766,7 +762,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                     <XCircle size={14} /> Reject
                   </button>
 
-                  {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+                  {hasPrevStep && (
                     <button
                       onClick={() => setShowSendBackModal(true)}
                       disabled={actionLoading}
@@ -908,7 +904,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                 <XCircle size={14} /> Reject
               </button>
 
-              {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+              {hasPrevStep && (
                 <button 
                   onClick={() => setShowSendBackModal(true)} 
                   disabled={actionLoading} 

@@ -47,7 +47,7 @@ export const prApi = {
     api.post('/pr/', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   advance: (id: number, remarks?: string, extra?: Record<string, any>, faculty1_id?: number, faculty2_id?: number, faculty3_id?: number) => api.post(`/pr/${id}/advance`, { remarks, faculty1_id, faculty2_id, faculty3_id, ...extra }),
   reject: (id: number, reason: string) => api.post(`/pr/${id}/reject`, { reason }),
-  sendBack: (id: number, to_step: number, reason: string) => api.post(`/pr/${id}/send-back`, { to_step, reason }),
+  sendBack: (id: number, reason: string) => api.post(`/pr/${id}/send-back`, { reason }),
   assignDa: (id: number, da_id: number) => api.post(`/pr/${id}/assign-da`, { da_id }),
   addTechnicalEval: (id: number, formData: FormData) =>
     api.post(`/pr/${id}/technical-eval`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),

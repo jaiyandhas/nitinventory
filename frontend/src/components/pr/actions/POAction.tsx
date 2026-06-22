@@ -7,7 +7,7 @@ interface POActionProps {
   pr: PurchaseRequest;
   user: any;
   actionLoading: boolean;
-  sendBackCandidates: any[];
+  hasPrevStep: boolean;
   onAdvance: () => void;
   onReject: () => void;
   onSendBackClick: () => void;
@@ -19,7 +19,7 @@ export const POAction: React.FC<POActionProps> = ({
   pr,
   user,
   actionLoading,
-  sendBackCandidates,
+  hasPrevStep,
   onAdvance,
   onReject,
   onSendBackClick,
@@ -70,7 +70,7 @@ export const POAction: React.FC<POActionProps> = ({
           <XCircle size={16} /> Reject
         </button>
 
-        {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+        {hasPrevStep && (
           <button 
             onClick={onSendBackClick} 
             disabled={actionLoading} 

@@ -36,8 +36,11 @@ class FlowEngineService:
 
     async def _get_current_flow(self, pr: PurchaseRequest) -> Optional[PurchaseRequestFlow]:
         """Fetch the current workflow state flow record for a purchase request."""
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id)
+            select(PurchaseRequestFlow)
+            .options(selectinload(PurchaseRequestFlow.phase))
+            .where(PurchaseRequestFlow.purchase_request_id == pr.id)
         )
         return result.scalar_one_or_none()
 
@@ -119,6 +122,17 @@ class FlowEngineService:
         steps = result.scalars().all()
         if not steps:
             return
+
+        # Deduplicate by step_order: two rows with the same step_order would each
+        # count as a separate required approval in the matching loop below, causing
+        # the flow to loop forever if one role never appears in history.
+        seen_orders: set = set()
+        deduped = []
+        for s in steps:
+            if s.step_order not in seen_orders:
+                seen_orders.add(s.step_order)
+                deduped.append(s)
+        steps = deduped
 
         # Fetch PR history
         from app.models.purchase_request import PurchaseRequestHistory
@@ -250,6 +264,7 @@ class FlowEngineService:
             .where(
                 self._wf_filters(pr, phase_id, sof_id=sof_id, step_order=step_order)
             )
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
@@ -442,6 +457,23 @@ class FlowEngineService:
         # Auto-advance when the guarded conditional step would NOT fire
         return not condition_met
 
+
+    async def _get_prev_valid_phase(self, pr: PurchaseRequest, current_phase: PhaseManager) -> Optional[PhaseManager]:
+        """Previous phase that has at least one enabled workflow step for this PR."""
+        result = await self.db.execute(
+            select(PhaseManager).where(
+                PhaseManager.phase_order < current_phase.phase_order
+            ).order_by(PhaseManager.phase_order.desc())
+        )
+        phases = result.scalars().all()
+        for phase in phases:
+            sof_id = await self.resolve_sof_id(pr, phase_id=phase.id)
+            check = await self.db.execute(
+                select(WorkFlowHierarchy).where(self._wf_filters(pr, phase.id, sof_id=sof_id)).limit(1)
+            )
+            if check.scalar_one_or_none():
+                return phase
+        return None
 
     async def _get_next_valid_phase(self, pr: PurchaseRequest, current_phase: PhaseManager) -> Optional[PhaseManager]:
         """Next phase that has at least one enabled workflow step (skips TD/TE/FS when undefined).
@@ -931,7 +963,7 @@ class FlowEngineService:
                     selectinload(WorkFlowHierarchy.user)
                 ).where(
                     self._wf_filters(pr, flow.phase_id, sof_id=sof_id, step_order=flow.step_order)
-                )
+                ).limit(1)
             )
             new_step = new_step_result.scalar_one_or_none()
             if new_step:
@@ -979,50 +1011,127 @@ class FlowEngineService:
             return list(result.scalars().all())
 
     async def reject(self, pr: PurchaseRequest, rejected_by: User, reason: str) -> bool:
-        """Reject the purchase request, unlocking its budget and notifying the initiator."""
+        """Roll back the PR to the start of the previous phase.
+
+        If there is no previous phase (PR is at its first phase), this performs a
+        terminal rejection: budget is unlocked and the PR is permanently closed.
+        """
         if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
             raise ValueError("This request is currently paused waiting for Budget File Allocation.")
 
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow to reject for PR #{pr.id}")
-            
+
         await self._validate_role(pr, rejected_by, flow)
 
-        flow.rejected = True
-        pr.current_status = RequestStatus.REJECTED
-        await self._add_history(pr, rejected_by, f"PR Rejected by {rejected_by.name}", reason)
+        result = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
+        current_phase = result.scalar_one()
 
-        # Release locked budget so available_amount is restored
-        from app.services.budget_service import BudgetService
-        budget_svc = BudgetService(self.db)
-        await budget_svc.unlock_amount(pr)
+        prev_phase = await self._get_prev_valid_phase(pr, current_phase)
 
+        if prev_phase is None:
+            # No previous phase — permanent terminal rejection
+            flow.rejected = True
+            pr.current_status = RequestStatus.REJECTED
+            await self._add_history(pr, rejected_by, f"PR Rejected by {rejected_by.name}", reason)
+
+            from app.services.budget_service import BudgetService
+            budget_svc = BudgetService(self.db)
+            await budget_svc.unlock_amount(pr)
+
+            await self.db.flush()
+
+            await self.db.refresh(pr, ["initiator"])
+            if pr.initiator and pr.initiator.email:
+                from app.services.email_service import EmailService
+                email_svc = EmailService(self.background_tasks)
+                email_svc.notify_rejection(pr.id, pr.icr_number, rejected_by.name, reason, pr.initiator.email)
+            return True
+
+        # Phase rollback — move to start of the previous phase
+        prev_sof_id = await self.resolve_sof_id(pr, phase_id=prev_phase.id)
+        first_step = await self._get_first_step(pr, prev_phase, prev_sof_id)
+
+        # Determine cutoff: void all history from when the PREVIOUS phase started
+        # (so both the previous phase's approvals and the current phase's approvals are voided)
+        if prev_phase.phase_name == "Indent and Detailed Tech Specification":
+            t_cutoff = pr.created_at
+        elif prev_phase.phase_name == "Tendering":
+            t_cutoff = pr.aa_approved_at or pr.created_at
+        elif prev_phase.phase_name == "Technical Evaluation":
+            t_cutoff = pr.te_initiated_at or pr.aa_approved_at or pr.created_at
+        elif prev_phase.phase_name == "Financial Sanction":
+            t_cutoff = pr.fs_initiated_at or pr.te_approved_at or pr.created_at
+        else:
+            t_cutoff = pr.created_at
+
+        if not t_cutoff:
+            t_cutoff = datetime.min
+
+        await self.db.refresh(pr, ["history"])
+        for h in pr.history:
+            if h.acted_at and h.acted_at > t_cutoff:
+                if "Voided" not in (h.status or ""):
+                    h.status = f"{h.status} (Voided)"
+
+        # Clear phase timestamps for phases being rolled back
+        if current_phase.phase_name in ("Purchase Order",):
+            pr.fs_approved_at = None
+            pr.fs_initiated_at = None
+            pr.te_approved_at = None
+            pr.te_initiated_at = None
+        elif current_phase.phase_name in ("Financial Sanction",):
+            pr.fs_approved_at = None
+            pr.fs_initiated_at = None
+            if prev_phase.phase_name == "Technical Evaluation":
+                pr.te_approved_at = None
+                pr.te_initiated_at = datetime.utcnow()
+        elif current_phase.phase_name in ("Technical Evaluation",):
+            pr.te_approved_at = None
+            pr.te_initiated_at = datetime.utcnow() if prev_phase.phase_name == "Technical Evaluation" else None
+
+        flow.phase_id = prev_phase.id
+        flow.step_order = first_step.step_order if first_step else 1
+        flow.rejected = False
+        pr.current_status = RequestStatus.SENT_BACK
+
+        await self._add_history(pr, rejected_by, f"Returned to {prev_phase.phase_name}", reason)
         await self.db.flush()
 
-        # Notify initiator
         await self.db.refresh(pr, ["initiator"])
         if pr.initiator and pr.initiator.email:
             from app.services.email_service import EmailService
             email_svc = EmailService(self.background_tasks)
-            email_svc.notify_rejection(pr.id, pr.icr_number, rejected_by.name, reason, pr.initiator.email)
+            email_svc.notify_send_back(pr.id, pr.icr_number, rejected_by.name, reason, pr.initiator.email)
 
         return True
 
-    async def send_back(self, pr: PurchaseRequest, acted_by: User, to_step: int, reason: str) -> None:
-        """Send the purchase request back to a previous workflow step within the current phase."""
+    async def send_back(self, pr: PurchaseRequest, acted_by: User, reason: str) -> None:
+        """Send the purchase request back to the immediately previous step in the current phase."""
         if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
             raise ValueError("This request is currently paused waiting for Budget File Allocation.")
 
         flow = await self._get_current_flow(pr)
         if not flow:
             raise RuntimeError(f"No active flow for PR #{pr.id}")
-            
+
         await self.realign_pr_flow(pr)
         await self._validate_role(pr, acted_by, flow)
-        
-        if to_step >= flow.step_order or to_step < 1:
-            raise ValueError(f"Cannot send back to step {to_step} from {flow.step_order}")
+
+        sof_id = await self.resolve_sof_id(pr, phase_id=flow.phase_id)
+        prev_step_res = await self.db.execute(
+            select(WorkFlowHierarchy).where(
+                and_(
+                    self._wf_filters(pr, flow.phase_id, sof_id=sof_id),
+                    WorkFlowHierarchy.step_order < flow.step_order,
+                )
+            ).order_by(WorkFlowHierarchy.step_order.desc()).limit(1)
+        )
+        prev_step_def = prev_step_res.scalar_one_or_none()
+        if not prev_step_def:
+            raise ValueError("There is no previous step in this phase to send back to.")
+        to_step = prev_step_def.step_order
         pr.current_status = RequestStatus.SENT_BACK
         flow.step_order = to_step
         flow.rejected = False

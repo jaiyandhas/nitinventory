@@ -87,25 +87,13 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
 
   // Send back states
   const [showSendBackModal, setShowSendBackModal] = useState(false);
-  const [sendBackCandidates, setSendBackCandidates] = useState<any[]>([]);
-  const [selectedSendBackStep, setSelectedSendBackStep] = useState<number | ''>('');
+  const hasPrevStep = !!(pr.flow && pr.flow.step_order > 1);
 
   // Cancellation states
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelType, setCancelType] = useState<'tender' | 'po' | null>(null);
 
   const isAuthorizedToCancel = user?.id === pr.initiator_id || user?.id === pr.hod_id || user?.role?.group_key === 'admin';
-
-  useEffect(() => {
-    if (pr.flow && pr.flow.step_order > 1) {
-      prApi.getSendBackCandidates(pr.id).then(res => {
-        setSendBackCandidates(res.data);
-        if (res.data.length > 0) {
-          setSelectedSendBackStep(res.data[res.data.length - 1].step_order);
-        }
-      }).catch(() => {});
-    }
-  }, [pr]);
 
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to advance the Purchase Indent'); return; }
@@ -153,7 +141,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     setActionLoading(true);
     try {
       await prApi.reject(pr.id, finalRemarks);
-      toast.success('Purchase Indent rejected');
+      toast.success('Purchase Indent returned to previous phase');
       setRemarks('');
       refetch();
     } catch (e: any) {
@@ -163,15 +151,13 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     }
   };
 
-  const handleSendBack = async (sendBackStep?: number, sendBackRemarks?: string) => {
-    const targetStep = sendBackStep || selectedSendBackStep;
+  const handleSendBack = async (sendBackRemarks?: string) => {
     const finalRemarks = sendBackRemarks || remarks;
-    if (!targetStep) { toast.error('Please select a workflow step to send back to'); return; }
     if (!finalRemarks.trim()) { toast.error('Send back remarks are required'); return; }
     setActionLoading(true);
     try {
-      await prApi.sendBack(pr.id, Number(targetStep), finalRemarks);
-      toast.success('Purchase Indent sent back successfully');
+      await prApi.sendBack(pr.id, finalRemarks);
+      toast.success('Purchase Indent sent back to previous step');
       setShowSendBackModal(false);
       setRemarks('');
       refetch();
@@ -397,7 +383,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
                 >
                   <XCircle size={14} /> Reject
                 </button>
-                {sendBackCandidates.length > 0 && (
+                {hasPrevStep && (
                   <button
                     type="button"
                     onClick={() => setShowSendBackModal(true)}
@@ -416,7 +402,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           <AAAction
             pr={pr}
             actionLoading={actionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}
@@ -444,13 +430,11 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             refetch={refetch}
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onReject={(r) => handleReject(r)}
-            onSendBack={(step, r) => handleSendBack(step, r)}
+            onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
             setShowSendBackModal={setShowSendBackModal}
-            selectedSendBackStep={selectedSendBackStep}
-            setSelectedSendBackStep={setSelectedSendBackStep}
             remarks={remarks}
             setRemarks={setRemarks}
           />
@@ -463,13 +447,11 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             refetch={refetch}
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onReject={(r) => handleReject(r)}
-            onSendBack={(step, r) => handleSendBack(step, r)}
+            onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
             setShowSendBackModal={setShowSendBackModal}
-            selectedSendBackStep={selectedSendBackStep}
-            setSelectedSendBackStep={setSelectedSendBackStep}
             remarks={remarks}
             setRemarks={setRemarks}
           />
@@ -482,13 +464,11 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             refetch={refetch}
             actionLoading={actionLoading}
             setActionLoading={setActionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onReject={(r) => handleReject(r)}
-            onSendBack={(step, r) => handleSendBack(step, r)}
+            onSendBack={(r) => handleSendBack(r)}
             showSendBackModal={showSendBackModal}
             setShowSendBackModal={setShowSendBackModal}
-            selectedSendBackStep={selectedSendBackStep}
-            setSelectedSendBackStep={setSelectedSendBackStep}
             remarks={remarks}
             setRemarks={setRemarks}
           />
@@ -499,7 +479,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             pr={pr}
             user={user}
             actionLoading={actionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}
@@ -512,7 +492,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
           <DirectorApprovalAction
             pr={pr}
             actionLoading={actionLoading}
-            sendBackCandidates={sendBackCandidates}
+            hasPrevStep={hasPrevStep}
             onAdvance={handleAdvance}
             onReject={() => handleReject()}
             onSendBackClick={() => setShowSendBackModal(true)}
@@ -586,27 +566,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left">
           <div className="bg-white rounded-lg shadow-lg border border-slate-200 max-w-md w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-              Reflect Back Purchase Indent
+              Send Back to Previous Step
             </h3>
-            
-            <div>
-              <label className="label text-slate-600">Select Target Workflow Step</label>
-              <select 
-                value={selectedSendBackStep} 
-                onChange={(e) => setSelectedSendBackStep(Number(e.target.value))}
-                className="input-field mt-1 w-full bg-white"
-              >
-                {sendBackCandidates.map(c => (
-                  <option key={c.step_order} value={c.step_order}>
-                    Step {c.step_order}: {c.user_type} ({c.user_group})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <p className="text-xs text-slate-500">
+              This will return the indent to the immediately preceding approver in the current phase.
+            </p>
 
             <div>
               <label className="label text-slate-600">Remarks / Reason *</label>
-              <textarea 
+              <textarea
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Specify corrections required..."
@@ -616,15 +584,15 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setShowSendBackModal(false)}
                 className="px-4 py-2 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 font-medium"
               >
                 Cancel
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => handleSendBack()}
                 disabled={actionLoading || !remarks.trim()}
                 className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded flex items-center gap-1.5"

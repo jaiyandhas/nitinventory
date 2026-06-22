@@ -103,7 +103,7 @@ async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
                         WorkFlowHierarchy.is_enabled == True,
                         WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
-                )
+                ).limit(1)
             )
             step = step_res.scalar_one_or_none()
             if step and step.user_type == "user" and step.user_id == user.id:
@@ -827,7 +827,7 @@ async def list_prs(
                         WorkFlowHierarchy.is_enabled == True,
                         WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
-                )
+                ).limit(1)
             )
             step = res.scalar_one_or_none()
             phase_res = await db.execute(select(PhaseManager.phase_name).where(PhaseManager.id == pr.flow.phase_id))
@@ -1015,6 +1015,10 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
     phase_name = None
     if pr.flow:
         flow_engine = FlowEngineService(db)
+        # Auto-heal stuck flows when the PR detail page is loaded
+        if pr.current_status not in ("completed", "rejected", "cancelled", "po_issued"):
+            await flow_engine.realign_pr_flow(pr)
+            await db.refresh(pr.flow)
         sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
         res = await db.execute(
             select(WorkFlowHierarchy).where(
@@ -1027,7 +1031,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                     WorkFlowHierarchy.is_enabled == True,
                     WorkFlowHierarchy.source_of_fund_id == sof_id,
                 )
-            )
+            ).limit(1)
         )
         step = res.scalar_one_or_none()
         if step:
@@ -1529,7 +1533,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                         WorkFlowHierarchy.is_enabled == True,
                         WorkFlowHierarchy.source_of_fund_id == sof_id,
                     )
-                )
+                ).limit(1)
             )
             step = step_res.scalar_one_or_none()
             is_hod_step = False
@@ -1612,7 +1616,7 @@ async def advance_pr(pr_id: int, body: dict, background_tasks: BackgroundTasks, 
                     WorkFlowHierarchy.is_enabled == True,
                     WorkFlowHierarchy.source_of_fund_id == _sof_id,
                 )
-            )
+            ).limit(1)
         )
         _step = _step_res.scalar_one_or_none()
         if _step and _step.user_type == "tech_evaluation" and pr.initiator_id == user.id:
@@ -1682,7 +1686,7 @@ async def send_back_pr(pr_id: int, body: dict, db: AsyncSession = Depends(get_db
     await verify_no_active_referral(pr.id, db)
     flow_engine = FlowEngineService(db)
     try:
-        await flow_engine.send_back(pr, user, body["to_step"], reason)
+        await flow_engine.send_back(pr, user, reason)
         await db.commit()
         return {"message": "PR sent back"}
     except ValueError as e:
@@ -1719,7 +1723,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
                 WorkFlowHierarchy.is_enabled == True,
                 WorkFlowHierarchy.source_of_fund_id == sof_id,
             )
-        )
+        ).limit(1)
     )
     step = result.scalar_one_or_none()
     if not step:
@@ -3044,7 +3048,7 @@ async def allocate_budget_file(
                 selectinload(WorkFlowHierarchy.user),
             ).where(
                 flow_engine._wf_filters(pr, pr.flow.phase_id, sof_id=await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id), step_order=pr.flow.step_order)
-            )
+            ).limit(1)
         )
         new_step = new_step_result.scalar_one_or_none()
         if new_step:

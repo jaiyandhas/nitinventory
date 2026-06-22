@@ -13,13 +13,11 @@ interface TechEvalActionProps {
   refetch: () => void;
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
-  sendBackCandidates: any[];
+  hasPrevStep: boolean;
   onReject: (remarks: string) => Promise<void>;
-  onSendBack: (step: number, remarks: string) => Promise<void>;
+  onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;
   setShowSendBackModal: (show: boolean) => void;
-  selectedSendBackStep: number | '';
-  setSelectedSendBackStep: (step: number | '') => void;
   remarks: string;
   setRemarks: (val: string) => void;
 }
@@ -30,7 +28,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
   refetch,
   actionLoading,
   setActionLoading,
-  sendBackCandidates,
+  hasPrevStep,
   onReject,
   showSendBackModal,
   setShowSendBackModal,
@@ -204,7 +202,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
           <button onClick={() => onReject(remarks)} disabled={actionLoading || !remarks.trim()} className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4">
             <XCircle size={14} /> Reject
           </button>
-          {sendBackCandidates.length > 0 && (
+          {hasPrevStep && (
             <button onClick={() => setShowSendBackModal(true)} disabled={actionLoading}
               className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition">
               <RotateCcw size={14} /> Send Back
@@ -303,7 +301,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
             className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4">
             <XCircle size={14} /> Reject
           </button>
-          {sendBackCandidates.length > 0 && (
+          {hasPrevStep && (
             <button onClick={() => setShowSendBackModal(true)} disabled={actionLoading}
               className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition">
               <RotateCcw size={14} /> Send Back

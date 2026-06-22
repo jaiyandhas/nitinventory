@@ -8,13 +8,11 @@ interface CommitteeSignActionProps {
   refetch: () => void;
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
-  sendBackCandidates: any[];
+  hasPrevStep: boolean;
   onReject: (remarks: string) => Promise<void>;
-  onSendBack: (step: number, remarks: string) => Promise<void>;
+  onSendBack: (remarks: string) => Promise<void>;
   showSendBackModal: boolean;
   setShowSendBackModal: (show: boolean) => void;
-  selectedSendBackStep: number | '';
-  setSelectedSendBackStep: (step: number | '') => void;
   remarks: string;
   setRemarks: (val: string) => void;
 }

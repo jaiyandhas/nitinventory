@@ -714,7 +714,7 @@ async def get_aa_detail(
         .options(
             selectinload(AdministrativeApproval.pi).selectinload(User.department),
             selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
-            selectinload(AdministrativeApproval.history).selectinload(AdministrativeApprovalHistory.approver),
+            selectinload(AdministrativeApproval.history).selectinload(AdministrativeApprovalHistory.approver).selectinload(User.department),
             selectinload(AdministrativeApproval.nominees).selectinload(AdministrativeApprovalNominee.nominee).selectinload(User.department),
         )
         .where(AdministrativeApproval.id == aa_id)

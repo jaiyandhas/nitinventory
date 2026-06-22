@@ -5,7 +5,7 @@ import { PurchaseRequest } from '../../../types';
 interface AAActionProps {
   pr: PurchaseRequest;
   actionLoading: boolean;
-  sendBackCandidates: any[];
+  hasPrevStep: boolean;
   onAdvance: () => void;
   onReject: () => void;
   onSendBackClick: () => void;
@@ -27,7 +27,7 @@ interface AAActionProps {
 export const AAAction: React.FC<AAActionProps> = ({
   pr,
   actionLoading,
-  sendBackCandidates,
+  hasPrevStep,
   onAdvance,
   onReject,
   onSendBackClick,
@@ -168,7 +168,7 @@ export const AAAction: React.FC<AAActionProps> = ({
           <XCircle size={16} /> Reject
         </button>
 
-        {pr.flow && pr.flow.step_order > 1 && sendBackCandidates.length > 0 && (
+        {hasPrevStep && (
           <button 
             onClick={onSendBackClick} 
             disabled={actionLoading} 
