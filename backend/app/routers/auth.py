@@ -231,13 +231,31 @@ async def logout(response: Response):
 
 
 @router.get("/me")
-async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def me(request: Request, db: AsyncSession = Depends(get_db)):
+    """Return current user if authenticated, or null (HTTP 200) if not.
+    Using optional auth avoids a 401 that would appear as a browser console error on initial load."""
+    from app.core.security import decode_token, COOKIE_NAME
+    from jose import JWTError
+
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return None
+
+    try:
+        payload = decode_token(token)
+        user_id: int = int(payload.get("sub"))
+    except (JWTError, TypeError, ValueError):
+        return None
+
     result = await db.execute(
         select(User)
         .options(selectinload(User.role), selectinload(User.department))
-        .where(User.id == user.id)
+        .where(User.id == user_id)
     )
-    full_user = result.scalar_one()
+    full_user = result.scalar_one_or_none()
+    if not full_user:
+        return None
+
     return {
         "id": full_user.id,
         "title": full_user.title,

@@ -199,7 +199,7 @@ async def reset_password(user_id: int, body: dict, db: AsyncSession = Depends(ge
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/departments")
-async def list_departments(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def list_departments(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
     result = await db.execute(select(Department).order_by(Department.short_code))
     return [{"id": d.id, "name": d.name, "short_code": d.short_code} for d in result.scalars()]
 
@@ -246,7 +246,7 @@ async def create_role(body: dict, db: AsyncSession = Depends(get_db), _=AdminDep
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/financial-years")
-async def list_financial_years(db: AsyncSession = Depends(get_db), _=DeanOrAdminDep):
+async def list_financial_years(db: AsyncSession = Depends(get_db), _=BudgetViewDep):
     result = await db.execute(select(FinancialYear).order_by(FinancialYear.start_date.desc()))
     return [{"id": fy.id, "label": fy.label, "start_date": fy.start_date.isoformat(), "end_date": fy.end_date.isoformat(), "is_active": fy.is_active} for fy in result.scalars()]
 
