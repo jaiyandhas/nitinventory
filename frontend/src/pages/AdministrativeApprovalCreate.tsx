@@ -791,7 +791,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                disabled={submitting || !nomineeSelectionCompleted || !budgetIsSufficient}
+                disabled={submitting || !nomineeSelectionCompleted || !budgetIsSufficient || !declEligibility || !declDemandDivision}
                 className="btn-primary py-2 px-6 flex items-center justify-center gap-2 bg-[#1a3a6b] hover:bg-[#1a3a6b]/90 text-white font-semibold text-sm rounded shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (

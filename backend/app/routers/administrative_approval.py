@@ -747,6 +747,7 @@ async def get_aa_detail(
             "acted_at": h.acted_at.isoformat() + "Z" if h.acted_at else None,
             "signature_url": f"/static/uploads/{h.approver.signature_path}" if (h.approver and h.approver.signature_path and h.status == "Approved") else None,
             "approver_dept": h.approver.department.short_code if (h.approver and h.approver.department) else "-",
+            "designation": h.approver.designation or "-",
         })
         
     nominees_trail = []

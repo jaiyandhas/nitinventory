@@ -417,7 +417,70 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
             </div>
           )}
 
-
+          {/* Approval Audit Trail */}
+          {aa.history && aa.history.length > 0 && (
+            <div className="card p-6 bg-white shadow rounded-lg border border-slate-200">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b pb-2 mb-4">
+                Approval Audit Trail
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">#</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">Approver Name</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">Designation / Role</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">Action</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600">Remarks</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">Date &amp; Time</th>
+                      <th className="text-left px-3 py-2 border border-slate-200 font-semibold text-slate-600 whitespace-nowrap">Signature</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aa.history.map((h: any, idx: number) => (
+                      <tr key={h.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                        <td className="px-3 py-2 border border-slate-200 text-slate-400 text-center">{idx + 1}</td>
+                        <td className="px-3 py-2 border border-slate-200 font-medium text-slate-800 whitespace-nowrap">{h.approver_name}</td>
+                        <td className="px-3 py-2 border border-slate-200 text-slate-600">
+                          <div className="font-medium">{h.approver_role}</div>
+                          {h.designation && h.designation !== '-' && (
+                            <div className="text-slate-400 text-xs">{h.designation}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 border border-slate-200 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded font-semibold text-xs ${
+                            h.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                            h.status === 'Rejected' ? 'bg-rose-100 text-rose-800' :
+                            h.status === 'Submitted' ? 'bg-blue-100 text-blue-800' :
+                            h.status === 'Returned' ? 'bg-amber-100 text-amber-800' :
+                            'bg-slate-100 text-slate-700'
+                          }`}>{h.status}</span>
+                        </td>
+                        <td className="px-3 py-2 border border-slate-200 text-slate-600 max-w-[220px] break-words">{h.remarks}</td>
+                        <td className="px-3 py-2 border border-slate-200 text-slate-500 whitespace-nowrap">
+                          {h.acted_at
+                            ? new Date(h.acted_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                            : '—'}
+                        </td>
+                        <td className="px-3 py-2 border border-slate-200">
+                          {h.signature_url ? (
+                            <img
+                              src={h.signature_url.startsWith('http') ? h.signature_url : `${window.location.origin}${h.signature_url}`}
+                              alt="Signature"
+                              className="h-8 max-w-[80px] object-contain"
+                            />
+                          ) : (
+                            <span className="text-slate-400 italic">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-400 mt-3 italic">This audit trail is immutable and cannot be modified once recorded.</p>
+            </div>
+          )}
 
           {/* Approver Action Panel */}
           {canReview && (
