@@ -355,8 +355,8 @@ export const DashboardPage: React.FC = () => {
     { key: 'admin_approval', label: 'Administrative Approval', desc: 'Admin approvals and internal technical committee nominee reviews.' },
     { key: 'indent_specs', label: 'Indent and Detailed Tech specifications', desc: 'Purchase Initiator creates purchase request form and uploads specifications.' },
     { key: 'tendering', label: 'Tendering', desc: 'Procurement section publishes tender or processes local purchase selection.' },
-    { key: 'tech_eval', label: 'Technical', desc: 'Expert committee reviews submitted technical bids and signs evaluation report.' },
-    { key: 'fin_eval', label: 'Financial', desc: 'Dean/Director reviews financial comparative sheets and grants sanction.' },
+    { key: 'tech_eval', label: 'Technical Evaluation', desc: 'Expert committee reviews submitted technical bids and signs evaluation report.' },
+    { key: 'fin_eval', label: 'Financial Sanctions', desc: 'Dean/Director reviews financial comparative sheets and grants sanction.' },
     { key: 'approver', label: 'Approver', desc: 'Dean/Director final approval and purchase order verification.' },
     { key: 'po_issued', label: 'PO issued', desc: 'Official purchase order generation, delivery logging, and final billing.' },
     { key: 'asset', label: 'Asset', desc: 'Completed purchases and asset tagging.' }

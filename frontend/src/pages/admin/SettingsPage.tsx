@@ -15,7 +15,7 @@ export const SettingsPage: React.FC = () => {
   // Workflows states
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
   const [selectedProc, setSelectedProc] = useState<number | null>(null);
-  const [selectedPurchaseType, setSelectedPurchaseType] = useState<'department' | 'office'>('department');
+  const [selectedPurchaseType, setSelectedPurchaseType] = useState<'research' | 'others'>('research');
   const [isWfModalOpen, setIsWfModalOpen] = useState(false);
   const [wfAssigneeType, setWfAssigneeType] = useState<'role' | 'tag' | 'group'>('role');
 
@@ -47,6 +47,14 @@ export const SettingsPage: React.FC = () => {
   const [selectedSofId, setSelectedSofId] = useState<number | null>(null);
   // When true, AA workflow section shows the global default rows (category=null, proc=null)
   const [aaViewGlobal, setAaViewGlobal] = useState(false);
+
+  // AA Workflow Add/Edit modal state
+  const [isAaWfModalOpen, setIsAaWfModalOpen] = useState(false);
+  const [editingAaWf, setEditingAaWf] = useState<any>(null);
+  const [aaWfModalAssigneeType, setAaWfModalAssigneeType] = useState<'role' | 'group'>('group');
+  const [aaWfModalGroup, setAaWfModalGroup] = useState('HOD');
+  const [aaWfModalRoleId, setAaWfModalRoleId] = useState<number | null>(null);
+  const [aaWfModalSkipCondition, setAaWfModalSkipCondition] = useState('');
 
   // Budget Category states
   const [newBudgetExpVal, setNewBudgetExpVal] = useState('');
@@ -136,6 +144,7 @@ export const SettingsPage: React.FC = () => {
       toast.success('Step removed');
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.workflows });
     },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Error removing workflow step'),
   });
 
   const toggleWfMutation = useMutation({
@@ -164,6 +173,8 @@ export const SettingsPage: React.FC = () => {
     mutationFn: (data: any) => adminApi.createAaWorkflow(data),
     onSuccess: () => {
       toast.success('AA Step added');
+      setIsAaWfModalOpen(false);
+      setEditingAaWf(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error adding AA step')
@@ -189,6 +200,11 @@ export const SettingsPage: React.FC = () => {
   const updateAaWfMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => adminApi.updateAaWorkflow(id, data),
     onSuccess: () => {
+      if (isAaWfModalOpen) {
+        toast.success('AA Step updated');
+        setIsAaWfModalOpen(false);
+        setEditingAaWf(null);
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.aaWorkflows });
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Error updating AA step')
@@ -552,6 +568,64 @@ export const SettingsPage: React.FC = () => {
     createWfMutation.mutate(payload);
   };
 
+  const openAaWfModal = (existing?: any) => {
+    if (existing) {
+      setEditingAaWf(existing);
+      if (existing.role_id) {
+        setAaWfModalAssigneeType('role');
+        setAaWfModalRoleId(existing.role_id);
+        setAaWfModalGroup(existing.user_group || '');
+      } else {
+        setAaWfModalAssigneeType('group');
+        setAaWfModalRoleId(null);
+        setAaWfModalGroup(existing.user_group || 'HOD');
+      }
+      setAaWfModalSkipCondition(existing.skip_condition || '');
+    } else {
+      setEditingAaWf(null);
+      setAaWfModalAssigneeType('group');
+      setAaWfModalRoleId(null);
+      setAaWfModalGroup('HOD');
+      setAaWfModalSkipCondition('');
+    }
+    setIsAaWfModalOpen(true);
+  };
+
+  const handleAaWfModalSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+
+    let roleId: number | null = null;
+    let userGroup = '';
+    if (aaWfModalAssigneeType === 'role') {
+      roleId = Number(formData.get('role_id'));
+      const matchingRole = roles.find((r: any) => r.id === roleId);
+      userGroup = matchingRole ? matchingRole.name : 'Role';
+    } else {
+      userGroup = String(formData.get('user_group') || 'HOD');
+    }
+    const skipCondition = String(formData.get('skip_condition') || '').trim() || null;
+
+    if (editingAaWf) {
+      updateAaWfMutation.mutate({
+        id: editingAaWf.id,
+        data: { role_id: roleId, user_group: userGroup, skip_condition: skipCondition }
+      });
+    } else {
+      const nextOrder = filteredAaWfs.length > 0 ? Math.max(...filteredAaWfs.map((w: any) => w.step_order)) + 1 : 1;
+      createAaWfMutation.mutate({
+        user_group: userGroup,
+        role_id: roleId,
+        step_order: nextOrder,
+        skip_condition: skipCondition,
+        category_id: aaViewGlobal ? null : selectedCat,
+        procurement_id: aaViewGlobal ? null : selectedProc,
+        purchase_type: aaViewGlobal ? null : selectedPurchaseType,
+        source_of_fund_id: aaViewGlobal ? null : selectedSofId
+      });
+    }
+  };
+
   const handleUserSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -702,15 +776,16 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Type</label>
-                <select value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'department' | 'office')} className="input-field w-full">
+                <label htmlFor="filter-purchase-type" className="block text-sm font-medium text-slate-700 mb-2">Purchase Type</label>
+                <select id="filter-purchase-type" value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'research' | 'others')} className="input-field w-full">
                   <option value="research">Research</option>
                   <option value="others">Others</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Source of Fund</label>
+                <label htmlFor="filter-source-of-fund" className="block text-sm font-medium text-slate-700 mb-2">Source of Fund</label>
                 <select
+                  id="filter-source-of-fund"
                   value={selectedSofId === null ? '' : String(selectedSofId)}
                   onChange={(e) => setSelectedSofId(e.target.value === '' ? null : Number(e.target.value))}
                   className="input-field w-full"
@@ -754,17 +829,7 @@ export const SettingsPage: React.FC = () => {
                   {aaViewGlobal ? 'Reset Global Defaults' : 'Remove Override'}
                 </button>
                 <button
-                  onClick={() => {
-                    const nextOrder = filteredAaWfs.length > 0 ? Math.max(...filteredAaWfs.map((w: any) => w.step_order)) + 1 : 1;
-                    createAaWfMutation.mutate({
-                      user_group: 'Dean',
-                      step_order: nextOrder,
-                      category_id: aaViewGlobal ? null : selectedCat,
-                      procurement_id: aaViewGlobal ? null : selectedProc,
-                      purchase_type: aaViewGlobal ? null : selectedPurchaseType,
-                      source_of_fund_id: aaViewGlobal ? null : selectedSofId
-                    });
-                  }}
+                  onClick={() => openAaWfModal()}
                   className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 font-semibold"
                 >
                   <Plus size={14} /> Add Step
@@ -788,6 +853,7 @@ export const SettingsPage: React.FC = () => {
                       </span>
                       <div className="flex-1 min-w-[200px]">
                         <select
+                          aria-label={`AA step ${idx + 1} role or group`}
                           value={wf.role_id ? `role:${wf.role_id}` : `group:${wf.user_group}`}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -838,6 +904,7 @@ export const SettingsPage: React.FC = () => {
                           <span className="text-[10px] font-bold text-slate-450 uppercase shrink-0">Skip If:</span>
                           <input
                             type="text"
+                            aria-label={`AA step ${idx + 1} skip condition`}
                             placeholder="e.g. aa.total_cost < 25000"
                             defaultValue={wf.skip_condition || ''}
                             onBlur={(e) => {
@@ -880,6 +947,13 @@ export const SettingsPage: React.FC = () => {
                           title="Move Down"
                         >
                           <ArrowDown size={16} />
+                        </button>
+                        <button
+                          onClick={() => openAaWfModal(wf)}
+                          className="p-1 text-slate-400 hover:text-[#1a3a6b]"
+                          title="Edit Step"
+                        >
+                          <Edit size={16} />
                         </button>
                         <button
                           onClick={() => {
@@ -936,6 +1010,7 @@ export const SettingsPage: React.FC = () => {
                                     <span className="w-6 h-6 rounded-full bg-[#1a3a6b] text-white flex items-center justify-center text-xs font-bold shrink-0">{phaseIdx + 1}</span>
                                     <div className="flex-1 min-w-[200px]">
                                       <select
+                                        aria-label={`Step ${phaseIdx + 1} assignee in ${phase.phase_name}`}
                                         value={
                                           wf.user_type === 'purchase_initiator' ? 'tag:purchase_initiator' :
                                           wf.user_type === 'da_assigner' ? 'tag:da_assigner' :
@@ -1014,6 +1089,7 @@ export const SettingsPage: React.FC = () => {
                                           <span className="text-[10px] font-bold text-slate-400 uppercase">Skip If:</span>
                                           <input
                                             type="text"
+                                            aria-label={`Step ${phaseIdx + 1} skip condition in ${phase.phase_name}`}
                                             placeholder="e.g. pr.amount < 100000"
                                             value={wf.skip_condition || ''}
                                             onChange={(e) => {
@@ -1029,6 +1105,7 @@ export const SettingsPage: React.FC = () => {
                                             <div className="flex items-center gap-1">
                                               <span className="text-[10px] font-bold text-slate-400 uppercase">Action Type:</span>
                                               <select
+                                                aria-label={`Step ${phaseIdx + 1} action type in ${phase.phase_name}`}
                                                 value={wf.user_type}
                                                 onChange={(e) => {
                                                   const newAction = e.target.value;
@@ -1046,6 +1123,7 @@ export const SettingsPage: React.FC = () => {
                                                 <div className="flex items-center gap-1">
                                                   <span className="text-[10px] font-bold text-slate-400 uppercase">Field:</span>
                                                   <select
+                                                    aria-label={`Step ${phaseIdx + 1} condition field in ${phase.phase_name}`}
                                                     value={wf.condition_field || ''}
                                                     onChange={(e) => {
                                                       const val = e.target.value;
@@ -1062,6 +1140,7 @@ export const SettingsPage: React.FC = () => {
                                                     <div className="flex items-center gap-1">
                                                       <span className="text-[10px] font-bold text-slate-400 uppercase">Op:</span>
                                                       <select
+                                                        aria-label={`Step ${phaseIdx + 1} condition operator in ${phase.phase_name}`}
                                                         value={wf.condition_operator || '<'}
                                                         onChange={(e) => {
                                                           const op = e.target.value;
@@ -1083,6 +1162,7 @@ export const SettingsPage: React.FC = () => {
                                                         type="number"
                                                         min="0"
                                                         placeholder="Value"
+                                                        aria-label={`Step ${phaseIdx + 1} condition value in ${phase.phase_name}`}
                                                         value={wf.condition_value !== null && wf.condition_value !== undefined ? wf.condition_value : ''}
                                                         onChange={(e) => {
                                                           const val = e.target.value;
@@ -1112,7 +1192,14 @@ export const SettingsPage: React.FC = () => {
                                       <ArrowDown size={18} />
                                     </button>
                                     <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                    <button onClick={() => deleteWfMutation.mutate(wf.id)} className="p-1.5 text-red-400 hover:text-red-600">
+                                    <button
+                                      onClick={() => {
+                                        if (confirm('Remove this approval step? This cannot be undone. Active purchase indents at this step will be blocked.')) {
+                                          deleteWfMutation.mutate(wf.id);
+                                        }
+                                      }}
+                                      className="p-1.5 text-red-400 hover:text-red-600"
+                                    >
                                       <Trash2 size={18} />
                                     </button>
                                   </div>
@@ -2022,6 +2109,116 @@ export const SettingsPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* AA Workflow Add/Edit Step Modal */}
+      {isAaWfModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-[#1a3a6b] text-white">
+              <h2 className="text-lg font-bold">{editingAaWf ? 'Edit AA Workflow Step' : 'Add AA Workflow Step'}</h2>
+              <p className="text-xs text-blue-200 mt-0.5">
+                {aaViewGlobal ? 'Global Default' : `${categories.find((c: any) => c.id === selectedCat)?.title || ''} / ${procs.find((p: any) => p.id === selectedProc)?.name || ''} / ${selectedPurchaseType}`}
+              </p>
+            </div>
+            <form onSubmit={handleAaWfModalSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Assignee Type</label>
+                <div className="flex gap-6 mb-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
+                    <input
+                      type="radio"
+                      checked={aaWfModalAssigneeType === 'group'}
+                      onChange={() => setAaWfModalAssigneeType('group')}
+                      className="text-[#1a3a6b]"
+                    />
+                    User Group
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
+                    <input
+                      type="radio"
+                      checked={aaWfModalAssigneeType === 'role'}
+                      onChange={() => setAaWfModalAssigneeType('role')}
+                      className="text-[#1a3a6b]"
+                    />
+                    Specific Role
+                  </label>
+                </div>
+                {aaWfModalAssigneeType === 'group' ? (
+                  <div>
+                    <label htmlFor="aa-modal-user-group" className="block text-xs font-semibold text-slate-600 mb-1">User Group</label>
+                    <select
+                      id="aa-modal-user-group"
+                      name="user_group"
+                      value={aaWfModalGroup}
+                      onChange={(e) => setAaWfModalGroup(e.target.value)}
+                      required
+                      className="input-field w-full"
+                    >
+                      <option value="HOD">HOD</option>
+                      <option value="ADPD">ADPD</option>
+                      <option value="Dean">Dean</option>
+                      <option value="Director">Director</option>
+                      <option value="faculty">Faculty Group</option>
+                      <option value="hod">HOD Group</option>
+                      <option value="verifier_da">Dealing Assistant Group</option>
+                      <option value="verifier_sp">Superintendent / AR Group</option>
+                      <option value="verifier_general">Associate Dean Group</option>
+                      <option value="dean_approver">Dean Approver Group</option>
+                      <option value="apex_approver">Apex Approver Group</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label htmlFor="aa-modal-role-id" className="block text-xs font-semibold text-slate-600 mb-1">Assigned Role</label>
+                    <select
+                      id="aa-modal-role-id"
+                      name="role_id"
+                      value={aaWfModalRoleId ?? ''}
+                      onChange={(e) => setAaWfModalRoleId(Number(e.target.value))}
+                      required
+                      className="input-field w-full"
+                    >
+                      <option value="">Select a role…</option>
+                      {roles.map((r: any) => (
+                        <option key={r.id} value={r.id}>{r.name} ({r.group_key})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label htmlFor="aa-modal-skip-condition" className="block text-sm font-semibold text-slate-700 mb-1">Skip Condition (Optional)</label>
+                <input
+                  id="aa-modal-skip-condition"
+                  name="skip_condition"
+                  type="text"
+                  placeholder="e.g. aa.total_cost < 25000"
+                  value={aaWfModalSkipCondition}
+                  onChange={(e) => setAaWfModalSkipCondition(e.target.value)}
+                  className="input-field w-full text-xs"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">Python expression; step is skipped if this evaluates to true (fail-secure).</p>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setIsAaWfModalOpen(false); setEditingAaWf(null); }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createAaWfMutation.isPending || updateAaWfMutation.isPending}
+                  className="btn-primary"
+                >
+                  {(createAaWfMutation.isPending || updateAaWfMutation.isPending) ? 'Saving…' : editingAaWf ? 'Save Changes' : 'Add Step'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Category Modal */}
       {isCatModalOpen && (

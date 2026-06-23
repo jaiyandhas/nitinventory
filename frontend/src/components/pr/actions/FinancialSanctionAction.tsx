@@ -37,11 +37,6 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
   remarks,
   setRemarks
 }) => {
-  const [selectedBidId, setSelectedBidId] = useState<string>(() => {
-    const awarded = pr.financial_evaluations?.find(fe => fe.is_awarded);
-    return awarded ? String(awarded.id) : '';
-  });
-
   const isInitiator = user?.id === pr.initiator_id;
   const hasAwardedBid = pr.financial_evaluations?.some(fe => fe.is_awarded);
 
@@ -49,11 +44,28 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
   const finalTechEvals = (pr.technical_evaluations ?? []).filter((te: any) => te.member_id === null || te.member_id === undefined);
   const qualifiedNames = finalTechEvals.filter((te: any) => te.is_qualified).map((te: any) => te.vendor_name);
 
-  // Financial bids filtered to qualified vendors only, ranked by amount ascending
-  const rankedBids = (pr.financial_evaluations ?? [])
-    .filter(fe => qualifiedNames.length === 0 || qualifiedNames.includes(fe.vendor_name))
-    .sort((a, b) => a.quoted_amount - b.quoted_amount)
-    .map((fe, idx) => ({ ...fe, rank: `L${idx + 1}` }));
+  // Vendors eligible for financial ranking (qualified or all if no tech eval)
+  const eligibleBids = (pr.financial_evaluations ?? [])
+    .filter(fe => qualifiedNames.length === 0 || qualifiedNames.includes(fe.vendor_name));
+
+  const rankOptions = eligibleBids.map((_, i) => `L${i + 1}`);
+
+  // Editable rankings: keyed by financial_evaluation id
+  const [vendorRankings, setVendorRankings] = useState<{ [id: number]: string }>(() => {
+    const init: { [id: number]: string } = {};
+    eligibleBids.forEach((fe, idx) => {
+      init[fe.id] = fe.ranking || `L${idx + 1}`;
+    });
+    return init;
+  });
+
+  // Selected (recommended) vendor
+  const [selectedBidId, setSelectedBidId] = useState<string>(() => {
+    const awarded = pr.financial_evaluations?.find(fe => fe.is_awarded);
+    if (awarded) return String(awarded.id);
+    const l1 = eligibleBids.find(fe => fe.ranking === 'L1');
+    return l1 ? String(l1.id) : '';
+  });
 
   const handleAdvance = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required to approve and advance'); return; }
@@ -73,18 +85,42 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
 
   const handleInitiatorConfirm = async () => {
     if (!remarks.trim()) { toast.error('Remarks are required'); return; }
-    if (!selectedBidId) { toast.error('Please select the vendor to award the bid'); return; }
-    if (!window.confirm('Confirm selected vendor and advance to next approval step?')) return;
+    if (!selectedBidId) { toast.error('Please select the recommended vendor'); return; }
+
+    // Validate rankings are unique
+    const rankValues = eligibleBids.map(fe => vendorRankings[fe.id]).filter(Boolean);
+    const uniqueRanks = new Set(rankValues);
+    if (uniqueRanks.size !== rankValues.length) {
+      toast.error('Each vendor must have a unique ranking — no duplicates allowed');
+      return;
+    }
+    if (!rankValues.includes('L1')) {
+      toast.error('Please assign L1 ranking to at least one vendor');
+      return;
+    }
+
+    if (!window.confirm('Save rankings, confirm recommended vendor, and advance?')) return;
     setActionLoading(true);
     try {
-      await prApi.awardBid(pr.id, parseInt(selectedBidId), remarks);
-      // Only advance if the current step is the purchase initiator's step (faculty's own step).
-      // If the PR has already moved to the next step (e.g., HOD), skip advance to avoid 403.
+      const vendors = eligibleBids.map(fe => ({
+        name: fe.vendor_name,
+        quoted_amount: fe.quoted_amount,
+        ranking: vendorRankings[fe.id],
+        remarks: fe.remarks,
+        unit_price: fe.unit_price,
+        taxes: fe.taxes ?? 0,
+        delivery_period: fe.delivery_period,
+        warranty: fe.warranty,
+        is_awarded: String(fe.id) === selectedBidId,
+      }));
+
+      await prApi.addFinancialBids(pr.id, { vendors, remarks });
+
       if (pr.flow?.step_type === 'purchase_initiator' || pr.flow?.expected_group === 'faculty') {
         await prApi.advance(pr.id, remarks);
-        toast.success('Vendor selected and advanced successfully');
+        toast.success('Rankings saved and advanced successfully');
       } else {
-        toast.success('Vendor selection saved');
+        toast.success('Rankings and vendor selection saved');
       }
       setRemarks('');
       refetch();
@@ -95,67 +131,89 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
     }
   };
 
-  // Initiator with financial bids + no bid awarded yet: show bid selection
-  if (isInitiator && rankedBids.length > 0 && !hasAwardedBid) {
+  // Initiator step: enter/edit rankings and select recommended vendor
+  if (isInitiator && eligibleBids.length > 0 && !hasAwardedBid) {
     return (
       <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left animate-fadeIn">
         <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-          Financial Evaluation — Select Recommended Vendor
+          Financial Evaluation — Assign Rankings &amp; Select Recommended Vendor
         </h4>
         <p className="text-xs text-slate-500">
-          Vendors below are technically qualified and ranked by quoted amount. Select the recommended vendor (L1 preferred) to proceed.
+          Assign L1, L2, L3… rankings to each vendor and select the recommended vendor to proceed.
+          Rankings are manually assigned — the system will not override your selection.
         </p>
 
         <div className="space-y-2">
-          {rankedBids.map(fe => {
-            const isL1 = fe.rank === 'L1';
-            const isL2 = fe.rank === 'L2';
+          {eligibleBids.map(fe => {
+            const currentRank = vendorRankings[fe.id] || '';
+            const isSelected = selectedBidId === String(fe.id);
+            const isL1 = currentRank === 'L1';
+            const isL2 = currentRank === 'L2';
             return (
-              <label key={fe.id}
-                className={`flex items-center justify-between p-3 border rounded cursor-pointer transition-all hover:bg-slate-50 ${
-                  selectedBidId === String(fe.id)
+              <div key={fe.id}
+                className={`flex items-center justify-between p-3 border rounded transition-all ${
+                  isSelected
                     ? 'border-blue-500 bg-blue-50/30'
                     : isL1 ? 'border-green-200 bg-green-50/10'
                     : isL2 ? 'border-yellow-200 bg-yellow-50/10'
                     : 'border-slate-200'
                 }`}>
-                <div className="flex items-center gap-3">
-                  <input type="radio" name="awarded_vendor" value={fe.id}
-                    checked={selectedBidId === String(fe.id)}
+                <div className="flex items-center gap-3 min-w-0">
+                  <input
+                    type="radio"
+                    name="awarded_vendor"
+                    value={fe.id}
+                    checked={isSelected}
                     onChange={e => setSelectedBidId(e.target.value)}
-                    className="w-4 h-4 text-blue-600 focus:ring-blue-500" />
-                  <div>
-                    <span className="text-sm font-bold text-slate-800">{fe.vendor_name}</span>
-                    <span className="ml-2 text-xs font-semibold text-[#1a3a6b]">{formatCurrency(fe.quoted_amount)}</span>
+                    aria-label={`Select ${fe.vendor_name} as recommended vendor`}
+                    className="w-4 h-4 text-blue-600 focus:ring-blue-500 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-sm font-bold text-slate-800 truncate block">{fe.vendor_name}</span>
+                    <span className="text-xs font-semibold text-[#1a3a6b]">{formatCurrency(fe.quoted_amount)}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0 ml-3">
                   {isL1 && <Trophy size={13} className="text-green-600" />}
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                    isL1 ? 'bg-green-100 text-green-800'
-                    : isL2 ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {fe.rank}
-                  </span>
+                  <select
+                    value={currentRank}
+                    onChange={e => setVendorRankings(prev => ({ ...prev, [fe.id]: e.target.value }))}
+                    aria-label={`Ranking for ${fe.vendor_name}`}
+                    className={`text-xs font-bold px-2 py-1 rounded border focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                      isL1 ? 'bg-green-100 text-green-800 border-green-300'
+                      : isL2 ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                      : 'bg-slate-100 text-slate-800 border-slate-300'
+                    }`}>
+                    {rankOptions.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
                 </div>
-              </label>
+              </div>
             );
           })}
         </div>
 
         <div className="space-y-2 border-t border-slate-100 pt-3">
-          <label className="label text-slate-700 font-bold text-xs">Remarks / Justification *</label>
-          <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
-            placeholder="Provide justification for vendor selection..."
-            className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm" required />
+          <label htmlFor="fin-sanction-remarks" className="label text-slate-700 font-bold text-xs">
+            Remarks / Justification *
+          </label>
+          <textarea
+            id="fin-sanction-remarks"
+            value={remarks}
+            onChange={e => setRemarks(e.target.value)}
+            placeholder="Provide justification for rankings and vendor selection..."
+            className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm"
+            required
+          />
         </div>
 
         <div className="flex flex-wrap gap-2.5 pt-1">
-          <button onClick={handleInitiatorConfirm}
+          <button
+            onClick={handleInitiatorConfirm}
             disabled={actionLoading || !remarks.trim() || !selectedBidId}
             className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs">
-            <CheckCircle2 size={14} /> Confirm Vendor &amp; Advance
+            <CheckCircle2 size={14} /> Save Rankings &amp; Advance
           </button>
           {isLastStep && (
             <button onClick={() => onReject(remarks)} disabled={actionLoading || !remarks.trim()}
@@ -196,10 +254,15 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
       )}
 
       <div className="space-y-2">
-        <label className="label text-slate-700 font-bold text-xs">Remarks *</label>
-        <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
+        <label htmlFor="fin-sanction-approve-remarks" className="label text-slate-700 font-bold text-xs">Remarks *</label>
+        <textarea
+          id="fin-sanction-approve-remarks"
+          value={remarks}
+          onChange={e => setRemarks(e.target.value)}
           placeholder="Provide financial sanction evaluation remarks..."
-          className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm" required />
+          className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm"
+          required
+        />
       </div>
 
       <div className="flex flex-wrap gap-2.5 pt-1">

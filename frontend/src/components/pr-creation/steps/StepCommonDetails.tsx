@@ -77,20 +77,21 @@ export const StepCommonDetails: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Assign Purchase Initiator (Faculty Member) *</label>
-            <select
-              required
-              className="input-field bg-white w-full border border-slate-300 rounded-lg p-2.5 text-sm"
-              value={common.initiator_id || ''}
-              onChange={(e) => onUpdate({ initiator_id: e.target.value })}
-            >
-              <option value="" disabled>-- Select Faculty Member --</option>
-              {departmentFaculty.map((f: any) => (
-                <option key={f.id} value={f.id}>
-                  {f.name} ({f.email})
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Assign Purchase Initiator (Faculty Member) *
+              <select
+                required
+                className="input-field bg-white w-full border border-slate-300 rounded-lg p-2.5 text-sm mt-1"
+                value={common.initiator_id || ''}
+                onChange={(e) => onUpdate({ initiator_id: e.target.value })}
+              >
+                <option value="" disabled>-- Select Faculty Member --</option>
+                {departmentFaculty.map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.email})
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="text-[11px] text-slate-500 font-medium mt-1">
               Select a faculty member from your department to serve as the purchase initiator for this request.
             </p>
@@ -116,17 +117,18 @@ export const StepCommonDetails: React.FC<Props> = ({
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <div>
-        <label className="label">Purchase Type *</label>
-        <select
-          required
-          className="input-field bg-white"
-          value={common.purchase_type}
-          onChange={(e) => onUpdate({ purchase_type: e.target.value as 'office' | 'department' })}
-        >
-          <option value="" disabled>Select Purchase Type</option>
-          <option value="research">Research</option>
-          <option value="others">Others</option>
-        </select>
+        <label className="label">Purchase Type *
+          <select
+            required
+            className="input-field bg-white mt-1"
+            value={common.purchase_type}
+            onChange={(e) => onUpdate({ purchase_type: e.target.value as 'research' | 'others' })}
+          >
+            <option value="" disabled>Select Purchase Type</option>
+            <option value="research">Research</option>
+            <option value="others">Others</option>
+          </select>
+        </label>
       </div>
 
       <div className="md:col-span-2">

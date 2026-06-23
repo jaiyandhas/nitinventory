@@ -444,47 +444,57 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Invoice Number *</label>
-              <input type="text" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Invoice Number *
+                <input type="text" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Invoice Date *</label>
-              <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Invoice Date *
+                <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Challan Number</label>
-              <input type="text" value={challanNo} onChange={e => setChallanNo(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Challan Number
+                <input type="text" value={challanNo} onChange={e => setChallanNo(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Challan Date</label>
-              <input type="date" value={challanDate} onChange={e => setChallanDate(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Challan Date
+                <input type="date" value={challanDate} onChange={e => setChallanDate(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Due Date of Supply (PO)</label>
-              <input type="date" value={dueDateOfSupply} onChange={e => setDueDateOfSupply(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Due Date of Supply (PO)
+                <input type="date" value={dueDateOfSupply} onChange={e => setDueDateOfSupply(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Actual Date of Delivery *</label>
-              <input type="date" value={actualDateOfDelivery} onChange={e => setActualDateOfDelivery(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Actual Date of Delivery *
+                <input type="date" value={actualDateOfDelivery} onChange={e => setActualDateOfDelivery(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Delay Days</label>
-              <input type="number" value={delayDays} onChange={e => setDelayDays(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Delay Days
+                <input type="number" value={delayDays} onChange={e => setDelayDays(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div className="md:col-span-2">
-              <label className="label text-slate-600 font-semibold text-xs">Reason for Delay</label>
-              <input type="text" value={delayReason} onChange={e => setDelayReason(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="If delayed, specify reasons" />
+              <label className="label text-slate-600 font-semibold text-xs">Reason for Delay
+                <input type="text" value={delayReason} onChange={e => setDelayReason(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="If delayed, specify reasons" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Liquidity Damages (LD) Deducted?</label>
-              <select value={liquidityDamagesDeducted} onChange={e => setLiquidityDamagesDeducted(e.target.value)} className="input-field mt-1 text-xs bg-white">
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </select>
+              <label className="label text-slate-600 font-semibold text-xs">Liquidity Damages (LD) Deducted?
+                <select value={liquidityDamagesDeducted} onChange={e => setLiquidityDamagesDeducted(e.target.value)} className="input-field mt-1 text-xs bg-white">
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </label>
             </div>
             <div className="md:col-span-2">
-              <label className="label text-slate-600 font-semibold text-xs">Justification for LD / Waiver</label>
-              <input type="text" value={justificationForLd} onChange={e => setJustificationForLd(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="If LD is No, provide waiver justifications" />
+              <label className="label text-slate-600 font-semibold text-xs">Justification for LD / Waiver
+                <input type="text" value={justificationForLd} onChange={e => setJustificationForLd(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="If LD is No, provide waiver justifications" />
+              </label>
             </div>
           </div>
         </div>
@@ -496,55 +506,64 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Performance Security Terms</label>
-              <input type="text" value={psTerms} onChange={e => setPsTerms(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 3% PBG valid for 14 months" />
+              <label className="label text-slate-600 font-semibold text-xs">Performance Security Terms
+                <input type="text" value={psTerms} onChange={e => setPsTerms(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 3% PBG valid for 14 months" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Warranty Terms</label>
-              <input type="text" value={warrantyTerms} onChange={e => setWarrantyTerms(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 1 year OEM warranty" />
+              <label className="label text-slate-600 font-semibold text-xs">Warranty Terms
+                <input type="text" value={warrantyTerms} onChange={e => setWarrantyTerms(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 1 year OEM warranty" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Mode of PS</label>
-              <select value={modeOfPs} onChange={e => setModeOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white">
-                <option value="None">None</option>
-                <option value="Bank Guarantee">Bank Guarantee</option>
-                <option value="Bank Deposit Receipt">Bank Deposit Receipt</option>
-                <option value="Demand Draft">Demand Draft</option>
-                <option value="To be deducted Bill Payment">To be deducted Bill Payment</option>
-              </select>
+              <label className="label text-slate-600 font-semibold text-xs">Mode of PS
+                <select value={modeOfPs} onChange={e => setModeOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white">
+                  <option value="None">None</option>
+                  <option value="Bank Guarantee">Bank Guarantee</option>
+                  <option value="Bank Deposit Receipt">Bank Deposit Receipt</option>
+                  <option value="Demand Draft">Demand Draft</option>
+                  <option value="To be deducted Bill Payment">To be deducted Bill Payment</option>
+                </select>
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Value of PS (Rs.)</label>
-              <input type="number" value={valueOfPs} onChange={e => setValueOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Value of PS (Rs.)
+                <input type="number" value={valueOfPs} onChange={e => setValueOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Validity of PS (Expiry Date)</label>
-              <input type="text" value={validityOfPs} onChange={e => setValidityOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 2026-12-31" />
+              <label className="label text-slate-600 font-semibold text-xs">Validity of PS (Expiry Date)
+                <input type="text" value={validityOfPs} onChange={e => setValidityOfPs(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. 2026-12-31" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Warranty Period Required?</label>
-              <select value={warrantyPeriodRequired} onChange={e => setWarrantyPeriodRequired(e.target.value)} className="input-field mt-1 text-xs bg-white">
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </select>
+              <label className="label text-slate-600 font-semibold text-xs">Warranty Period Required?
+                <select value={warrantyPeriodRequired} onChange={e => setWarrantyPeriodRequired(e.target.value)} className="input-field mt-1 text-xs bg-white">
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Warranty Period (in months)</label>
-              <input type="number" value={warrantyPeriodMonths} onChange={e => setWarrantyPeriodMonths(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Warranty Period (in months)
+                <input type="number" value={warrantyPeriodMonths} onChange={e => setWarrantyPeriodMonths(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Installation Required?</label>
-              <select value={installationRequired} onChange={e => setInstallationRequired(e.target.value)} className="input-field mt-1 text-xs bg-white">
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </select>
+              <label className="label text-slate-600 font-semibold text-xs">Installation Required?
+                <select value={installationRequired} onChange={e => setInstallationRequired(e.target.value)} className="input-field mt-1 text-xs bg-white">
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Installation Cert Enclosed?</label>
-              <select value={installationCertificateEnclosed} onChange={e => setInstallationCertificateEnclosed(e.target.value)} className="input-field mt-1 text-xs bg-white">
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </select>
+              <label className="label text-slate-600 font-semibold text-xs">Installation Cert Enclosed?
+                <select value={installationCertificateEnclosed} onChange={e => setInstallationCertificateEnclosed(e.target.value)} className="input-field mt-1 text-xs bg-white">
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </label>
             </div>
           </div>
         </div>
@@ -556,48 +575,59 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Supplier Name *</label>
-              <input type="text" value={supplierName} onChange={e => setSupplierName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Supplier Name *
+                <input type="text" value={supplierName} onChange={e => setSupplierName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Supplier GST No</label>
-              <input type="text" value={supplierGst} onChange={e => setSupplierGst(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              <label className="label text-slate-600 font-semibold text-xs">Supplier GST No
+                <input type="text" value={supplierGst} onChange={e => setSupplierGst(e.target.value)} className="input-field mt-1 text-xs bg-white" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Invoice Amount (Rs.) *</label>
-              <input type="number" value={invoiceAmount} onChange={e => setInvoiceAmount(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Invoice Amount (Rs.) *
+                <input type="number" value={invoiceAmount} onChange={e => setInvoiceAmount(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div className="md:col-span-3">
-              <label className="label text-slate-600 font-semibold text-xs">Justification (if any)</label>
-              <input type="text" value={justification} onChange={e => setJustification(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Supplier or rate justification" />
+              <label className="label text-slate-600 font-semibold text-xs">Justification (if any)
+                <input type="text" value={justification} onChange={e => setJustification(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Supplier or rate justification" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Firm / Company Name *</label>
-              <input type="text" value={firmName} onChange={e => setFirmName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Firm / Company Name *
+                <input type="text" value={firmName} onChange={e => setFirmName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Bank Account Number *</label>
-              <input type="text" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Bank Account Number *
+                <input type="text" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Account Holder Name *</label>
-              <input type="text" value={accountHolderName} onChange={e => setAccountHolderName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Account Holder Name *
+                <input type="text" value={accountHolderName} onChange={e => setAccountHolderName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Bank Name *</label>
-              <input type="text" value={bankName} onChange={e => setBankName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Bank Name *
+                <input type="text" value={bankName} onChange={e => setBankName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Branch Name *</label>
-              <input type="text" value={branchName} onChange={e => setBranchName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">Branch Name *
+                <input type="text" value={branchName} onChange={e => setBranchName(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">IFSC Code *</label>
-              <input type="text" value={ifscCode} onChange={e => setIfscCode(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-600 font-semibold text-xs">IFSC Code *
+                <input type="text" value={ifscCode} onChange={e => setIfscCode(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Laboratory / Office Name *</label>
-              <input type="text" value={labOfficeName} onChange={e => setLabOfficeName(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Department Lab location" required />
+              <label className="label text-slate-600 font-semibold text-xs">Laboratory / Office Name *
+                <input type="text" value={labOfficeName} onChange={e => setLabOfficeName(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Department Lab location" required />
+              </label>
             </div>
           </div>
         </div>
@@ -609,57 +639,68 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-lg border border-slate-200">
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Packing &amp; Forwarding (Rs.)</label>
-              <input type="number" value={packingAndForwardingCharges} onChange={e => setPackingAndForwardingCharges(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">Packing &amp; Forwarding (Rs.)
+                <input type="number" value={packingAndForwardingCharges} onChange={e => setPackingAndForwardingCharges(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Other Charges (Rs.)</label>
-              <input type="number" value={otherCharges} onChange={e => setOtherCharges(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">Other Charges (Rs.)
+                <input type="number" value={otherCharges} onChange={e => setOtherCharges(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div className="md:col-span-2">
-              <label className="label text-slate-600 font-semibold text-xs">Specify Other Charges</label>
-              <input type="text" value={otherChargesSpecification} onChange={e => setOtherChargesSpecification(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">Specify Other Charges
+                <input type="text" value={otherChargesSpecification} onChange={e => setOtherChargesSpecification(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Total Accepted Value (Rs.) *</label>
-              <input type="number" value={totalAcceptedValue} onChange={e => setTotalAcceptedValue(e.target.value)} className="input-field mt-1 text-xs bg-slate-50 font-bold" required />
+              <label className="label text-slate-600 font-semibold text-xs">Total Accepted Value (Rs.) *
+                <input type="number" value={totalAcceptedValue} onChange={e => setTotalAcceptedValue(e.target.value)} className="input-field mt-1 text-xs bg-slate-50 font-bold" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">PS Withheld (Rs.)</label>
-              <input type="number" value={psWithheld} onChange={e => setPsWithheld(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">PS Withheld (Rs.)
+                <input type="number" value={psWithheld} onChange={e => setPsWithheld(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">LD Imposed (Rs.)</label>
-              <input type="number" value={ldImposed} onChange={e => setLdImposed(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">LD Imposed (Rs.)
+                <input type="number" value={ldImposed} onChange={e => setLdImposed(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Advance Paid (Rs.)</label>
-              <input type="number" value={advancePaid} onChange={e => setAdvancePaid(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">Advance Paid (Rs.)
+                <input type="number" value={advancePaid} onChange={e => setAdvancePaid(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">LC Amount Released (Rs.)</label>
-              <input type="number" value={lcReleased} onChange={e => setLcReleased(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">LC Amount Released (Rs.)
+                <input type="number" value={lcReleased} onChange={e => setLcReleased(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-600 font-semibold text-xs">Part Payment (Rs.)</label>
-              <input type="number" value={partPayment} onChange={e => setPartPayment(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              <label className="label text-slate-600 font-semibold text-xs">Part Payment (Rs.)
+                <input type="number" value={partPayment} onChange={e => setPartPayment(e.target.value)} className="input-field mt-1 text-xs bg-slate-50" />
+              </label>
             </div>
             <div className="md:col-span-2">
-              <label className="label text-slate-800 font-black text-xs">Net Passed amount (Rs.)</label>
-              <input type="number" value={netAmount} className="input-field mt-1 text-xs font-bold text-green-700 bg-green-50 border-green-200" readOnly />
+              <label className="label text-slate-800 font-black text-xs">Net Passed amount (Rs.)
+                <input type="number" value={netAmount} className="input-field mt-1 text-xs font-bold text-green-700 bg-green-50 border-green-200" readOnly />
+              </label>
             </div>
           </div>
         </div>
 
         <div>
-          <label className="label text-slate-600 font-semibold text-xs">Bill Passing Comments / Remarks *</label>
-          <textarea
-            value={bpRemarks}
-            onChange={e => setBpRemarks(e.target.value)}
-            className="input-field mt-1 text-xs h-20 bg-white"
-            placeholder="Review invoice correctness and submit..."
-            required
-          />
+          <label className="label text-slate-600 font-semibold text-xs">Bill Passing Comments / Remarks *
+            <textarea
+              value={bpRemarks}
+              onChange={e => setBpRemarks(e.target.value)}
+              className="input-field mt-1 text-xs h-20 bg-white"
+              placeholder="Review invoice correctness and submit..."
+              required
+            />
+          </label>
         </div>
 
         <div className="pt-2 flex justify-end">
@@ -708,33 +749,38 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Non-Consumable Register Volume Number</label>
-              <input type="text" value={nonConsumableVol} onChange={e => setNonConsumableVol(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Volume reference (e.g. Vol III)" />
+              <label className="label text-slate-700 font-bold text-xs">Non-Consumable Register Volume Number
+                <input type="text" value={nonConsumableVol} onChange={e => setNonConsumableVol(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Volume reference (e.g. Vol III)" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Non-Consumable Register Page Number</label>
-              <input type="text" value={nonConsumablePage} onChange={e => setNonConsumablePage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" />
+              <label className="label text-slate-700 font-bold text-xs">Non-Consumable Register Page Number
+                <input type="text" value={nonConsumablePage} onChange={e => setNonConsumablePage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Consumable Register Volume Number</label>
-              <input type="text" value={consumableVol} onChange={e => setConsumableVol(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Volume reference" />
+              <label className="label text-slate-700 font-bold text-xs">Consumable Register Volume Number
+                <input type="text" value={consumableVol} onChange={e => setConsumableVol(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Volume reference" />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Consumable Register Page Number</label>
-              <input type="text" value={consumablePage} onChange={e => setConsumablePage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" />
+              <label className="label text-slate-700 font-bold text-xs">Consumable Register Page Number
+                <input type="text" value={consumablePage} onChange={e => setConsumablePage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" />
+              </label>
             </div>
           </div>
         </div>
 
         <div>
-          <label className="label text-slate-600 font-semibold text-xs">HOD Recommendation Comments *</label>
-          <textarea
-            value={bpRemarks}
-            onChange={e => setBpRemarks(e.target.value)}
-            className="input-field mt-1 text-xs h-20 bg-white"
-            placeholder="Recommend for payment and verify stock registers..."
-            required
-          />
+          <label className="label text-slate-600 font-semibold text-xs">HOD Recommendation Comments *
+            <textarea
+              value={bpRemarks}
+              onChange={e => setBpRemarks(e.target.value)}
+              className="input-field mt-1 text-xs h-20 bg-white"
+              placeholder="Recommend for payment and verify stock registers..."
+              required
+            />
+          </label>
         </div>
 
         <div className="pt-2 flex justify-end">
@@ -783,29 +829,33 @@ export const GRNAction: React.FC<GRNActionProps> = ({
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Asset Register Volume Number *</label>
-              <input type="text" value={assetRegisterVolume} onChange={e => setAssetRegisterVolume(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. Asset Vol II" required />
+              <label className="label text-slate-700 font-bold text-xs">Asset Register Volume Number *
+                <input type="text" value={assetRegisterVolume} onChange={e => setAssetRegisterVolume(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="e.g. Asset Vol II" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Asset Register Page Number *</label>
-              <input type="text" value={assetRegisterPage} onChange={e => setAssetRegisterPage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" required />
+              <label className="label text-slate-700 font-bold text-xs">Asset Register Page Number *
+                <input type="text" value={assetRegisterPage} onChange={e => setAssetRegisterPage(e.target.value)} className="input-field mt-1 text-xs bg-white" placeholder="Page reference" required />
+              </label>
             </div>
             <div>
-              <label className="label text-slate-700 font-bold text-xs">Received by Stores Section Date *</label>
-              <input type="date" value={receivedStoresDate} onChange={e => setReceivedStoresDate(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              <label className="label text-slate-700 font-bold text-xs">Received by Stores Section Date *
+                <input type="date" value={receivedStoresDate} onChange={e => setReceivedStoresDate(e.target.value)} className="input-field mt-1 text-xs bg-white" required />
+              </label>
             </div>
           </div>
         </div>
 
         <div>
-          <label className="label text-slate-600 font-semibold text-xs">Superintendent S&P Comments *</label>
-          <textarea
-            value={bpRemarks}
-            onChange={e => setBpRemarks(e.target.value)}
-            className="input-field mt-1 text-xs h-20 bg-white"
-            placeholder="Final payment sanction approvals..."
-            required
-          />
+          <label className="label text-slate-600 font-semibold text-xs">Superintendent S&P Comments *
+            <textarea
+              value={bpRemarks}
+              onChange={e => setBpRemarks(e.target.value)}
+              className="input-field mt-1 text-xs h-20 bg-white"
+              placeholder="Final payment sanction approvals..."
+              required
+            />
+          </label>
         </div>
 
         <div className="pt-2 flex justify-end">

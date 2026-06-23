@@ -12,7 +12,7 @@ from app.core.deps import require_roles, get_current_user
 from app.core.security import get_password_hash
 from app.models.user import User, Department, RoleManager
 from app.models.budget import BudgetMaster, FinancialYear, PurchaseCategory, ProcurementManager, PhaseManager, Settings, SourceOfFund
-from app.models.purchase_request import WorkFlowHierarchy, PurchaseRequest, PurchaseRequestItem, RequestStatus, PurchaseRequestHistory
+from app.models.purchase_request import WorkFlowHierarchy, PurchaseRequest, PurchaseRequestItem, RequestStatus, PurchaseRequestHistory, PurchaseRequestFlow
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 AdminDep = Depends(require_roles("admin"))
@@ -2025,6 +2025,33 @@ async def delete_workflow(wf_id: int, db: AsyncSession = Depends(get_db), _=Admi
     wf = result.scalar_one_or_none()
     if not wf:
         return {"message": "Workflow deleted"}
+
+    # Safeguard: block delete if any active PR is currently at this exact step
+    active_count_res = await db.execute(
+        select(func.count(PurchaseRequestFlow.id))
+        .join(PurchaseRequest, PurchaseRequest.id == PurchaseRequestFlow.purchase_request_id)
+        .where(
+            and_(
+                PurchaseRequestFlow.phase_id == wf.phase_id,
+                PurchaseRequestFlow.step_order == wf.step_order,
+                PurchaseRequest.category_id == wf.category_id,
+                PurchaseRequest.procurement_id == wf.procurement_id,
+                PurchaseRequest.purchase_type == wf.purchase_type,
+                PurchaseRequest.current_status.in_([
+                    RequestStatus.PR_SUBMITTED,
+                    RequestStatus.IN_PROGRESS,
+                    RequestStatus.SENT_BACK,
+                ])
+            )
+        )
+    )
+    active_count = active_count_res.scalar() or 0
+    if active_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete: {active_count} active purchase indent(s) are currently at this workflow step. Disable the step instead."
+        )
+
     cat_id = wf.category_id
     proc_id = wf.procurement_id
     phase_id = wf.phase_id
@@ -2554,12 +2581,24 @@ async def update_aa_workflow(step_id: int, body: dict, db: AsyncSession = Depend
 
 @router.delete("/aa-workflows/{step_id}")
 async def delete_aa_workflow(step_id: int, db: AsyncSession = Depends(get_db), _=AdminDep):
-    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow, AdministrativeApproval
     result = await db.execute(select(AdministrativeApprovalWorkflow).where(AdministrativeApprovalWorkflow.id == step_id))
     s = result.scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="Step not found")
-        
+
+    # Safeguard: block delete if any active AA is currently pending at this step's user_group
+    active_count_res = await db.execute(
+        select(func.count(AdministrativeApproval.id))
+        .where(AdministrativeApproval.pending_with == s.user_group)
+    )
+    active_count = active_count_res.scalar() or 0
+    if active_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete: {active_count} active administrative approval(s) are currently pending with '{s.user_group}'. Disable the step instead."
+        )
+
     cat_id = s.category_id
     proc_id = s.procurement_id
     p_type = s.purchase_type

@@ -2413,17 +2413,27 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
     pr.single_bid_justification = body.get("single_bid_justification")
 
     vendors_input = body.get("vendors", [])
-    # Sort vendors by quoted_amount ascending
-    vendors_sorted = sorted(vendors_input, key=lambda x: float(x.get("quoted_amount", 0)))
+    # Use explicit rankings if provided (initiator manual assignment); otherwise auto-rank by amount
+    has_explicit_rankings = any(v.get("ranking") for v in vendors_input)
 
-    for idx, vendor in enumerate(vendors_sorted):
+    if has_explicit_rankings:
+        entries = vendors_input
+    else:
+        entries = sorted(vendors_input, key=lambda x: float(x.get("quoted_amount", 0)))
+
+    awarded_vendor_name = None
+    for idx, vendor in enumerate(entries):
+        ranking = vendor.get("ranking") if has_explicit_rankings else f"L{idx+1}"
+        is_awarded = bool(vendor.get("is_awarded", False))
+        if is_awarded:
+            awarded_vendor_name = vendor["name"]
         fa = FinancialEvaluation(
             purchase_request_id=pr.id,
             vendor_name=vendor["name"],
             quoted_amount=float(vendor["quoted_amount"]),
-            ranking=f"L{idx+1}",
+            ranking=ranking,
             remarks=vendor.get("remarks"),
-            is_awarded=False,
+            is_awarded=is_awarded,
             unit_price=float(vendor["unit_price"]) if vendor.get("unit_price") is not None else None,
             taxes=float(vendor.get("taxes") or 0.0),
             delivery_period=int(vendor["delivery_period"]) if vendor.get("delivery_period") is not None else None,
@@ -2431,11 +2441,18 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
         )
         db.add(fa)
 
+    if awarded_vendor_name:
+        status_text = "Rankings Set & Bid Selected"
+        hist_remarks = body.get("remarks") or f"Rankings assigned and recommended vendor: {awarded_vendor_name}"
+    else:
+        status_text = "Financial Bids Submitted"
+        hist_remarks = body.get("remarks")
+
     history = PurchaseRequestHistory(
         purchase_request_id=pr.id,
         current_approver_id=user.id,
-        status="Financial Bids Submitted",
-        remarks=body.get("remarks"),
+        status=status_text,
+        remarks=hist_remarks,
         acted_at=datetime.utcnow(),
     )
     db.add(history)
