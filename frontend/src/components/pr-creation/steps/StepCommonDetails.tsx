@@ -124,8 +124,8 @@ export const StepCommonDetails: React.FC<Props> = ({
           onChange={(e) => onUpdate({ purchase_type: e.target.value as 'office' | 'department' })}
         >
           <option value="" disabled>Select Purchase Type</option>
-          <option value="department">Departmental Purchase</option>
-          <option value="office">Office Purchase</option>
+          <option value="department">Research</option>
+          <option value="office">Others</option>
         </select>
       </div>
 

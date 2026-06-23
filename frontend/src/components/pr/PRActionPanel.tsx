@@ -558,6 +558,7 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
         refetch={refetch}
         actionLoading={actionLoading}
         setActionLoading={setActionLoading}
+        canActOn={canActOn}
       />
 
       {/* Technical Clarification panel — Tendering phase only */}

@@ -12,6 +12,7 @@ interface ReferralPanelProps {
   refetch: () => void;
   actionLoading: boolean;
   setActionLoading: (loading: boolean) => void;
+  canActOn: boolean;
 }
 
 function formatDateTime(dt: string | null) {
@@ -146,6 +147,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
   refetch,
   actionLoading,
   setActionLoading,
+  canActOn,
 }) => {
   const [selectedReferralUser, setSelectedReferralUser] = useState<number | ''>('');
   const [referralQuery, setReferralQuery] = useState('');
@@ -299,7 +301,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({
       )}
 
       {/* ── New referral form (when no active referral) ── */}
-      {!isReferralActive && canInitiateReferral && (
+      {!isReferralActive && canInitiateReferral && canActOn && (
         <div className="border-t border-blue-200/60 pt-4 mt-4 space-y-3">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
             <Users size={14} className="text-slate-500" /> Seek Ad-hoc Consultation (Optional)

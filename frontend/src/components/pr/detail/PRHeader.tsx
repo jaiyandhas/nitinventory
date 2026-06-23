@@ -299,7 +299,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
               <td className="w-36 px-4 py-2.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 whitespace-nowrap">Total Amount</td>
               <td className="px-4 py-2.5 font-bold text-[#1a3a6b] text-base border-r border-gray-200">{formatCurrency(pr.amount)}</td>
               <td className="w-36 px-4 py-2.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 whitespace-nowrap">Purchase Type</td>
-              <td className="px-4 py-2.5 font-medium text-gray-800 capitalize">{pr.purchase_type}</td>
+              <td className="px-4 py-2.5 font-medium text-gray-800">{pr.purchase_type === 'department' ? 'Research' : pr.purchase_type === 'office' ? 'Others' : pr.purchase_type}</td>
             </tr>
 
             {/* Row: Initiator | Date */}

@@ -239,7 +239,7 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
         </div>
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Purchase Type</div>
-          <div className="text-sm font-medium text-slate-800 capitalize">{pr.purchase_type}</div>
+          <div className="text-sm font-medium text-slate-800">{pr.purchase_type === 'department' ? 'Research' : pr.purchase_type === 'office' ? 'Others' : pr.purchase_type}</div>
         </div>
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Initiator</div>
