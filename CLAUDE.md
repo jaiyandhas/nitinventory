@@ -131,22 +131,28 @@ Tech committee resolution with 3-level fallback: PR → BudgetMaster → Departm
 
 | Table | Purpose |
 |-------|---------|
-| `purchase_requests` | Core PR entity with `form_data` JSON and `current_status` |
-| `workflow_hierarchies` | Dynamic workflow step definitions per category/method/phase |
-| `purchase_request_flows` | Current workflow state (phase, step) |
-| `purchase_request_history` | Immutable audit trail with frozen actor snapshots |
-| `budget_master` | Budget files with `committed_amount` / `utilized_amount` |
-| `assets` | Asset registry with QR codes and movement tracking |
-| `deliveries` / `delivery_items` | GRN workflow tables |
-| `administrative_approvals` | Specialized purchase AA workflow |
-| `technical_evaluations` | Vendor tech bid evaluation records |
-| `financial_evaluations` | Vendor cost bid comparison records |
+| `purchase_requests` | Core PR entity with `form_data` JSON and `current_status`; `purchase_type` = `"research"` or `"others"` |
+| `workflow_hierarchies` | PR workflow step definitions per category/method/phase — drives `flow_engine.py` |
+| `purchase_request_flows` | Single-row per PR tracking current step (phase_id + step_order) — NOT a history table |
+| `purchase_request_history` | Immutable audit trail with frozen actor snapshots (name, title, dept, signature) |
+| `budget_master` | Budget files with `committed_amount` / `utilized_amount`; invariant: never go negative |
+| `source_of_funds` | SOF master for fund-specific workflow routing via `source_of_fund_id` on step rows |
+| `assets` | Asset registry with QR codes; asset_tag format `NIT-{DEPT}-{YY}-{SEQ:03d}` |
+| `deliveries` / `delivery_items` | GRN workflow tables; `deliveries.po_id` stores `purchase_requests.id` |
+| `dept_asset_logs` / `stores_asset_logs` | Physical receipt (HOD) and document verification (SP) logs per delivery item |
+| `administrative_approvals` | Pre-purchase AA workflow; history in `administrative_approval_history` |
+| `technical_evaluations` | Vendor tech bid evaluations; vendor by name (no vendor_id FK) |
+| `financial_evaluations` | Vendor cost bid comparison; vendor by name, `ranking` = L1/L2 etc. |
+| `purchase_orders` | 1:1 with PR; vendor details embedded (no vendor_master FK) |
+| `administrative_approval_workflows` | AA workflow step definitions; `purchase_type` = `"research"` or `"others"` |
 
 ### Critical Invariants
 - `budget_master.committed_amount` must never go negative (guarded by `func.greatest(0.0, ...)`)
 - Asset tags are generated via PostgreSQL sequences — never generate client-side
 - `purchase_request_history` is append-only; never update or delete rows
-- `dept_asset_logs` is immutable after creation; stores receipt moves to `stores_asset_logs`
+- `dept_asset_logs` is immutable after creation
+- `purchase_request_flows` holds exactly one row per PR (current step) — not a history log
+- `purchase_type` values are `"research"` / `"others"` throughout (workflow_hierarchies, purchase_requests, administrative_approval_workflows)
 
 ---
 
