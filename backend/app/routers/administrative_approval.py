@@ -1,3 +1,4 @@
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -210,11 +211,14 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
     
     cat = None
     if proc_id:
+        # Use ceil to snap float totals to nearest integer, preventing gaps
+        # between integer-bounded category tiers (e.g., max=100,000 / min=100,001).
+        lookup_cost = math.ceil(total_cost)
         cat_stmt = select(PurchaseCategory).where(
             and_(
                 PurchaseCategory.procurement_id == proc_id,
-                PurchaseCategory.min_amount <= total_cost,
-                PurchaseCategory.max_amount >= total_cost,
+                PurchaseCategory.min_amount <= lookup_cost,
+                PurchaseCategory.max_amount >= lookup_cost,
                 PurchaseCategory.is_active == True,
             )
         )

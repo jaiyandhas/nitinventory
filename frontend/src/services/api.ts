@@ -61,6 +61,14 @@ export const prApi = {
     }
     return api.post(`/pr/${id}/tender-details`, data);
   },
+  saveTenderDraft: (id: number, data: any) => {
+    if (data instanceof FormData) {
+      return api.post(`/pr/${id}/tender-details-draft`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    }
+    return api.post(`/pr/${id}/tender-details-draft`, data);
+  },
   scheduleTender: (id: number, data: any) => {
     if (data instanceof FormData) {
       return api.post(`/pr/${id}/tender-schedule`, data, {

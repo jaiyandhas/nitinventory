@@ -1,4 +1,5 @@
 import json
+import math
 import io
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, Query
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -350,19 +351,26 @@ async def _persist_pr(
         if req_types:
             item_req_type = list(req_types)[0]
 
-    stmt = select(PurchaseCategory).where(
-        and_(
-            PurchaseCategory.procurement_id == payload.mop,
-            PurchaseCategory.min_amount <= total_amount,
-            PurchaseCategory.max_amount >= total_amount,
-            PurchaseCategory.is_active == True,
-        )
+    # Use ceil to snap float totals to the nearest integer boundary,
+    # preventing amounts like 100,000.50 from falling in the gap between
+    # integer-bounded categories (e.g., max=100,000 and min=100,001).
+    lookup_amount = math.ceil(total_amount)
+
+    # Base filter: amount range + procurement method + active
+    base_amount_filter = and_(
+        PurchaseCategory.procurement_id == payload.mop,
+        PurchaseCategory.min_amount <= lookup_amount,
+        PurchaseCategory.max_amount >= lookup_amount,
+        PurchaseCategory.is_active == True,
     )
 
+    category = None
+
+    # Pass 1: Try to match with requirement_type preference
     if item_req_type:
-        stmt = stmt.where(
-            (PurchaseCategory.requirement_type == item_req_type) | 
-            (PurchaseCategory.requirement_type == None) | 
+        stmt = select(PurchaseCategory).where(base_amount_filter).where(
+            (PurchaseCategory.requirement_type == item_req_type) |
+            (PurchaseCategory.requirement_type == None) |
             (PurchaseCategory.requirement_type == "")
         ).order_by(
             case(
@@ -371,13 +379,30 @@ async def _persist_pr(
             )
         )
     else:
-        stmt = stmt.where(
-            (PurchaseCategory.requirement_type == None) | 
+        stmt = select(PurchaseCategory).where(base_amount_filter).where(
+            (PurchaseCategory.requirement_type == None) |
             (PurchaseCategory.requirement_type == "")
         )
 
     cat_result = await db.execute(stmt)
     category = cat_result.scalars().first()
+
+    # Pass 2: Fallback — any active category covering this amount range,
+    # regardless of requirement_type. Handles cases where admin configured
+    # a category for a different type (e.g., "Teaching / Laboratory") but
+    # it is the only category covering the purchase amount.
+    if not category:
+        fallback_stmt = select(PurchaseCategory).where(base_amount_filter).order_by(
+            # Prefer categories with NULL/empty requirement_type first
+            case(
+                (PurchaseCategory.requirement_type == None, 0),
+                (PurchaseCategory.requirement_type == "", 1),
+                else_=2
+            )
+        )
+        fallback_result = await db.execute(fallback_stmt)
+        category = fallback_result.scalars().first()
+
     if not category:
         raise HTTPException(
             status_code=400,
@@ -2142,6 +2167,133 @@ async def schedule_tender(
 
     await db.commit()
     return {"message": "Tender scheduled successfully"}
+
+
+@router.post("/{pr_id}/tender-details-draft")
+async def save_tender_details_draft(
+    pr_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("verifier_da")),
+):
+    """Save tender specification fields without advancing the workflow.
+    All fields are optional — only persists what is provided.
+    Does not validate vendors, does not create history, does not call advance().
+    """
+    result = await db.execute(
+        select(PurchaseRequest).options(selectinload(PurchaseRequest.documents)).where(PurchaseRequest.id == pr_id)
+    )
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
+    await check_pr_fy_closed(pr, db)
+
+    await verify_current_user_group_for_pr(pr, user, db, "tender-details")
+
+    content_type = request.headers.get("content-type", "")
+    draft_file = None
+    tender_file = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw = form.get("payload")
+        if not raw:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        body = json.loads(raw)
+        draft_file = form.get("draft_tender_document")
+        tender_file = form.get("tender_document")
+        if draft_file and not getattr(draft_file, "filename", None):
+            draft_file = None
+        if tender_file and not getattr(tender_file, "filename", None):
+            tender_file = None
+    else:
+        body = await request.json()
+
+    from datetime import date as date_type
+
+    # Persist only what is provided — no mandatory-field validation
+    if body.get("tender_reference_number") is not None:
+        pr.tender_reference_number = body["tender_reference_number"] or None
+
+    if body.get("date_of_tender"):
+        try:
+            pr.date_of_tender = date_type.fromisoformat(body["date_of_tender"])
+        except ValueError:
+            pass
+
+    if "date_of_tech_bid_opening" in body:
+        if body["date_of_tech_bid_opening"]:
+            try:
+                pr.date_of_tech_bid_opening = date_type.fromisoformat(body["date_of_tech_bid_opening"])
+            except ValueError:
+                pass
+        else:
+            pr.date_of_tech_bid_opening = None
+
+    if "date_of_financial_bid_opening" in body:
+        if body["date_of_financial_bid_opening"]:
+            try:
+                pr.date_of_financial_bid_opening = date_type.fromisoformat(body["date_of_financial_bid_opening"])
+            except ValueError:
+                pass
+        else:
+            pr.date_of_financial_bid_opening = None
+
+    if "vendor_list_link" in body:
+        pr.vendor_list_link = body["vendor_list_link"] or None
+
+    # Optional LPC fields
+    if "lpc_remarks" in body:
+        pr.lpc_remarks = body.get("lpc_remarks")
+    if "lpc_committee_members" in body:
+        pr.lpc_committee_members = body.get("lpc_committee_members")
+    if "lpc_minutes_reference" in body:
+        pr.lpc_minutes_reference = body.get("lpc_minutes_reference")
+
+    # Document uploads — replace if a new file is provided
+    doc_svc = DocumentService(db)
+    if draft_file:
+        await db.refresh(pr, ["documents"])
+        existing_draft = next((d for d in pr.documents if d.doc_key == "draft_tender_document"), None)
+        if existing_draft:
+            await db.delete(existing_draft)
+        await doc_svc.save_upload(pr, "draft_tender_document", draft_file, user.id)
+
+    if tender_file:
+        await db.refresh(pr, ["documents"])
+        existing_tender = next((d for d in pr.documents if d.doc_key == "tender_document"), None)
+        if existing_tender:
+            await db.delete(existing_tender)
+        await doc_svc.save_upload(pr, "tender_document", tender_file, user.id)
+
+    # Optionally save vendor rows if provided (no validation — partial saves allowed)
+    vendors_input = body.get("vendors")
+    if vendors_input is not None:
+        # Only persist if at least one vendor has a non-empty name
+        named_vendors = [v for v in vendors_input if v.get("name") and v["name"].strip()]
+        if named_vendors:
+            await db.execute(delete(CommercialEvaluation).where(CommercialEvaluation.purchase_request_id == pr.id))
+            await db.execute(delete(FinancialEvaluation).where(FinancialEvaluation.purchase_request_id == pr.id))
+            for v in named_vendors:
+                quoted_amt = None
+                if v.get("quoted_amount") is not None and str(v.get("quoted_amount")).strip() != "":
+                    try:
+                        quoted_amt = float(v.get("quoted_amount"))
+                    except (ValueError, TypeError):
+                        pass
+                ce = CommercialEvaluation(
+                    purchase_request_id=pr.id,
+                    vendor_name=v["name"].strip(),
+                    vendor_email=v.get("email", "").strip() if v.get("email") else None,
+                    quoted_amount=quoted_amt,
+                    is_qualified=v.get("is_qualified", True),
+                    remarks=v.get("remarks"),
+                )
+                db.add(ce)
+
+    await db.commit()
+    return {"message": "Tender specifications saved as draft"}
 
 
 @router.post("/{pr_id}/tender-details")

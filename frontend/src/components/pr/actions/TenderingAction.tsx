@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  CheckCircle2, XCircle, RotateCcw, UserPlus, Plus, Trash2, ShieldAlert, AlertCircle
+  CheckCircle2, XCircle, RotateCcw, UserPlus, Plus, Trash2, ShieldAlert, AlertCircle, Save
 } from 'lucide-react';
 import { prApi } from '../../../services/api';
 import { formatCurrency } from '../../../utils/format';
@@ -123,6 +123,11 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
   const [lpcMinutesReference, setLpcMinutesReference] = useState('');
   const [lpcRemarks, setLpcRemarks] = useState('');
 
+  // Save draft loading state
+  const [isSaving, setIsSaving] = useState(false);
+  // Tracks whether a save has been done this session (shows "Saved ✓" state)
+  const [isSaved, setIsSaved] = useState(!!pr.tender_reference_number);
+
   // DA form tab state: 'draft' = Tender Scheduling, 'vendors' = Bidding Registry
   const [daTab, setDaTab] = useState<'draft' | 'vendors'>('draft');
 
@@ -146,7 +151,10 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
         if (res.data.length > 0) setSelectedMasterVendor(res.data[0].vendor_name);
       }).catch(() => {});
 
-      if (pr.tender_reference_number) setTenderRef(pr.tender_reference_number);
+      if (pr.tender_reference_number) {
+        setTenderRef(pr.tender_reference_number);
+        setIsSaved(true);
+      }
       if (pr.date_of_tender) setTenderDate(pr.date_of_tender.substring(0, 10));
       if (pr.date_of_tech_bid_opening) setTechOpenDate(pr.date_of_tech_bid_opening.substring(0, 10));
       if (pr.date_of_financial_bid_opening) setFinOpenDate(pr.date_of_financial_bid_opening.substring(0, 10));
@@ -285,6 +293,49 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
       toast.error(e.response?.data?.detail || 'Action failed');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleTenderDraftSave = async () => {
+    if (!window.confirm('Are you sure you want to save the tender specifications?')) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      const isLimitedTender = pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc');
+      const payload: Record<string, any> = {
+        tender_reference_number: tenderRef || null,
+        date_of_tender: tenderDate || null,
+        date_of_tech_bid_opening: techOpenDate || null,
+        date_of_financial_bid_opening: finOpenDate || null,
+        vendor_list_link: vendorListLink || null,
+        vendors: tenderVendors.map(v => ({
+          name: v.name?.trim() ?? '',
+          email: v.email ? v.email.trim() : null,
+          quoted_amount: v.quoted_amount ? parseFloat(v.quoted_amount) : null,
+          is_qualified: v.is_qualified !== false,
+          remarks: v.remarks
+        })),
+        lpc_remarks: isLimitedTender ? lpcRemarks : null,
+        lpc_committee_members: isLimitedTender ? lpcCommitteeMembers : null,
+        lpc_minutes_reference: isLimitedTender ? lpcMinutesReference : null,
+      };
+
+      formData.append('payload', JSON.stringify(payload));
+      if (draftTenderDoc) formData.append('draft_tender_document', draftTenderDoc);
+      if (tenderDoc) formData.append('tender_document', tenderDoc);
+
+      await prApi.saveTenderDraft(pr.id, formData);
+      toast.success('Tender specifications saved. You can continue later.');
+      setIsSaved(true);
+      setDraftTenderDoc(null);
+      setTenderDoc(null);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Save failed');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -457,8 +508,9 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       type="text"
                       value={tenderRef}
                       onChange={(e) => setTenderRef(e.target.value)}
-                      className="input-field mt-1 py-1 text-xs"
+                      className={`input-field mt-1 py-1 text-xs ${isSaved ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
                       required
+                      readOnly={isSaved}
                     />
                   </div>
                   <div>
@@ -467,8 +519,9 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       type="date"
                       value={tenderDate}
                       onChange={(e) => setTenderDate(e.target.value)}
-                      className="input-field mt-1 py-1 text-xs"
+                      className={`input-field mt-1 py-1 text-xs ${isSaved ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
                       required
+                      readOnly={isSaved}
                     />
                   </div>
                   <div>
@@ -477,7 +530,8 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       type="date"
                       value={techOpenDate}
                       onChange={(e) => setTechOpenDate(e.target.value)}
-                      className="input-field mt-1 py-1 text-xs"
+                      className={`input-field mt-1 py-1 text-xs ${isSaved ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
+                      readOnly={isSaved}
                     />
                   </div>
                   <div>
@@ -486,10 +540,37 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                       type="date"
                       value={finOpenDate}
                       onChange={(e) => setFinOpenDate(e.target.value)}
-                      className="input-field mt-1 py-1 text-xs"
+                      className={`input-field mt-1 py-1 text-xs ${isSaved ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
+                      readOnly={isSaved}
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Save — persists Tender Specifications without advancing */}
+              <div className="flex justify-end items-center gap-2">
+                {isSaved && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSaved(false)}
+                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium mr-1"
+                  >
+                    Need to change?
+                  </button>
+                )}
+                <button
+                  onClick={handleTenderDraftSave}
+                  disabled={isSaved || isSaving || actionLoading}
+                  className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold transition border disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isSaved
+                      ? 'border-emerald-400 text-emerald-800 bg-emerald-100 cursor-default'
+                      : 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                  }`}
+                  title={isSaved ? 'Specifications saved' : 'Save progress without advancing the workflow'}
+                >
+                  {isSaved ? <CheckCircle2 size={12} /> : <Save size={12} />}
+                  {isSaving ? 'Saving…' : isSaved ? 'Saved ✓' : 'Save'}
+                </button>
               </div>
 
               <div className="space-y-2">
@@ -502,6 +583,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                   placeholder="https://drive.google.com/..."
                 />
               </div>
+
 
               {(pr.procurement?.name?.toLowerCase().includes('limited tender') || pr.procurement?.name?.toLowerCase().includes('lpc')) && (
                 <div className="space-y-2 pt-2 border-t border-slate-100 animate-fadeIn">
@@ -752,16 +834,18 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                 <div className="flex flex-wrap gap-2.5 pt-1">
                   <button
                     onClick={handleTenderSubmit}
-                    disabled={actionLoading || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
+                    disabled={actionLoading || isSaving || !tenderRef || !tenderDate || tenderVendors.length === 0 || !remarks.trim()}
                     className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs"
                   >
                     <CheckCircle2 size={14} /> Submit Tender Details &amp; Advance
                   </button>
 
+
+
                   {isLastStep && (
                     <button
                       onClick={() => onReject(remarks)}
-                      disabled={actionLoading || !remarks.trim()}
+                      disabled={actionLoading || isSaving || !remarks.trim()}
                       className="btn-danger flex items-center gap-1.5 text-xs py-2 px-4"
                     >
                       <XCircle size={14} /> Reject
@@ -771,7 +855,7 @@ export const TenderingAction: React.FC<TenderingActionProps> = ({
                   {hasPrevStep && (
                     <button
                       onClick={() => setShowSendBackModal(true)}
-                      disabled={actionLoading}
+                      disabled={actionLoading || isSaving}
                       className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition"
                     >
                       <RotateCcw size={14} /> Send Back
