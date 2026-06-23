@@ -82,6 +82,16 @@ async def create_tables():
 
         # Update existing purchase categories for cat3 bounds
         await conn.execute(text("UPDATE purchase_categories SET max_amount = 999999999, title = REPLACE(title, 'Rs. 10,00,001 to Rs. 30,00,000', 'Rs. 10,00,001 and above') WHERE title LIKE '%Rs. 10,00,001 to Rs. 30,00,000%';"))
+
+        # Rename purchase_type values: department→research, office→others
+        await conn.execute(text("UPDATE purchase_requests SET purchase_type = 'research' WHERE purchase_type = 'department';"))
+        await conn.execute(text("UPDATE purchase_requests SET purchase_type = 'others' WHERE purchase_type = 'office';"))
+        await conn.execute(text("UPDATE workflow_hierarchies SET purchase_type = 'research' WHERE purchase_type = 'department';"))
+        await conn.execute(text("UPDATE workflow_hierarchies SET purchase_type = 'others' WHERE purchase_type = 'office';"))
+        await conn.execute(text("UPDATE workflow_hierarchies SET skip_condition = REPLACE(skip_condition, '''department''', '''research''') WHERE skip_condition LIKE '%''department''%';"))
+        await conn.execute(text("UPDATE workflow_hierarchies SET skip_condition = REPLACE(skip_condition, '''office''', '''others''') WHERE skip_condition LIKE '%''office''%';"))
+        await conn.execute(text("UPDATE administrative_approval_workflows SET purchase_type = 'research' WHERE purchase_type = 'department';"))
+        await conn.execute(text("UPDATE administrative_approval_workflows SET purchase_type = 'others' WHERE purchase_type = 'office';"))
         # Also clean up old southern region service center references or GFR details if needed (no column drop needed)
 
 
@@ -224,7 +234,7 @@ async def seed():
                 cat_res = await db.execute(select(PurchaseCategory))
                 cats = cat_res.scalars().all()
                 seeded_aa_count = 0
-                for ptype in ("department", "office"):
+                for ptype in ("research", "others"):
                     for proc in procs:
                         for cat in cats:
                             if cat.procurement_id != proc.id:

@@ -50,7 +50,7 @@ export interface PRCommonFormState {
   delivery_location: string;
   delivery_mode: string;
   termsAccepted: boolean[];
-  purchase_type: 'office' | 'department' | '';
+  purchase_type: 'research' | 'others' | '';
   form_data: Record<string, any>;
 
   // New common fields

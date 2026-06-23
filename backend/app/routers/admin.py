@@ -1899,7 +1899,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
             if role_obj:
                 user_group = role_obj.group_key
                 
-    purchase_type = body.get("purchase_type", "department")
+    purchase_type = body.get("purchase_type", "research")
     wf = WorkFlowHierarchy(
         category_id=body["category_id"],
         phase_id=body["phase_id"],
@@ -2059,7 +2059,7 @@ async def reset_workflows(body: dict, db: AsyncSession = Depends(get_db), _=Admi
 
     cat_id = body.get("category_id")
     proc_id = body.get("procurement_id")
-    purchase_type = body.get("purchase_type", "department")
+    purchase_type = body.get("purchase_type", "research")
     # source_of_fund_id=None resets the default (any-fund) variant only
     source_of_fund_id = body.get("source_of_fund_id", None)
     if not cat_id or not proc_id:

@@ -254,7 +254,7 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
         
     # Purchase type filter
     filters.append(or_(
-        AdministrativeApprovalWorkflow.purchase_type == "department",
+        AdministrativeApprovalWorkflow.purchase_type == "research",
         AdministrativeApprovalWorkflow.purchase_type == None
     ))
     
@@ -305,7 +305,7 @@ async def _get_aa_workflow_steps(db: AsyncSession, total_cost: float, mode_of_pr
             score += 100
         if proc_id is not None and key[1] == proc_id:
             score += 10
-        if key[3] == "department":
+        if key[3] == "research":
             score += 1
 
         for step in steps_by_key[key]:

@@ -3,7 +3,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 
 def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: list) -> list:
-    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="department", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None, condition_field=None, condition_operator=None, condition_value=None):
+    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="research", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None, condition_field=None, condition_operator=None, condition_value=None):
         r = roles[role_key] if role_key else None
         return WorkFlowHierarchy(
             category_id=cat.id,
@@ -25,7 +25,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
 
     rows: list[WorkFlowHierarchy] = []
 
-    for ptype in ("department", "office"):
+    for ptype in ("research", "others"):
         for proc in procs:
             # Resolve categories for this procurement method
             if proc.id in categories:

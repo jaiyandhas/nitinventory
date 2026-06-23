@@ -127,7 +127,7 @@ export const PRSummaryTable: React.FC<PRSummaryTableProps> = ({ pr, formatCurren
             <DocRow label="Name of Indenter" value={pr.initiator?.name} />
             <DocRow label="Designation" value={(pr.initiator as any)?.designation} />
             <DocRow label="Department" value={deptName} />
-            <DocRow label="Purchase Type" value={pr.purchase_type === 'department' ? 'Research' : pr.purchase_type === 'office' ? 'Others' : pr.purchase_type || '—'} />
+            <DocRow label="Purchase Type" value={pr.purchase_type ? (pr.purchase_type.charAt(0).toUpperCase() + pr.purchase_type.slice(1)) : '—'} />
             <DocRow label="Category" value={pr.category?.title} />
             <DocRow label="Procurement Method" value={pr.procurement?.name} />
             {pr.delivery_location && <DocRow label="Delivery Location" value={pr.delivery_location} />}

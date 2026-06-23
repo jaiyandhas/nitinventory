@@ -29,8 +29,8 @@ class RequestStatus(str, enum.Enum):
 
 
 class PurchaseType(str, enum.Enum):
-    DEPARTMENT = "department"
-    OFFICE = "office"
+    RESEARCH = "research"
+    OTHERS = "others"
 
 
 class AssignmentStatus(str, enum.Enum):

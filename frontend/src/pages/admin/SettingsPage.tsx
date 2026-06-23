@@ -704,8 +704,8 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Type</label>
                 <select value={selectedPurchaseType} onChange={(e) => setSelectedPurchaseType(e.target.value as 'department' | 'office')} className="input-field w-full">
-                  <option value="department">Research</option>
-                  <option value="office">Others</option>
+                  <option value="research">Research</option>
+                  <option value="others">Others</option>
                 </select>
               </div>
               <div>
@@ -1824,8 +1824,8 @@ export const SettingsPage: React.FC = () => {
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Purchase Type</label>
                     <select name="purchase_type" required className="input-field w-full text-xs" defaultValue={selectedPurchaseType}>
-                      <option value="department">Research</option>
-                      <option value="office">Others</option>
+                      <option value="research">Research</option>
+                      <option value="others">Others</option>
                     </select>
                   </div>
                 </div>

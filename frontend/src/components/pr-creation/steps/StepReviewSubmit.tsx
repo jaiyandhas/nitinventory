@@ -55,7 +55,7 @@ export const StepReviewSubmit: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       <div className="card p-4 bg-slate-50 text-sm space-y-2">
-        <p><strong>Files:</strong> {files.length} | <strong>Procurement:</strong> {procurementName} | <strong>Purchase Type:</strong> {common.purchase_type === 'department' ? 'Research' : common.purchase_type === 'office' ? 'Others' : common.purchase_type ? common.purchase_type.toUpperCase() : 'N/A'}</p>
+        <p><strong>Files:</strong> {files.length} | <strong>Procurement:</strong> {procurementName} | <strong>Purchase Type:</strong> {common.purchase_type ? (common.purchase_type.charAt(0).toUpperCase() + common.purchase_type.slice(1)) : 'N/A'}</p>
         <ul className="list-disc pl-5 space-y-1">
           {files.map((f) => {
             const item = items[f.id];
