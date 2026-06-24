@@ -22,6 +22,8 @@ _DATA_RECORDING_STATUSES: frozenset = frozenset({
     "Rankings Set & Bid Selected",
     "Bidder Assessment Saved (Draft)",
     "Bidder Assessment Saved",
+    # DA enters quoted amounts before calling /advance — must not count as step completion
+    "Quoted Amounts Entered (Draft)",
 })
 
 from app.models.purchase_request import (
@@ -173,6 +175,13 @@ class FlowEngineService:
             if "rejected" in status_lower or "voided" in status_lower:
                 continue
 
+            # Send-back entries record who initiated the revert but must NOT count as that
+            # user approving their step.  The voiding of subsequent entries already handles
+            # clearing the forward progress; this guard prevents "PR Sent Back" (by e.g.
+            # Director) from being matched as the Director having approved FS step 8.
+            if "sent back" in status_lower or "returned to start" in status_lower:
+                continue
+
             # Skip data-recording entries — these are side-effect writes (e.g. DA schedules
             # a tender, PI saves bidder assessment) that must NOT be treated as step approvals.
             # If we matched them, the actor's role would falsely count as a completed step and
@@ -183,7 +192,7 @@ class FlowEngineService:
 
             # Record technical evaluation signatures.
             is_te_signature = (
-                h_status_stripped.lower() in ("technical evaluation completed", "technical evaluation approved")
+                h_status_stripped.lower() in ("technical evaluation completed", "technical evaluation approved", "financial committee approved")
                 and h.current_approver_id != pr.initiator_id
             )
             if is_te_signature and h.current_approver_id:
@@ -669,9 +678,10 @@ class FlowEngineService:
             else:
                 since = pr.created_at or datetime.min
             await self.db.refresh(pr, ["history"])
+            _committee_statuses = {"Technical Evaluation Completed", "Technical Evaluation Approved", "Financial Committee Approved"}
             approved_ids = {
                 h.current_approver_id for h in pr.history
-                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                if h.status in _committee_statuses
                 and (h.acted_at is None or h.acted_at >= since)
             }
             all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
@@ -834,18 +844,24 @@ class FlowEngineService:
                 since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
             else:
                 since = pr.created_at or datetime.min
+            _committee_approval_statuses = (
+                "Technical Evaluation Completed",
+                "Technical Evaluation Approved",
+                "Financial Committee Approved",
+            )
             has_approval_log = any(
                 h.current_approver_id == acted_by.id
-                and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                and h.status in _committee_approval_statuses
                 and (h.acted_at is None or h.acted_at >= since)
                 for h in pr.history
             )
 
             from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
             await sync_tech_committee_to_pr(self.db, pr)
+            _step_label = "financial committee evaluation" if current_phase.phase_name == "Financial Sanction" else "technical evaluation"
             if not await is_tech_committee_configured(self.db, pr, committee_size):
                 if has_approval_log:
-                    raise ValueError("You have already signed/approved this technical evaluation round.")
+                    raise ValueError(f"You have already signed/approved this {_step_label} round.")
                 default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
                 await self._add_history(pr, acted_by, status or default_status, remarks)
                 should_advance = False
@@ -856,23 +872,40 @@ class FlowEngineService:
                 await self.db.refresh(pr, ["history"])
                 approved_ids = {
                     h.current_approver_id for h in pr.history
-                    if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                    if h.status in _committee_approval_statuses
                     and (h.acted_at is None or h.acted_at >= since)
                 }
+                is_fs_committee = current_phase.phase_name == "Financial Sanction"
                 if has_approval_log:
-                    if not required_ids.issubset(approved_ids) or pr.initiator_id not in approved_ids:
-                        raise ValueError("You have already signed/approved this technical evaluation round.")
+                    # In FS phase the initiator has no separate confirmation step — only
+                    # committee members need to sign, so don't check initiator_signed here.
+                    already_signed_condition = (
+                        not required_ids.issubset(approved_ids)
+                        if is_fs_committee
+                        else (not required_ids.issubset(approved_ids) or pr.initiator_id not in approved_ids)
+                    )
+                    if already_signed_condition:
+                        raise ValueError(f"You have already signed/approved this {_step_label} round.")
                 else:
-                    default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
+                    default_status = "Financial Committee Approved" if is_fs_committee else (
+                        "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
+                    )
                     await self._add_history(pr, acted_by, status or default_status, remarks)
                     approved_ids.add(acted_by.id)
 
                 all_committee_signed = required_ids.issubset(approved_ids)
-                initiator_signed = pr.initiator_id in approved_ids
-                if not all_committee_signed or not initiator_signed:
-                    should_advance = False
-                    flow.step_order = current_step
-                    pr.current_status = RequestStatus.IN_PROGRESS
+                # FS committee steps advance as soon as all members sign — no PI confirmation needed
+                if is_fs_committee:
+                    if not all_committee_signed:
+                        should_advance = False
+                        flow.step_order = current_step
+                        pr.current_status = RequestStatus.IN_PROGRESS
+                else:
+                    initiator_signed = pr.initiator_id in approved_ids
+                    if not all_committee_signed or not initiator_signed:
+                        should_advance = False
+                        flow.step_order = current_step
+                        pr.current_status = RequestStatus.IN_PROGRESS
 
         if should_advance:
             if next_step is not None:
@@ -1234,7 +1267,7 @@ class FlowEngineService:
                             elif prev_step_def.user_type == "purchase_initiator":
                                 matches = (u.id == pr.initiator_id)
                             elif prev_step_def.user_type == "tech_evaluation":
-                                matches = (h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved"))
+                                matches = (h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved", "Financial Committee Approved"))
                             elif prev_step_def.role_id:
                                 matches = (u.role_id == prev_step_def.role_id)
                             elif prev_step_def.user_group:

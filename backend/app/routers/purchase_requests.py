@@ -51,40 +51,64 @@ ADMIN_ROLES = {
 async def _build_committee_tracker(db: AsyncSession, pr: PurchaseRequest) -> list:
     """Build committee approval tracker for the PR detail response.
 
-    Finds the tech_evaluation workflow step for this PR's category/procurement/type,
-    reads committee_size from it, then returns per-slot approval status from history.
+    Finds the tech_evaluation workflow step for the CURRENT phase (TE or FS),
+    reads committee_size from it, then returns per-slot approval status from history
+    using a phase-appropriate cutoff so TE signatures never bleed into FS tracking.
     """
     from app.services.tech_committee import get_committee_slot_info, SLOT_LABELS
 
-    # Resolve committee_size from the TE tech_evaluation workflow step
-    te_phase_res = await db.execute(
-        select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation").limit(1)
-    )
-    te_phase = te_phase_res.scalar_one_or_none()
-    committee_size = None
-    if te_phase:
-        step_res = await db.execute(
-            select(WorkFlowHierarchy.committee_size).where(
-                and_(
-                    WorkFlowHierarchy.category_id == pr.category_id,
-                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
-                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
-                    WorkFlowHierarchy.phase_id == te_phase.id,
-                    WorkFlowHierarchy.user_type == "tech_evaluation",
-                    WorkFlowHierarchy.is_enabled == True,
-                )
-            ).limit(1)
+    # Determine the current phase name to pick the right cutoff
+    current_phase_name = "Technical Evaluation"
+    if pr.flow and pr.flow.phase_id:
+        phase_res = await db.execute(
+            select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id).limit(1)
         )
-        committee_size = step_res.scalar_one_or_none()
+        phase_obj = phase_res.scalar_one_or_none()
+        if phase_obj:
+            current_phase_name = phase_obj.phase_name
+
+    # Resolve committee_size from the current-phase tech_evaluation workflow step;
+    # fall back to the TE step if the current phase has none.
+    committee_size = None
+    for lookup_phase in [current_phase_name, "Technical Evaluation"]:
+        lookup_phase_res = await db.execute(
+            select(PhaseManager).where(PhaseManager.phase_name == lookup_phase).limit(1)
+        )
+        lookup_phase_obj = lookup_phase_res.scalar_one_or_none()
+        if lookup_phase_obj:
+            step_res = await db.execute(
+                select(WorkFlowHierarchy.committee_size).where(
+                    and_(
+                        WorkFlowHierarchy.category_id == pr.category_id,
+                        WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                        WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                        WorkFlowHierarchy.phase_id == lookup_phase_obj.id,
+                        WorkFlowHierarchy.user_type == "tech_evaluation",
+                        WorkFlowHierarchy.is_enabled == True,
+                    )
+                ).limit(1)
+            )
+            committee_size = step_res.scalar_one_or_none()
+            if committee_size is not None:
+                break
 
     # Get ordered slot info
     slots = await get_committee_slot_info(db, pr, committee_size)
 
-    # Build approval map from history
-    since = pr.te_initiated_at or pr.created_at
+    # Use a phase-aware cutoff so TE signatures don't count as FS approvals
+    if current_phase_name == "Financial Sanction":
+        since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at
+    else:
+        since = pr.te_initiated_at or pr.created_at
+
     approval_map: dict[int, str] = {}  # user_id -> acted_at ISO string
+    _committee_statuses = {
+        "Technical Evaluation Completed",
+        "Technical Evaluation Approved",
+        "Financial Committee Approved",
+    }
     for h in (pr.history or []):
-        if h.current_approver_id and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved"):
+        if h.current_approver_id and h.status in _committee_statuses:
             if since is None or h.acted_at is None or h.acted_at >= since:
                 if h.current_approver_id not in approval_map:
                     approval_map[h.current_approver_id] = (
@@ -994,9 +1018,10 @@ async def list_prs(
                         since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
                     else:
                         since = pr.created_at or datetime.min
+                    _committee_statuses = {"Technical Evaluation Completed", "Technical Evaluation Approved", "Financial Committee Approved"}
                     approved_ids = {
                         h.current_approver_id for h in pr.history
-                        if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                        if h.status in _committee_statuses
                         and (h.acted_at is None or h.acted_at >= since)
                     }
                     all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
@@ -1199,9 +1224,10 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
                     since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
                 else:
                     since = pr.created_at or datetime.min
+                _committee_statuses = {"Technical Evaluation Completed", "Technical Evaluation Approved", "Financial Committee Approved"}
                 approved_ids = {
                     h.current_approver_id for h in pr.history
-                    if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                    if h.status in _committee_statuses
                     and (h.acted_at is None or h.acted_at >= since)
                 }
                 all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
@@ -1522,6 +1548,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "date_of_tech_bid_opening": pr.date_of_tech_bid_opening.isoformat() if pr.date_of_tech_bid_opening else None,
         "date_of_financial_bid_opening": pr.date_of_financial_bid_opening.isoformat() if pr.date_of_financial_bid_opening else None,
         "te_initiated_at": pr.te_initiated_at.isoformat() + "Z" if pr.te_initiated_at else None,
+        "fs_initiated_at": pr.fs_initiated_at.isoformat() + "Z" if pr.fs_initiated_at else None,
         # Delivery & Basis fields
         "delivery_location": pr.delivery_location,
         "delivery_mode": pr.delivery_mode,
@@ -1979,25 +2006,36 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
     elif step.user_type == "tech_evaluation":
         from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids, sync_tech_committee_to_pr
         await sync_tech_committee_to_pr(db, pr)
-        if not await is_tech_committee_configured(db, pr):
+        committee_size = step.committee_size
+        if not await is_tech_committee_configured(db, pr, committee_size):
             raise HTTPException(
                 status_code=400,
                 detail="The technical evaluation committee is not fully configured on the budget file. "
                        "Assign Expert 1, Expert 2, and Director nominee before proceeding.",
             )
-        committee_ids = await get_tech_committee_member_ids(db, pr)
+        committee_ids = await get_tech_committee_member_ids(db, pr, committee_size)
 
-        since = pr.te_initiated_at or pr.created_at or datetime.min
+        # Use a phase-aware cutoff so TE-phase signatures are not counted as FS-phase approvals
+        if phase_name == "Technical Evaluation":
+            since = pr.te_initiated_at or pr.created_at or datetime.min
+        elif phase_name == "Financial Sanction":
+            since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+        else:
+            since = pr.created_at or datetime.min
         await db.refresh(pr, ["history"])
+        _committee_statuses = {"Technical Evaluation Completed", "Technical Evaluation Approved", "Financial Committee Approved"}
         approved_ids = {
             h.current_approver_id for h in pr.history
-            if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+            if h.status in _committee_statuses
             and (h.acted_at is None or h.acted_at >= since)
         }
         all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
 
         if all_committee_signed:
-            # Initiator confirms final vendor qualifications and advances
+            if phase_name == "Financial Sanction":
+                # FS committee: no PI confirmation step — all signed means done
+                return
+            # TE phase: initiator confirms final vendor qualifications and advances
             if user.id != pr.initiator_id:
                 raise HTTPException(
                     status_code=403,
@@ -2009,7 +2047,8 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
         if user.id not in committee_ids:
             raise HTTPException(status_code=403, detail="Only the department purchase committee nominees can perform technical evaluation")
         if user.id in approved_ids:
-            raise HTTPException(status_code=400, detail="You have already signed/approved the technical evaluation.")
+            step_label = "financial committee evaluation" if phase_name == "Financial Sanction" else "technical evaluation"
+            raise HTTPException(status_code=400, detail=f"You have already signed/approved the {step_label}.")
         return
 
     # Route action-specific checks (e.g. data uploads)
@@ -2698,25 +2737,39 @@ async def add_technical_eval(
     if flow:
         phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
         phase = phase_res.scalar_one_or_none()
-        if phase and phase.phase_name == "Technical Evaluation":
+        if phase and phase.phase_name in ("Technical Evaluation", "Financial Sanction"):
             sof_id = await flow_engine.resolve_sof_id(pr, phase_id=flow.phase_id)
             step_def = await flow_engine._get_step_def(pr, flow.phase_id, flow.step_order, sof_id=sof_id)
             committee_size = step_def.committee_size if step_def else None
 
             required_ids = set(await get_tech_committee_member_ids(db, pr, committee_size))
             
-            since = pr.te_initiated_at or pr.created_at or datetime.min
+            if phase.phase_name == "Financial Sanction":
+                since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+            else:
+                since = pr.te_initiated_at or pr.created_at or datetime.min
+
             await db.refresh(pr, ["history"])
+            _committee_statuses = {
+                "Technical Evaluation Completed",
+                "Technical Evaluation Approved",
+                "Financial Committee Approved",
+            }
             approved_ids = {
                 h.current_approver_id for h in pr.history
-                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                if h.status in _committee_statuses
                 and (h.acted_at is None or h.acted_at >= since)
             }
             
             all_committee_signed = required_ids.issubset(approved_ids)
-            initiator_signed = pr.initiator_id in approved_ids
             
-            if all_committee_signed and initiator_signed:
+            if phase.phase_name == "Financial Sanction":
+                should_auto_advance = all_committee_signed
+            else:
+                initiator_signed = pr.initiator_id in approved_ids
+                should_auto_advance = all_committee_signed and initiator_signed
+
+            if should_auto_advance:
                 # All signed, auto-advance the workflow!
                 await flow_engine.advance(
                     pr,

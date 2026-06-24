@@ -252,8 +252,7 @@ export const TechEvalAction: React.FC<TechEvalActionProps> = ({
   const isInitiator = user?.id === pr.initiator_id;
   const stepType = pr.flow?.step_type;
 
-  const since = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
-
+  // Use the tracker's approved field directly — backend already applied the phase-aware cutoff
   const allCommitteeSigned = tracker.length > 0 && tracker.every(m => m.user_id === null || m.approved);
 
   const hasUserSigned = tracker.find(m => m.user_id === user?.id)?.approved ?? false;

@@ -233,12 +233,17 @@ export const PRDetailPage: React.FC = () => {
     if (pr.flow.step_type === 'tech_evaluation') {
       const _committeeIds = resolveTechCommitteeIds(pr);
       const _isCommitteeMember = _committeeIds.includes(user?.id ?? -1);
-      const _teSince = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
+      // Use phase-aware cutoff: FS phase uses fs_initiated_at so TE signatures don't count
+      const _isFS = pr.flow.phase_name === 'Financial Sanction';
+      const _sinceStr = _isFS
+        ? (pr.fs_initiated_at || pr.te_initiated_at)
+        : pr.te_initiated_at;
+      const _since = _sinceStr ? new Date(_sinceStr) : null;
       const _allCommitteeSigned = _committeeIds.length > 0 && _committeeIds.every((id: number) =>
         pr.history?.some((h: any) =>
           h.approver_id === id &&
           (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
-          (!_teSince || !h.acted_at || new Date(h.acted_at) >= _teSince)
+          (!_since || !h.acted_at || new Date(h.acted_at) >= _since)
         )
       );
       canActOn = _isCommitteeMember || (_allCommitteeSigned && user?.id === pr.initiator?.id);

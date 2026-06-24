@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  CheckCircle2, XCircle, RotateCcw, Trophy
+  CheckCircle2, XCircle, RotateCcw, Trophy, Users, Clock
 } from 'lucide-react';
 import { prApi } from '../../../services/api';
-import { PurchaseRequest } from '../../../types';
+import { PurchaseRequest, CommitteeMember } from '../../../types';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../../../utils/format';
 
@@ -32,6 +32,7 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
   hasPrevStep,
   isLastStep,
   onReject,
+  onSendBack,
   showSendBackModal,
   setShowSendBackModal,
   remarks,
@@ -39,6 +40,135 @@ export const FinancialSanctionAction: React.FC<FinancialSanctionActionProps> = (
 }) => {
   const isInitiator = user?.id === pr.initiator_id;
   const stepType = pr.flow?.step_type;
+
+  // ── CASE 0: FS committee evaluation step — same members, simple approve & forward
+  if (stepType === 'tech_evaluation') {
+    const tracker: CommitteeMember[] = pr.committee_tracker ?? [];
+    const committeeIds = tracker.map(m => m.user_id).filter((id): id is number => id !== null);
+    const isCommitteeMember = committeeIds.includes(user?.id ?? -1);
+    const hasUserSigned = tracker.find(m => m.user_id === user?.id)?.approved ?? false;
+    const allCommitteeSigned = tracker.length > 0 && tracker.every(m => m.user_id === null || m.approved);
+    const approved = tracker.filter(m => m.approved).length;
+
+    const handleCommitteeApprove = async () => {
+      if (!remarks.trim()) { toast.error('Remarks are required'); return; }
+      if (!window.confirm('Approve and forward financial evaluation?')) return;
+      setActionLoading(true);
+      try {
+        await prApi.advance(pr.id, remarks);
+        toast.success('Financial evaluation approved and forwarded.');
+        setRemarks('');
+        refetch();
+      } catch (e: any) {
+        toast.error(e.response?.data?.detail || 'Action failed');
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    return (
+      <div className="space-y-4 bg-white p-4 border border-blue-200 rounded text-left animate-fadeIn">
+        <div className="bg-[#1a3a6b] text-white rounded px-3 py-2 flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wide">Financial Evaluation — Committee Approval</h4>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${allCommitteeSigned ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-amber-100 text-amber-700 border-amber-300'}`}>
+            {approved} / {tracker.length} Approved
+          </span>
+        </div>
+
+        {/* Committee member status */}
+        <div className="space-y-2">
+          {tracker.map(m => (
+            <div key={m.slot} className={`flex items-center justify-between p-3 rounded-lg border bg-white ${m.approved ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200'}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-bold shrink-0 ${m.approved ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                  {m.slot}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-slate-800 truncate">{m.user_name || <span className="text-red-500 italic text-xs">Not Assigned</span>}</div>
+                  <div className="text-[10px] text-slate-500">{m.role_label}</div>
+                  {m.approved && m.approved_at && (
+                    <div className="text-[10px] text-emerald-600 font-semibold">
+                      Approved on {new Date(m.approved_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 ml-2">
+                {m.approved ? (
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">
+                    <CheckCircle2 size={11} /> Approved
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 animate-pulse">Pending</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Action area */}
+        {allCommitteeSigned ? (
+          /* All signed — any committee member can advance the workflow */
+          (isCommitteeMember || user?.id === pr.initiator_id) ? (
+            <>
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                All committee members have approved. Click below to advance the workflow.
+              </div>
+              <div className="space-y-2 border-t border-slate-100 pt-3">
+                <label className="text-slate-700 font-bold text-xs">Remarks *</label>
+                <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
+                  placeholder="Overall remarks for financial committee evaluation..."
+                  className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm" />
+              </div>
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <button onClick={handleCommitteeApprove} disabled={actionLoading || !remarks.trim()}
+                  className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs">
+                  <CheckCircle2 size={14} /> Advance Workflow
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+              All committee members have approved. Workflow is being advanced.
+            </div>
+          )
+        ) : isCommitteeMember && !hasUserSigned ? (
+          <>
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <label className="text-slate-700 font-bold text-xs">Remarks *</label>
+              <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
+                placeholder="Provide your remarks for financial evaluation approval..."
+                className="input-field min-h-[60px] text-xs py-1.5 bg-white text-sm" />
+            </div>
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <button onClick={handleCommitteeApprove} disabled={actionLoading || !remarks.trim()}
+                className="btn-primary py-2 px-4 flex items-center gap-1.5 shadow-md font-semibold text-xs">
+                <CheckCircle2 size={14} /> Approve &amp; Forward
+              </button>
+              {hasPrevStep && (
+                <button onClick={() => setShowSendBackModal(true)} disabled={actionLoading}
+                  className="btn-secondary border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 rounded px-4 py-2 text-xs font-medium transition">
+                  <RotateCcw size={14} /> Send Back
+                </button>
+              )}
+            </div>
+          </>
+        ) : isCommitteeMember && hasUserSigned ? (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs font-semibold flex items-center gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+            Your approval is recorded. Waiting for other committee members.
+          </div>
+        ) : (
+          <div className="bg-slate-50 border border-slate-200 text-slate-600 rounded-lg p-3 text-xs font-semibold flex items-center gap-2">
+            <Clock size={14} className="text-slate-400 shrink-0" />
+            Waiting for committee members to approve the financial evaluation.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Split commercial_evaluations into qualified / not-qualified
   const ces = pr.commercial_evaluations ?? [];

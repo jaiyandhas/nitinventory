@@ -269,6 +269,7 @@ export interface PurchaseRequest {
   faculty3?: { id: number; name: string; email: string };
   aa_approver?: { id: number; name: string; email: string };
   te_initiated_at?: string;
+  fs_initiated_at?: string;
   hod_id?: number;
   expert1_id?: number;
   expert2_id?: number;

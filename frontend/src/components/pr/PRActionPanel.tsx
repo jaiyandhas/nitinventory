@@ -41,12 +41,18 @@ export const PRActionPanel: React.FC<PRActionPanelProps> = ({ pr, user, refetch,
     if (pr.flow.step_type === 'tech_evaluation') {
       const committeeIds = resolveTechCommitteeIds(pr);
       const isCommitteeMember = committeeIds.includes(user?.id ?? -1);
-      const teSince = pr.te_initiated_at ? new Date(pr.te_initiated_at) : null;
+      // Phase-aware cutoff: FS steps use fs_initiated_at so TE signatures don't count
+      const isFS = pr.flow.phase_name === 'Financial Sanction';
+      const sinceStr = isFS ? (pr.fs_initiated_at || pr.te_initiated_at) : pr.te_initiated_at;
+      const since = sinceStr ? new Date(sinceStr) : null;
+      const _committeeSignedStatuses = new Set([
+        'Technical Evaluation Completed', 'Technical Evaluation Approved', 'Financial Committee Approved'
+      ]);
       const allCommitteeSigned = committeeIds.length > 0 && committeeIds.every((id: number) =>
         pr.history?.some((h: any) =>
           h.approver_id === id &&
-          (h.status === 'Technical Evaluation Completed' || h.status === 'Technical Evaluation Approved') &&
-          (!teSince || !h.acted_at || new Date(h.acted_at) >= teSince)
+          _committeeSignedStatuses.has(h.status) &&
+          (!since || !h.acted_at || new Date(h.acted_at) >= since)
         )
       );
       canActOn = isCommitteeMember || (allCommitteeSigned && user?.id === pr.initiator?.id);
