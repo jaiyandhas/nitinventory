@@ -762,24 +762,30 @@ const activeStageObj = STAGES.find(s => s.key === selectedStageKey);
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-6 bg-slate-50 p-4 border border-slate-200 rounded-md text-xs">
                         <div>
-                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Tender Ref Number</span>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Tender Reference Number</span>
                           <span className="font-bold text-[#1a3a6b] text-sm">{pr.tender_reference_number}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Tender Date</span>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Date of Tender</span>
                           <span className="font-semibold text-slate-800">{pr.date_of_tender ? new Date(pr.date_of_tender).toLocaleDateString() : '-'}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Tech Bid Opening</span>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Technical Bid Opening Date</span>
                           <span className="font-semibold text-slate-800">{pr.date_of_tech_bid_opening ? new Date(pr.date_of_tech_bid_opening).toLocaleDateString() : '-'}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Financial Bid Opening</span>
+                          <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Tender Closing Date</span>
                           <span className="font-semibold text-slate-800">{pr.date_of_financial_bid_opening ? new Date(pr.date_of_financial_bid_opening).toLocaleDateString() : '-'}</span>
                         </div>
+                        {pr.form_data?.extended_closing_date && (
+                          <div>
+                            <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Extended Closing Date</span>
+                            <span className="font-semibold text-slate-800">{new Date(pr.form_data.extended_closing_date).toLocaleDateString()}</span>
+                          </div>
+                        )}
                         {pr.vendor_list_link && (
                           <div className="col-span-2">
-                            <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Vendor List Link</span>
+                            <span className="text-slate-400 block font-bold uppercase tracking-wider text-[9px]">Bid Document URL</span>
                             <a href={pr.vendor_list_link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold">{pr.vendor_list_link}</a>
                           </div>
                         )}

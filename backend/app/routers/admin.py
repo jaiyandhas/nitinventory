@@ -1866,6 +1866,7 @@ async def list_workflows(db: AsyncSession = Depends(get_db), _=AdminDep):
             "condition_operator": w.condition_operator,
             "condition_value": w.condition_value,
             "source_of_fund_id": w.source_of_fund_id,
+            "committee_size": w.committee_size,
         }
         for w in entries
     ]
@@ -1918,6 +1919,7 @@ async def create_workflow(body: dict, db: AsyncSession = Depends(get_db), _=Admi
         condition_operator=body.get("condition_operator"),
         condition_value=body.get("condition_value"),
         source_of_fund_id=body.get("source_of_fund_id"),  # None = any fund (default)
+        committee_size=body.get("committee_size"),  # Only for tech_evaluation steps
     )
     db.add(wf)
     await db.commit()
@@ -1984,6 +1986,8 @@ async def update_workflow(wf_id: int, body: dict, db: AsyncSession = Depends(get
         wf.condition_value = body["condition_value"]
     if "source_of_fund_id" in body:
         wf.source_of_fund_id = body["source_of_fund_id"]
+    if "committee_size" in body:
+        wf.committee_size = body["committee_size"]  # int 1/2/3 or null
     await db.commit()
     return {"message": "Workflow updated"}
 

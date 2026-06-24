@@ -3,7 +3,7 @@ from app.models.purchase_request import WorkFlowHierarchy
 
 
 def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: list) -> list:
-    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="research", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None, condition_field=None, condition_operator=None, condition_value=None):
+    def step(cat, phase_key, order, group, user_type, role_key=None, ptype="research", proc=None, tender_vendors_threshold=None, tender_vendors_comparison=None, skip_condition=None, condition_field=None, condition_operator=None, condition_value=None, committee_size=None):
         r = roles[role_key] if role_key else None
         return WorkFlowHierarchy(
             category_id=cat.id,
@@ -21,6 +21,7 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
             condition_field=condition_field,
             condition_operator=condition_operator,
             condition_value=condition_value,
+            committee_size=committee_size,
         )
 
     rows: list[WorkFlowHierarchy] = []
@@ -62,17 +63,23 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     # auto-bypasses this step and advances straight to Technical Evaluation.
                     step(cat2, "TD", 10, "dean_approver", "partial_approver", "dean_pd", ptype, proc),
                     step(cat2, "TD", 11, "apex_approver", "approver", "director", ptype, proc, condition_field="qualified_vendor_count", condition_operator="<", condition_value=3),
-                    step(cat2, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
-                    step(cat2, "TE", 2, "hod", "verifier", "hod", ptype, proc),
-                    step(cat2, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
-                    step(cat2, "TE", 4, "dean_approver", "approver", "dean_pd", ptype, proc),
-                    step(cat2, "FS", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
-                    step(cat2, "FS", 2, "hod", "verifier", "hod", ptype, proc),
-                    step(cat2, "FS", 3, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
-                    step(cat2, "FS", 4, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
-                    step(cat2, "FS", 5, "verifier_general", "verifier", "adpd", ptype, proc),
-                    step(cat2, "FS", 6, "dean_approver", "approver", "dean_pd", ptype, proc),
-                    step(cat2, "FS", 7, "apex_approver", "approver", "director", ptype, proc, skip_condition="not pr.single_bid_justification"),
+                    # TE Step 1: PI fills bidder assessment (EMD, MSME, OEM, MII, LandBorder, Status, Remarks)
+                    step(cat2, "TE", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    # TE Step 2: Technical committee multi-sign evaluation (Cat2: 2 HOD nominees)
+                    step(cat2, "TE", 2, "faculty", "tech_evaluation", "faculty", ptype, proc, committee_size=2),
+                    step(cat2, "TE", 3, "hod", "verifier", "hod", ptype, proc),
+                    step(cat2, "TE", 4, "verifier_general", "verifier", "adpd", ptype, proc),
+                    step(cat2, "TE", 5, "dean_approver", "approver", "dean_pd", ptype, proc),
+                    # FS Step 1: DA enters quoted amounts for qualified bidders
+                    step(cat2, "FS", 1, "verifier_da", "verifier_da", "dealing_assistant", ptype, proc),
+                    # FS Step 2: PI assigns L1/L2/L3 rankings
+                    step(cat2, "FS", 2, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    step(cat2, "FS", 3, "hod", "verifier", "hod", ptype, proc),
+                    step(cat2, "FS", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
+                    step(cat2, "FS", 5, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
+                    step(cat2, "FS", 6, "verifier_general", "verifier", "adpd", ptype, proc),
+                    step(cat2, "FS", 7, "dean_approver", "approver", "dean_pd", ptype, proc),
+                    step(cat2, "FS", 8, "apex_approver", "approver", "director", ptype, proc, skip_condition="not pr.single_bid_justification"),
                     step(cat2, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat2, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat2, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),
@@ -96,17 +103,23 @@ def build_workflow_steps(roles: dict, phases: dict, categories: dict, procs: lis
                     # partial_approver: Dean reviews whether Director approval is needed.
                     step(cat3, "TD", 10, "dean_approver", "partial_approver", "dean_pd", ptype, proc),
                     step(cat3, "TD", 11, "apex_approver", "approver", "director", ptype, proc, condition_field="qualified_vendor_count", condition_operator="<", condition_value=3),
-                    step(cat3, "TE", 1, "faculty", "tech_evaluation", "faculty", ptype, proc),
-                    step(cat3, "TE", 2, "hod", "verifier", "hod", ptype, proc),
-                    step(cat3, "TE", 3, "verifier_general", "verifier", "adpd", ptype, proc),
-                    step(cat3, "TE", 4, "dean_approver", "approver", "dean_pd", ptype, proc),
-                    step(cat3, "FS", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
-                    step(cat3, "FS", 2, "hod", "verifier", "hod", ptype, proc),
-                    step(cat3, "FS", 3, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
-                    step(cat3, "FS", 4, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
-                    step(cat3, "FS", 5, "verifier_general", "verifier", "adpd", ptype, proc),
-                    step(cat3, "FS", 6, "dean_approver", "approver", "dean_pd", ptype, proc),
-                    step(cat3, "FS", 7, "apex_approver", "approver", "director", ptype, proc),
+                    # TE Step 1: PI fills bidder assessment (EMD, MSME, OEM, MII, LandBorder, Status, Remarks)
+                    step(cat3, "TE", 1, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    # TE Step 2: Technical committee multi-sign evaluation (Cat3: 2 HOD nominees + 1 Director nominee)
+                    step(cat3, "TE", 2, "faculty", "tech_evaluation", "faculty", ptype, proc, committee_size=3),
+                    step(cat3, "TE", 3, "hod", "verifier", "hod", ptype, proc),
+                    step(cat3, "TE", 4, "verifier_general", "verifier", "adpd", ptype, proc),
+                    step(cat3, "TE", 5, "dean_approver", "approver", "dean_pd", ptype, proc),
+                    # FS Step 1: DA enters quoted amounts for qualified bidders
+                    step(cat3, "FS", 1, "verifier_da", "verifier_da", "dealing_assistant", ptype, proc),
+                    # FS Step 2: PI assigns L1/L2/L3 rankings
+                    step(cat3, "FS", 2, "faculty", "purchase_initiator", "faculty", ptype, proc),
+                    step(cat3, "FS", 3, "hod", "verifier", "hod", ptype, proc),
+                    step(cat3, "FS", 4, "verifier_sp", "verifier", "consultant_sp", ptype, proc),
+                    step(cat3, "FS", 5, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
+                    step(cat3, "FS", 6, "verifier_general", "verifier", "adpd", ptype, proc),
+                    step(cat3, "FS", 7, "dean_approver", "approver", "dean_pd", ptype, proc),
+                    step(cat3, "FS", 8, "apex_approver", "approver", "director", ptype, proc),
                     step(cat3, "PO", 1, "verifier_da", "verifier", "dealing_assistant", ptype, proc),
                     step(cat3, "PO", 2, "verifier_sp", "verifier", "assistant_registrar", ptype, proc),
                     step(cat3, "PO", 3, "verifier_sp", "verifier", "deputy_registrar", ptype, proc),

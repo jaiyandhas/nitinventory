@@ -1,11 +1,13 @@
 """Asset service: creates assets, logs movements and condition changes, handles disposal."""
-from datetime import datetime
+import calendar
+from datetime import datetime, date
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
+from sqlalchemy.orm import selectinload
 
 from app.models.asset import Asset, AssetMovement, AssetLog, DisposalStatus
-from app.models.inventory import DeliveryItem, DeptAssetLog
+from app.models.inventory import DeliveryItem, DeptAssetLog, Delivery
 from app.models.user import User
 from app.services.qr_service import QrService
 
@@ -36,12 +38,25 @@ class AssetService:
     async def create_assets_from_grn(self, delivery_item: DeliveryItem, dept_log: DeptAssetLog) -> list[Asset]:
         """Auto-create assets after GRN verification. One asset per serial number."""
         from app.models.user import Department
+        from app.models.purchase_request import PurchaseRequest, BillPassing, PurchaseRequestItem
+        from app.models.budget import BudgetMaster
+
+        # Load delivery with PR → bill_passing to fetch billing and stock-register details
+        delivery_res = await self.db.execute(
+            select(Delivery)
+            .options(
+                selectinload(Delivery.purchase_request).selectinload(PurchaseRequest.bill_passing),
+            )
+            .where(Delivery.id == delivery_item.delivery_id)
+        )
+        delivery = delivery_res.scalar_one_or_none()
+
         dept_q = await self.db.execute(
-            select(Department).where(Department.id == delivery_item.delivery.department_id)
+            select(Department).where(Department.id == delivery.department_id)
         )
         dept = dept_q.scalar_one()
         dept_code = dept.short_code
-        
+
         current_date = datetime.utcnow().date()
         year_suffix = str(current_date.year)[-2:]
 
@@ -51,6 +66,59 @@ class AssetService:
 
         # Pre-generate ALL sequence numbers in a single DB trip to avoid in-loop sequence queries
         seq_values = await self._get_tag_sequences(dept_code, quantity)
+
+        # Extract supplier / bill / stock-register / warranty data from bill_passing
+        pr = delivery.purchase_request if delivery else None
+        bp = pr.bill_passing if pr else None
+
+        supplier_name = None
+        bill_number = None
+        bill_date_val = None
+        delivery_date_val = None
+        warranty_expiry = None
+        stock_vol = None
+        stock_page = None
+        fund_src = None
+
+        if bp:
+            extra = bp.extra_info or {}
+            supplier_name = extra.get("supplier_name") or None
+            bill_number = bp.invoice_number or None
+            bill_date_val = bp.invoice_date
+
+            delivery_date_str = extra.get("actual_date_of_delivery")
+            if delivery_date_str:
+                try:
+                    delivery_date_val = datetime.strptime(delivery_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    pass
+            if not delivery_date_val and delivery.received_date:
+                rd = delivery.received_date
+                delivery_date_val = rd.date() if hasattr(rd, "date") else rd
+
+            warranty_months = int(extra.get("warranty_period_months") or 0)
+            if warranty_months > 0 and bp.invoice_date:
+                yr = bp.invoice_date.year
+                mo = bp.invoice_date.month + warranty_months
+                yr += (mo - 1) // 12
+                mo = (mo - 1) % 12 + 1
+                day = min(bp.invoice_date.day, calendar.monthrange(yr, mo)[1])
+                warranty_expiry = date(yr, mo, day)
+
+            stock_vol = extra.get("non_consumable_vol") or None
+            stock_page = extra.get("non_consumable_page") or None
+
+        # Get fund_source from the PR's first budget file entry
+        if pr:
+            pr_item_res = await self.db.execute(
+                select(PurchaseRequestItem)
+                .options(selectinload(PurchaseRequestItem.budget_file))
+                .where(PurchaseRequestItem.purchase_request_id == pr.id)
+                .limit(1)
+            )
+            pr_item = pr_item_res.scalar_one_or_none()
+            if pr_item and pr_item.budget_file:
+                fund_src = pr_item.budget_file.source_of_fund
 
         for i in range(quantity):
             seq = seq_values[i]
@@ -63,7 +131,7 @@ class AssetService:
                 asset_tag=asset_tag,
                 name=delivery_item.name,
                 category=delivery_item.category,
-                department_id=delivery_item.delivery.department_id,
+                department_id=delivery.department_id,
                 building=dept_log.building,
                 room=dept_log.room,
                 custodian=dept_log.custodian_name,
@@ -71,9 +139,18 @@ class AssetService:
                 condition=dept_log.condition if dept_log.condition in ("working", "damaged") else "working",
                 disposal_status=DisposalStatus.ACTIVE,
                 qr_code_url=qr_url,
-                purchase_date=datetime.utcnow().date(),
+                purchase_date=bill_date_val or current_date,
                 unit_cost=delivery_item.unit_price,
                 delivery_item_id=delivery_item.id,
+                asset_source="procurement",
+                supplier_name=supplier_name,
+                bill_number=bill_number,
+                bill_date=bill_date_val,
+                delivery_date=delivery_date_val,
+                warranty_expiry=warranty_expiry,
+                stock_register_volume=stock_vol,
+                stock_register_page=stock_page,
+                fund_source=fund_src,
             )
             self.db.add(asset)
             await self.db.flush()

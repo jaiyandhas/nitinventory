@@ -170,8 +170,12 @@ class FlowEngineService:
                 # Check if this tech_evaluation step is now fully approved.
                 from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
                 await sync_tech_committee_to_pr(self.db, pr)
-                if await is_tech_committee_configured(self.db, pr):
-                    required_ids = set(await get_tech_committee_member_ids(self.db, pr))
+                # Find committee_size from the tech_evaluation step in the steps list
+                te_committee_size = next(
+                    (s.committee_size for s in steps if s.user_type == "tech_evaluation"), None
+                )
+                if await is_tech_committee_configured(self.db, pr, te_committee_size):
+                    required_ids = set(await get_tech_committee_member_ids(self.db, pr, te_committee_size))
                     if required_ids and required_ids.issubset(te_signed_user_ids):
                         # Find the tech_evaluation step and add it to approved_indices
                         for idx in range(len(steps)):
@@ -618,13 +622,19 @@ class FlowEngineService:
             
         elif step.user_type == "tech_evaluation":
             from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
+            committee_size = step.committee_size
             await sync_tech_committee_to_pr(self.db, pr)
-            if not await is_tech_committee_configured(self.db, pr):
+            if not await is_tech_committee_configured(self.db, pr, committee_size):
+                size_label = {1: "1 (HOD Expert)", 2: "2 (HOD Experts)", 3: "3 (2 HOD Experts + Director Nominee)"}.get(committee_size or 1, str(committee_size or 1))
                 raise ValueError(
-                    "The technical evaluation committee is not configured. "
-                    "At least one HOD-nominated Expert (Expert 1) must be assigned."
+                    f"The technical evaluation committee is not fully configured. "
+                    f"This category requires {size_label} committee member(s). "
+                    f"Please assign Technical Expert 1 (HOD Nominee)"
+                    + (", Technical Expert 2 (HOD Nominee)" if (committee_size or 1) >= 2 else "")
+                    + (", and Director Nominee" if (committee_size or 1) >= 3 else "")
+                    + " in department or budget file settings."
                 )
-            committee_ids = await get_tech_committee_member_ids(self.db, pr)
+            committee_ids = await get_tech_committee_member_ids(self.db, pr, committee_size)
 
             since = pr.te_initiated_at or pr.created_at or datetime.min
             await self.db.refresh(pr, ["history"])
@@ -777,6 +787,7 @@ class FlowEngineService:
         # Check if this is the committee technical evaluation step
         step_def = await self._get_step_def(pr, flow.phase_id, flow.step_order, sof_id=sof_id)
         is_tech_eval_step = step_def and step_def.user_type == "tech_evaluation"
+        committee_size = step_def.committee_size if step_def else None
 
         should_advance = True
 
@@ -790,10 +801,10 @@ class FlowEngineService:
                 and (h.acted_at is None or h.acted_at >= since)
                 for h in pr.history
             )
-            
+
             from app.services.tech_committee import is_tech_committee_configured, get_tech_committee_member_ids
             await sync_tech_committee_to_pr(self.db, pr)
-            if not await is_tech_committee_configured(self.db, pr):
+            if not await is_tech_committee_configured(self.db, pr, committee_size):
                 if has_approval_log:
                     raise ValueError("You have already signed/approved this technical evaluation round.")
                 default_status = "Technical Evaluation Completed" if pr.initiator_id == acted_by.id else "Technical Evaluation Approved"
@@ -802,7 +813,7 @@ class FlowEngineService:
                 flow.step_order = current_step
                 pr.current_status = RequestStatus.IN_PROGRESS
             else:
-                required_ids = set(await get_tech_committee_member_ids(self.db, pr))
+                required_ids = set(await get_tech_committee_member_ids(self.db, pr, committee_size))
                 await self.db.refresh(pr, ["history"])
                 approved_ids = {
                     h.current_approver_id for h in pr.history

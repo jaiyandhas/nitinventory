@@ -450,13 +450,13 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
         {pr.tender_reference_number && (
           <div className="col-span-2 border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
             <div>
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tender Ref Number</div>
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tender Reference Number</div>
               <div className="text-sm font-bold text-slate-800">{pr.tender_reference_number}</div>
             </div>
             {pr.vendor_list_link && (
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Vendor List link</div>
-                <a href={pr.vendor_list_link} target="_blank" rel="noreferrer" className="text-blue-600 text-sm hover:underline font-medium">View Vendor Link</a>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Bid Document URL</div>
+                <a href={pr.vendor_list_link} target="_blank" rel="noreferrer" className="text-blue-600 text-sm hover:underline font-medium">View Bid Document</a>
               </div>
             )}
             {pr.date_of_tender && (
@@ -467,14 +467,20 @@ export const PRHeader: React.FC<PRHeaderProps> = ({
             )}
             {pr.date_of_tech_bid_opening && (
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tech Bid Opening</div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Technical Bid Opening Date</div>
                 <div className="text-sm text-slate-700">{new Date(pr.date_of_tech_bid_opening).toLocaleDateString()}</div>
               </div>
             )}
             {pr.date_of_financial_bid_opening && (
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Financial Bid Opening</div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tender Closing Date</div>
                 <div className="text-sm text-slate-700">{new Date(pr.date_of_financial_bid_opening).toLocaleDateString()}</div>
+              </div>
+            )}
+            {pr.form_data?.extended_closing_date && (
+              <div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Extended Closing Date</div>
+                <div className="text-sm text-slate-700">{new Date(pr.form_data.extended_closing_date).toLocaleDateString()}</div>
               </div>
             )}
           </div>

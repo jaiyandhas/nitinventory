@@ -648,6 +648,7 @@ async def list_aas(
       serialized.append({
           'id': aa.id,
           'aa_number': aa.aa_number or '-',
+          'pi_id': aa.pi_id,
           'pi_name': aa.pi.name,
           'pi_department_id': aa.pi.department_id,
           'department': aa.pi.department.name if aa.pi.department else '-',
@@ -774,6 +775,7 @@ async def get_aa_detail(
         "aa_number": aa.aa_number or "-",
         "status": aa.status,
         "pending_with": aa.pending_with or "-",
+        "pi_id": aa.pi_id,
         "created_at": aa.created_at.isoformat() + "Z" if aa.created_at else None,
         "attachment_path": aa.attachment_path,
         "attachment_url": f"/static/uploads/{aa.attachment_path}" if aa.attachment_path else None,

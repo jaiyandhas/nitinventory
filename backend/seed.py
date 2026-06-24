@@ -80,6 +80,134 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;"))
         await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(512);"))
 
+        # committee_size on workflow steps: controls how many members must sign at tech_evaluation
+        await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS committee_size INTEGER;"))
+        # Populate committee_size for existing tech_evaluation steps based on category amount ranges:
+        #   Cat1 (max_amount <= 10L)  -> 1 (1 HOD Expert)
+        #   Cat2 (max_amount <= 30L)  -> 2 (2 HOD Experts)
+        #   Cat3 (max_amount > 30L)   -> 3 (2 HOD Experts + 1 Director Nominee)
+        await conn.execute(text("""
+            UPDATE workflow_hierarchies wh
+            SET committee_size = CASE
+                WHEN pc.max_amount IS NULL OR pc.max_amount > 3000000 THEN 3
+                WHEN pc.max_amount > 1000000 THEN 2
+                ELSE 1
+            END
+            FROM purchase_categories pc
+            WHERE wh.category_id = pc.id
+              AND wh.user_type = 'tech_evaluation'
+              AND wh.committee_size IS NULL
+        """))
+
+        # Commercial evaluation tech-assessment fields (filled by PI at TE Step 1)
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS emd_status VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS msme_status VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS oem_status VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS mii_class VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS land_border_status VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE commercial_evaluations ADD COLUMN IF NOT EXISTS tech_status VARCHAR(20);"))
+
+        # ── Workflow step ordering migration ──────────────────────────────────
+        # TE Phase: Insert PI data-entry step BEFORE the tech_evaluation committee step.
+        # Old config: Step 1 = tech_evaluation (committee)
+        # New config: Step 1 = purchase_initiator (PI), Step 2 = tech_evaluation (committee)
+        # Idempotent: only runs when step 1 is still tech_evaluation.
+        await conn.execute(text("""
+            WITH te_old_combos AS (
+                SELECT DISTINCT category_id, phase_id, procurement_id, purchase_type, source_of_fund_id
+                FROM workflow_hierarchies
+                WHERE phase_id = (SELECT id FROM phase_managers WHERE phase_name = 'Technical Evaluation' LIMIT 1)
+                  AND step_order = 1
+                  AND user_type = 'tech_evaluation'
+            )
+            UPDATE workflow_hierarchies wh
+            SET step_order = wh.step_order + 1
+            FROM te_old_combos tc
+            WHERE wh.phase_id = tc.phase_id
+              AND wh.category_id = tc.category_id
+              AND wh.procurement_id = tc.procurement_id
+              AND wh.purchase_type = tc.purchase_type
+              AND wh.source_of_fund_id IS NOT DISTINCT FROM tc.source_of_fund_id
+        """))
+        await conn.execute(text("""
+            INSERT INTO workflow_hierarchies
+              (category_id, phase_id, procurement_id, step_order, user_type, user_group, role_id, purchase_type, is_enabled, source_of_fund_id)
+            SELECT DISTINCT
+              wh.category_id, wh.phase_id, wh.procurement_id,
+              1, 'purchase_initiator', 'faculty',
+              (SELECT id FROM role_managers WHERE value = 'faculty' LIMIT 1),
+              wh.purchase_type, true, wh.source_of_fund_id
+            FROM workflow_hierarchies wh
+            WHERE wh.phase_id = (SELECT id FROM phase_managers WHERE phase_name = 'Technical Evaluation' LIMIT 1)
+              AND wh.step_order = 2
+              AND wh.user_type = 'tech_evaluation'
+              AND NOT EXISTS (
+                SELECT 1 FROM workflow_hierarchies x
+                WHERE x.phase_id = wh.phase_id
+                  AND x.category_id = wh.category_id
+                  AND x.procurement_id = wh.procurement_id
+                  AND x.purchase_type = wh.purchase_type
+                  AND x.source_of_fund_id IS NOT DISTINCT FROM wh.source_of_fund_id
+                  AND x.step_order = 1
+                  AND x.user_type = 'purchase_initiator'
+              )
+        """))
+
+        # FS Phase: Insert DA amount-entry step BEFORE the purchase_initiator ranking step.
+        # Old config: Step 1 = purchase_initiator (PI)
+        # New config: Step 1 = verifier_da (DA), Step 2 = purchase_initiator (PI)
+        # Idempotent: only runs when step 1 is still purchase_initiator (no verifier_da at step 1).
+        await conn.execute(text("""
+            WITH fs_old_combos AS (
+                SELECT DISTINCT category_id, phase_id, procurement_id, purchase_type, source_of_fund_id
+                FROM workflow_hierarchies
+                WHERE phase_id = (SELECT id FROM phase_managers WHERE phase_name = 'Financial Sanction' LIMIT 1)
+                  AND step_order = 1
+                  AND user_type = 'purchase_initiator'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM workflow_hierarchies x2
+                    WHERE x2.phase_id = (SELECT id FROM phase_managers WHERE phase_name = 'Financial Sanction' LIMIT 1)
+                      AND x2.category_id = workflow_hierarchies.category_id
+                      AND x2.procurement_id = workflow_hierarchies.procurement_id
+                      AND x2.purchase_type = workflow_hierarchies.purchase_type
+                      AND x2.source_of_fund_id IS NOT DISTINCT FROM workflow_hierarchies.source_of_fund_id
+                      AND x2.step_order = 1
+                      AND x2.user_type = 'verifier_da'
+                  )
+            )
+            UPDATE workflow_hierarchies wh
+            SET step_order = wh.step_order + 1
+            FROM fs_old_combos fc
+            WHERE wh.phase_id = fc.phase_id
+              AND wh.category_id = fc.category_id
+              AND wh.procurement_id = fc.procurement_id
+              AND wh.purchase_type = fc.purchase_type
+              AND wh.source_of_fund_id IS NOT DISTINCT FROM fc.source_of_fund_id
+        """))
+        await conn.execute(text("""
+            INSERT INTO workflow_hierarchies
+              (category_id, phase_id, procurement_id, step_order, user_type, user_group, role_id, purchase_type, is_enabled, source_of_fund_id)
+            SELECT DISTINCT
+              wh.category_id, wh.phase_id, wh.procurement_id,
+              1, 'verifier_da', 'verifier_da',
+              (SELECT id FROM role_managers WHERE value = 'dealing_assistant' LIMIT 1),
+              wh.purchase_type, true, wh.source_of_fund_id
+            FROM workflow_hierarchies wh
+            WHERE wh.phase_id = (SELECT id FROM phase_managers WHERE phase_name = 'Financial Sanction' LIMIT 1)
+              AND wh.step_order = 2
+              AND wh.user_type = 'purchase_initiator'
+              AND NOT EXISTS (
+                SELECT 1 FROM workflow_hierarchies x
+                WHERE x.phase_id = wh.phase_id
+                  AND x.category_id = wh.category_id
+                  AND x.procurement_id = wh.procurement_id
+                  AND x.purchase_type = wh.purchase_type
+                  AND x.source_of_fund_id IS NOT DISTINCT FROM wh.source_of_fund_id
+                  AND x.step_order = 1
+                  AND x.user_type = 'verifier_da'
+              )
+        """))
+
         # Update existing purchase categories for cat3 bounds
         await conn.execute(text("UPDATE purchase_categories SET max_amount = 999999999, title = REPLACE(title, 'Rs. 10,00,001 to Rs. 30,00,000', 'Rs. 10,00,001 and above') WHERE title LIKE '%Rs. 10,00,001 to Rs. 30,00,000%';"))
 

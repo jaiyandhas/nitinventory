@@ -52,6 +52,8 @@ export const prApi = {
   addTechnicalEval: (id: number, formData: FormData) =>
     api.post(`/pr/${id}/technical-eval`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   addFinancialBids: (id: number, payload: any) => api.post(`/pr/${id}/financial-bids`, payload),
+  saveTeBidderData: (id: number, data: any) => api.post(`/pr/${id}/te-bidder-data`, data),
+  saveFaAmounts: (id: number, data: any) => api.post(`/pr/${id}/fa-amounts`, data),
   getSendBackCandidates: (id: number) => api.get(`/pr/${id}/send-back-candidates`),
   addTenderDetails: (id: number, data: any) => {
     if (data instanceof FormData) {

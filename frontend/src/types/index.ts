@@ -102,6 +102,18 @@ export interface PRFlow {
   condition_operator?: string | null;
   condition_value?: number | null;
   is_last_step_in_phase?: boolean;
+  /** Number of committee members required for tech_evaluation steps (1=Cat1, 2=Cat2, 3=Cat3) */
+  committee_size?: number | null;
+}
+
+export interface CommitteeMember {
+  slot: number;
+  role_label: string;
+  user_id: number | null;
+  user_name: string | null;
+  user_designation: string | null;
+  approved: boolean;
+  approved_at: string | null;
 }
 
 export interface PRItem {
@@ -168,7 +180,20 @@ export interface PurchaseRequest {
   history?: PRHistory[];
   items?: PRItem[];
   flow?: PRFlow;
-  commercial_evaluations?: any[];
+  commercial_evaluations?: {
+    id: number;
+    vendor_name: string;
+    vendor_email?: string | null;
+    quoted_amount?: number | null;
+    is_qualified: boolean;
+    remarks?: string | null;
+    emd_status?: string | null;
+    msme_status?: string | null;
+    oem_status?: string | null;
+    mii_class?: string | null;
+    land_border_status?: string | null;
+    tech_status?: string | null;
+  }[];
   technical_evaluations?: any[];
   financial_evaluations?: {
     id: number;
@@ -252,6 +277,7 @@ export interface PurchaseRequest {
   expert1?: { id: number; name: string; email: string };
   expert2?: { id: number; name: string; email: string };
   director_faculty?: { id: number; name: string; email: string };
+  committee_tracker?: CommitteeMember[];
   referrals?: PRReferral[];
   budget_file?: any;
   purchase_order?: PurchaseOrder | null;

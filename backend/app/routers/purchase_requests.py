@@ -48,6 +48,65 @@ ADMIN_ROLES = {
     "dealing_assistant", "adpd",
 }
 
+async def _build_committee_tracker(db: AsyncSession, pr: PurchaseRequest) -> list:
+    """Build committee approval tracker for the PR detail response.
+
+    Finds the tech_evaluation workflow step for this PR's category/procurement/type,
+    reads committee_size from it, then returns per-slot approval status from history.
+    """
+    from app.services.tech_committee import get_committee_slot_info, SLOT_LABELS
+
+    # Resolve committee_size from the TE tech_evaluation workflow step
+    te_phase_res = await db.execute(
+        select(PhaseManager).where(PhaseManager.phase_name == "Technical Evaluation").limit(1)
+    )
+    te_phase = te_phase_res.scalar_one_or_none()
+    committee_size = None
+    if te_phase:
+        step_res = await db.execute(
+            select(WorkFlowHierarchy.committee_size).where(
+                and_(
+                    WorkFlowHierarchy.category_id == pr.category_id,
+                    WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                    WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                    WorkFlowHierarchy.phase_id == te_phase.id,
+                    WorkFlowHierarchy.user_type == "tech_evaluation",
+                    WorkFlowHierarchy.is_enabled == True,
+                )
+            ).limit(1)
+        )
+        committee_size = step_res.scalar_one_or_none()
+
+    # Get ordered slot info
+    slots = await get_committee_slot_info(db, pr, committee_size)
+
+    # Build approval map from history
+    since = pr.te_initiated_at or pr.created_at
+    approval_map: dict[int, str] = {}  # user_id -> acted_at ISO string
+    for h in (pr.history or []):
+        if h.current_approver_id and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved"):
+            if since is None or h.acted_at is None or h.acted_at >= since:
+                if h.current_approver_id not in approval_map:
+                    approval_map[h.current_approver_id] = (
+                        h.acted_at.isoformat() + "Z" if h.acted_at else None
+                    )
+
+    tracker = []
+    for s in slots:
+        uid = s["user_id"]
+        approved = uid is not None and uid in approval_map
+        tracker.append({
+            "slot": s["slot"],
+            "role_label": s["role_label"],
+            "user_id": uid,
+            "user_name": s["user_name"],
+            "user_designation": s["user_designation"],
+            "approved": approved,
+            "approved_at": approval_map.get(uid) if approved else None,
+        })
+    return tracker
+
+
 async def check_pr_access(pr: PurchaseRequest, user: User, db: AsyncSession):
     # Admin bypass
     await db.refresh(user, ["role"])
@@ -923,6 +982,7 @@ async def list_prs(
                     "expected_user_id": expected_user_id,
                     "expected_user_name": expected_user_name,
                     "step_type": step.user_type,
+                    "committee_size": step.committee_size if step.user_type == "tech_evaluation" else None,
                 }
 
         referrals_data = []
@@ -1279,6 +1339,12 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             "quoted_amount": ce.quoted_amount,
             "is_qualified": ce.is_qualified,
             "remarks": ce.remarks,
+            "emd_status": ce.emd_status,
+            "msme_status": ce.msme_status,
+            "oem_status": ce.oem_status,
+            "mii_class": ce.mii_class,
+            "land_border_status": ce.land_border_status,
+            "tech_status": ce.tech_status,
         }
         for ce in pr.commercial_evaluations
     ]
@@ -1401,6 +1467,7 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
         "expert1": {"id": expert1.id, "name": expert1.name, "email": expert1.email} if expert1 else None,
         "expert2": {"id": expert2.id, "name": expert2.name, "email": expert2.email} if expert2 else None,
         "director_faculty": {"id": director_faculty.id, "name": director_faculty.name, "email": director_faculty.email} if director_faculty else None,
+        "committee_tracker": await _build_committee_tracker(db, pr),
         "emd": pr.emd,
         "performance_security": pr.performance_security,
         "is_item_split": pr.is_item_split,
@@ -1912,7 +1979,7 @@ async def verify_current_user_group_for_pr(pr: PurchaseRequest, user: User, db: 
             raise HTTPException(status_code=403, detail="Only the Superintendent may assign a Dealing Assistant")
         return
 
-    if action_type in ["tender-schedule", "tender-details", "technical-eval", "financial-bids"] and (group == "verifier_da" or step.user_type == "verifier_da"):
+    if action_type in ["tender-schedule", "tender-details", "technical-eval", "financial-bids", "fa-amounts"] and (group == "verifier_da" or step.user_type == "verifier_da"):
         assignment_result = await db.execute(
             select(PurchaseRequestAssignment).where(
                 and_(
@@ -2194,6 +2261,7 @@ async def save_tender_details_draft(
     content_type = request.headers.get("content-type", "")
     draft_file = None
     tender_file = None
+    form = None
 
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -2251,6 +2319,14 @@ async def save_tender_details_draft(
     if "lpc_minutes_reference" in body:
         pr.lpc_minutes_reference = body.get("lpc_minutes_reference")
 
+    # Extended closing date and amendment history stored in form_data
+    current_fd = dict(pr.form_data or {})
+    if "extended_closing_date" in body:
+        current_fd["extended_closing_date"] = body["extended_closing_date"] or None
+    if "amendment_history" in body and isinstance(body["amendment_history"], list):
+        current_fd["tender_amendment_history"] = body["amendment_history"]
+    pr.form_data = current_fd
+
     # Document uploads — replace if a new file is provided
     doc_svc = DocumentService(db)
     if draft_file:
@@ -2267,6 +2343,12 @@ async def save_tender_details_draft(
             await db.delete(existing_tender)
         await doc_svc.save_upload(pr, "tender_document", tender_file, user.id)
 
+    # Amendment documents — accumulate (do not replace previous uploads)
+    if form is not None:
+        amendment_files = [v for k, v in form.multi_items() if k == "amendment_document" and getattr(v, "filename", None)]
+        for afile in amendment_files:
+            await doc_svc.save_upload(pr, "amendment_document", afile, user.id)
+
     # Optionally save vendor rows if provided (no validation — partial saves allowed)
     vendors_input = body.get("vendors")
     if vendors_input is not None:
@@ -2282,10 +2364,12 @@ async def save_tender_details_draft(
                         quoted_amt = float(v.get("quoted_amount"))
                     except (ValueError, TypeError):
                         pass
+                # bidder_id is stored in vendor_email field for the new bidding registry format
+                bidder_id = v.get("bidder_id") or v.get("email") or None
                 ce = CommercialEvaluation(
                     purchase_request_id=pr.id,
                     vendor_name=v["name"].strip(),
-                    vendor_email=v.get("email", "").strip() if v.get("email") else None,
+                    vendor_email=bidder_id.strip() if bidder_id else None,
                     quoted_amount=quoted_amt,
                     is_qualified=v.get("is_qualified", True),
                     remarks=v.get("remarks"),
@@ -2364,55 +2448,77 @@ async def add_tender_details(
     pr.lpc_committee_members = body.get("lpc_committee_members")
     pr.lpc_minutes_reference = body.get("lpc_minutes_reference")
 
+    # Extended closing date and amendment history stored in form_data
+    current_fd = dict(pr.form_data or {})
+    if "extended_closing_date" in body:
+        current_fd["extended_closing_date"] = body["extended_closing_date"] or None
+    if "amendment_history" in body and isinstance(body["amendment_history"], list):
+        current_fd["tender_amendment_history"] = body["amendment_history"]
+    pr.form_data = current_fd
+
     # Document upload handling
     doc_svc = DocumentService(db)
+    await db.refresh(pr, ["documents"])
+
+    # Require tender document: either already uploaded or provided now
+    has_existing_tender = any(d.doc_key == "tender_document" for d in pr.documents)
+    if not has_existing_tender and not tender_file:
+        raise HTTPException(status_code=400, detail="Tender Document is mandatory")
+
     if draft_file:
-        await db.refresh(pr, ["documents"])
         existing_draft = next((d for d in pr.documents if d.doc_key == "draft_tender_document"), None)
         if existing_draft:
             await db.delete(existing_draft)
         await doc_svc.save_upload(pr, "draft_tender_document", draft_file, user.id)
 
     if tender_file:
-        await db.refresh(pr, ["documents"])
         existing_tender = next((d for d in pr.documents if d.doc_key == "tender_document"), None)
         if existing_tender:
             await db.delete(existing_tender)
         await doc_svc.save_upload(pr, "tender_document", tender_file, user.id)
 
+    # Amendment documents — accumulate (do not replace previous uploads)
+    if form is not None:
+        amendment_files = [v for k, v in form.multi_items() if k == "amendment_document" and getattr(v, "filename", None)]
+        for afile in amendment_files:
+            await doc_svc.save_upload(pr, "amendment_document", afile, user.id)
+
     # Validate vendor name is non-empty
     vendors_input = body.get("vendors", [])
     if not vendors_input:
-        raise HTTPException(status_code=400, detail="At least one vendor is required")
-    
+        raise HTTPException(status_code=400, detail="At least one bidder is required")
+
     for v in vendors_input:
         if not v.get("name") or not v.get("name").strip():
-            raise HTTPException(status_code=400, detail="Vendor name cannot be empty")
+            raise HTTPException(status_code=400, detail="Bidder name cannot be empty")
 
     # Clear previous evaluations
     await db.execute(delete(CommercialEvaluation).where(CommercialEvaluation.purchase_request_id == pr.id))
     await db.execute(delete(FinancialEvaluation).where(FinancialEvaluation.purchase_request_id == pr.id))
 
-    # Add commercial evaluations
+    # Add commercial evaluations — bidder_id stored in vendor_email field
     for v in vendors_input:
         quoted_amt = None
         if v.get("quoted_amount") is not None and str(v.get("quoted_amount")).strip() != "":
-            quoted_amt = float(v.get("quoted_amount"))
-        
+            try:
+                quoted_amt = float(v.get("quoted_amount"))
+            except (ValueError, TypeError):
+                pass
+
+        bidder_id = v.get("bidder_id") or v.get("email") or None
         ce = CommercialEvaluation(
             purchase_request_id=pr.id,
             vendor_name=v["name"].strip(),
-            vendor_email=v.get("email").strip() if v.get("email") else None,
+            vendor_email=bidder_id.strip() if bidder_id else None,
             quoted_amount=quoted_amt,
             is_qualified=v.get("is_qualified", True),
             remarks=v.get("remarks"),
         )
         db.add(ce)
 
-    # Auto-populate FinancialEvaluation with rankings
-    # Filter qualified vendors that have a quoted amount
+    # Auto-populate FinancialEvaluation only if quoted amounts are provided
     bids = [
-        v for v in vendors_input 
+        v for v in vendors_input
         if v.get("quoted_amount") is not None and str(v.get("quoted_amount")).strip() != "" and v.get("is_qualified", True)
     ]
     bids_sorted = sorted(bids, key=lambda x: float(x.get("quoted_amount")))
@@ -2610,6 +2716,170 @@ async def add_financial_bids(pr_id: int, body: dict, db: AsyncSession = Depends(
     db.add(history)
     await db.commit()
     return {"message": "Financial bids saved"}
+
+
+@router.post("/{pr_id}/te-bidder-data")
+async def save_te_bidder_data(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """PI saves/updates bidder assessment data (EMD, MSME, OEM, MII, LandBorder, Status, Remarks) at TE Step 1."""
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
+    await check_pr_fy_closed(pr, db)
+
+    # Must be PI
+    if pr.initiator_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the purchase initiator can fill bidder assessment data")
+
+    # Must be in Technical Evaluation phase at a purchase_initiator step
+    await db.refresh(pr, ["flow"])
+    if not pr.flow:
+        raise HTTPException(status_code=400, detail="PR has no active workflow step")
+
+    from app.models.budget import PhaseManager
+    phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id))
+    phase = phase_res.scalar_one_or_none()
+    if not phase or phase.phase_name != "Technical Evaluation":
+        raise HTTPException(status_code=403, detail="Bidder assessment can only be filled during Technical Evaluation phase")
+
+    flow_engine = FlowEngineService(db)
+    sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
+    step_res = await db.execute(
+        select(WorkFlowHierarchy).where(
+            and_(
+                WorkFlowHierarchy.category_id == pr.category_id,
+                WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                WorkFlowHierarchy.step_order == pr.flow.step_order,
+                WorkFlowHierarchy.is_enabled == True,
+                WorkFlowHierarchy.source_of_fund_id == sof_id,
+            )
+        ).limit(1)
+    )
+    step = step_res.scalar_one_or_none()
+    if not step or step.user_type != "purchase_initiator":
+        raise HTTPException(status_code=403, detail="Bidder assessment can only be filled at the PI data-entry step")
+
+    # Upsert commercial_evaluation rows
+    bidders = body.get("bidders", [])
+    await db.refresh(pr, ["commercial_evaluations"])
+    existing_by_id = {ce.id: ce for ce in pr.commercial_evaluations}
+
+    for b in bidders:
+        ce_id = b.get("id")
+        if ce_id and ce_id in existing_by_id:
+            ce = existing_by_id[ce_id]
+            ce.vendor_name = b.get("name", ce.vendor_name).strip()
+            ce.vendor_email = (b.get("bidder_id") or "").strip() or ce.vendor_email
+            ce.emd_status = b.get("emd_status")
+            ce.msme_status = b.get("msme_status")
+            ce.oem_status = b.get("oem_status")
+            ce.mii_class = b.get("mii_class")
+            ce.land_border_status = b.get("land_border_status")
+            ce.tech_status = b.get("tech_status")
+            ce.remarks = b.get("remarks")
+            # Sync is_qualified from tech_status for backward compat
+            ce.is_qualified = (b.get("tech_status") == "Qualified")
+        else:
+            # New bidder row added by PI
+            new_ce = CommercialEvaluation(
+                purchase_request_id=pr.id,
+                vendor_name=(b.get("name") or "").strip(),
+                vendor_email=(b.get("bidder_id") or "").strip() or None,
+                emd_status=b.get("emd_status"),
+                msme_status=b.get("msme_status"),
+                oem_status=b.get("oem_status"),
+                mii_class=b.get("mii_class"),
+                land_border_status=b.get("land_border_status"),
+                tech_status=b.get("tech_status"),
+                remarks=b.get("remarks"),
+                is_qualified=(b.get("tech_status") == "Qualified"),
+            )
+            db.add(new_ce)
+
+    db.add(PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Bidder Assessment Saved (Draft)",
+        remarks="Bidder assessment data saved by purchase initiator",
+        acted_at=datetime.utcnow(),
+    ))
+    await db.commit()
+    return {"message": "Bidder assessment saved"}
+
+
+@router.post("/{pr_id}/fa-amounts")
+async def save_fa_amounts(pr_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """DA enters quoted amounts for qualified bidders at FS Step 1."""
+    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
+    pr = result.scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    await check_pr_access(pr, user, db)
+    await check_pr_fy_closed(pr, db)
+
+    # Must be at Financial Sanction phase, step must be verifier_da
+    await db.refresh(pr, ["flow"])
+    if not pr.flow:
+        raise HTTPException(status_code=400, detail="PR has no active workflow step")
+
+    from app.models.budget import PhaseManager
+    phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == pr.flow.phase_id))
+    phase = phase_res.scalar_one_or_none()
+    if not phase or phase.phase_name != "Financial Sanction":
+        raise HTTPException(status_code=403, detail="Quoted amounts can only be entered during Financial Sanction phase")
+
+    flow_engine = FlowEngineService(db)
+    sof_id = await flow_engine.resolve_sof_id(pr, phase_id=pr.flow.phase_id)
+    step_res = await db.execute(
+        select(WorkFlowHierarchy).where(
+            and_(
+                WorkFlowHierarchy.category_id == pr.category_id,
+                WorkFlowHierarchy.procurement_id == pr.procurement_id,
+                WorkFlowHierarchy.purchase_type == pr.purchase_type,
+                WorkFlowHierarchy.phase_id == pr.flow.phase_id,
+                WorkFlowHierarchy.step_order == pr.flow.step_order,
+                WorkFlowHierarchy.is_enabled == True,
+                WorkFlowHierarchy.source_of_fund_id == sof_id,
+            )
+        ).limit(1)
+    )
+    step = step_res.scalar_one_or_none()
+    if not step or step.user_type != "verifier_da":
+        raise HTTPException(status_code=403, detail="Quoted amounts can only be entered at the DA data-entry step")
+
+    # Verify this user is the assigned DA
+    from app.models.purchase_request import PurchaseRequestAssignment
+    assign_res = await db.execute(
+        select(PurchaseRequestAssignment).where(
+            PurchaseRequestAssignment.purchase_request_id == pr.id,
+            PurchaseRequestAssignment.assigned_da_id == user.id,
+        )
+    )
+    if not assign_res.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Only the assigned Dealing Assistant can enter quoted amounts")
+
+    # Update CommercialEvaluation.quoted_amount for each bidder
+    bidders = body.get("bidders", [])
+    await db.refresh(pr, ["commercial_evaluations"])
+    ce_by_id = {ce.id: ce for ce in pr.commercial_evaluations}
+    for b in bidders:
+        ce_id = b.get("id")
+        if ce_id and ce_id in ce_by_id:
+            amt = b.get("quoted_amount")
+            ce_by_id[ce_id].quoted_amount = float(amt) if amt is not None else None
+
+    db.add(PurchaseRequestHistory(
+        purchase_request_id=pr.id,
+        current_approver_id=user.id,
+        status="Quoted Amounts Entered (Draft)",
+        remarks="Quoted amounts entered by Dealing Assistant",
+        acted_at=datetime.utcnow(),
+    ))
+    await db.commit()
+    return {"message": "Quoted amounts saved"}
 
 
 @router.post("/{pr_id}/award-bid")

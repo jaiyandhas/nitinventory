@@ -255,6 +255,13 @@ class CommercialEvaluation(Base):
     quoted_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     is_qualified: Mapped[bool] = mapped_column(Boolean, nullable=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tech eval assessment fields (filled by PI at TE Step 1)
+    emd_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    msme_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    oem_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    mii_class: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    land_border_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tech_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 'Qualified' | 'Not Qualified'
 
     purchase_request: Mapped[PurchaseRequest] = relationship("PurchaseRequest", back_populates="commercial_evaluations")
 
@@ -296,6 +303,8 @@ class WorkFlowHierarchy(Base):
     condition_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Source of Fund routing: NULL = applies to any fund (fallback), set = fund-specific variant
     source_of_fund_id: Mapped[Optional[int]] = mapped_column(ForeignKey("source_of_funds.id", ondelete="SET NULL"), nullable=True)
+    # Number of committee members required for tech_evaluation steps (1=Cat1, 2=Cat2, 3=Cat3)
+    committee_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User")  # type: ignore
     role: Mapped[Optional["RoleManager"]] = relationship("RoleManager")  # type: ignore

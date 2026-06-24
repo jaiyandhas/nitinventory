@@ -1,17 +1,22 @@
 """Resolve and sync technical evaluation committee members for a purchase request."""
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.budget import BudgetMaster
 from app.models.purchase_request import PurchaseRequest
 
 
-from sqlalchemy.orm import selectinload
-from typing import List
+SLOT_LABELS = {
+    1: "Technical Expert 1 (HOD Nominee)",
+    2: "Technical Expert 2 (HOD Nominee)",
+    3: "Director Nominee",
+}
+
 
 async def _load_budget_file(db: AsyncSession, pr: PurchaseRequest) -> Optional[BudgetMaster]:
     await db.refresh(pr, ["items"])
@@ -31,7 +36,8 @@ async def resolve_tech_committee_ids(
 ) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]:
     """
     Return (initiator_id, expert1_id, expert2_id, director_faculty_id).
-    Fallback order for each expert slot: PR field -> budget file -> department default.
+    Slot mapping: slot1=faculty1(HOD), slot2=faculty2(HOD), slot3=faculty3(Director).
+    Fallback order per slot: PR field -> budget file -> department default.
     """
     await db.refresh(pr, ["initiator"])
     dept = None
@@ -73,51 +79,102 @@ def dedupe_committee_ids(*member_ids: Optional[int]) -> list[int]:
     return ordered
 
 
-async def is_tech_committee_configured(db: AsyncSession, pr: PurchaseRequest) -> bool:
-    """Check if the committee is sufficiently configured.
+def _parse_nominee_ids(raw) -> list[int]:
+    if isinstance(raw, str):
+        import json
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = []
+    return [x for x in (raw or []) if x is not None]
 
-    At least one HOD-nominated expert (Expert 1) is mandatory.
-    Expert 2 and Director Nominee (faculty3) are optional.
+
+async def get_tech_committee_member_ids(
+    db: AsyncSession, pr: PurchaseRequest, committee_size: Optional[int] = None
+) -> List[int]:
+    """
+    Return deduplicated user IDs for the technical committee, respecting committee_size.
+
+    Slot order (always): expert1 (HOD) → expert2 (HOD) → director_faculty (Director).
+    committee_size controls how many slots are active:
+        1 → only slot 1 (expert1)
+        2 → slots 1-2 (expert1, expert2)
+        3 or None → all 3 slots
     """
     if pr.committee_nominee_ids is not None:
-        nominees = pr.committee_nominee_ids
-        if isinstance(nominees, str):
-            import json
-            try:
-                nominees = json.loads(nominees)
-            except:
-                nominees = []
-        return len(nominees) >= 1
-
-    _, expert1_id, _, _ = await resolve_tech_committee_ids(db, pr)
-    return expert1_id is not None
-
-
-async def get_tech_committee_member_ids(db: AsyncSession, pr: PurchaseRequest) -> List[int]:
-    """
-    Return a deduplicated list of user IDs for the technical committee.
-    Committee = HOD nominees (Expert1 required, Expert2 optional) + Director Nominee (optional).
-    The PR initiator is NOT a committee evaluator.
-    """
-    if pr.committee_nominee_ids is not None:
-        nominees = pr.committee_nominee_ids
-        if isinstance(nominees, str):
-            import json
-            try:
-                nominees = json.loads(nominees)
-            except:
-                nominees = []
+        nominees = _parse_nominee_ids(pr.committee_nominee_ids)
         if nominees:
+            if committee_size:
+                nominees = nominees[:committee_size]
             return dedupe_committee_ids(*nominees)
 
     _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
-    return dedupe_committee_ids(expert1_id, expert2_id, director_faculty_id)
+
+    if committee_size == 1:
+        slots = [expert1_id]
+    elif committee_size == 2:
+        slots = [expert1_id, expert2_id]
+    else:
+        slots = [expert1_id, expert2_id, director_faculty_id]
+
+    return dedupe_committee_ids(*slots)
+
+
+async def is_tech_committee_configured(
+    db: AsyncSession, pr: PurchaseRequest, committee_size: Optional[int] = None
+) -> bool:
+    """Check if committee has enough configured members for the required committee_size.
+
+    At least committee_size members must be resolvable (≥1 required).
+    """
+    members = await get_tech_committee_member_ids(db, pr, committee_size)
+    required = committee_size or 1
+    return len(members) >= required
+
+
+async def get_committee_slot_info(
+    db: AsyncSession, pr: PurchaseRequest, committee_size: Optional[int] = None
+) -> List[dict]:
+    """
+    Return ordered slot info for the committee tracker display.
+    Each entry: {slot, role_label, user_id, user_name, user_designation}.
+    Only returns slots up to committee_size (or all 3 if None).
+    """
+    from app.models.user import User
+
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+
+    size = committee_size or 3
+    raw_slots = [
+        (1, expert1_id),
+        (2, expert2_id),
+        (3, director_faculty_id),
+    ][:size]
+
+    user_ids = [uid for _, uid in raw_slots if uid]
+    users_by_id: dict[int, User] = {}
+    if user_ids:
+        res = await db.execute(select(User).where(User.id.in_(user_ids)))
+        for u in res.scalars().all():
+            users_by_id[u.id] = u
+
+    slots = []
+    for slot_num, uid in raw_slots:
+        u = users_by_id.get(uid) if uid else None
+        slots.append({
+            "slot": slot_num,
+            "role_label": SLOT_LABELS[slot_num],
+            "user_id": uid,
+            "user_name": u.name if u else None,
+            "user_designation": u.designation if u else None,
+        })
+    return slots
 
 
 async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bool:
     """Persist resolved committee nominees onto the PR when fields are missing."""
     updated = False
-    
+
     if pr.committee_nominee_ids is None:
         if pr.administrative_approval_id:
             from app.models.administrative_approval import AdministrativeApproval
@@ -130,7 +187,7 @@ async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bo
             if aa and aa.nominees:
                 pr.committee_nominee_ids = [nom.nominee_id for nom in aa.nominees]
                 updated = True
-                
+
         if pr.committee_nominee_ids is None:
             budget_file = await _load_budget_file(db, pr)
             if budget_file and budget_file.nominee_ids:
@@ -145,9 +202,7 @@ async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bo
         pr.faculty2_id = expert2_id
         updated = True
     if not pr.faculty3_id and director_faculty_id:
-        # Only set if Director Nominee doesn't conflict with HOD nominees
         if director_faculty_id != pr.faculty1_id and director_faculty_id != pr.faculty2_id:
             pr.faculty3_id = director_faculty_id
             updated = True
     return updated
-

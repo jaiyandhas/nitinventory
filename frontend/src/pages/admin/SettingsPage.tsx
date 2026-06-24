@@ -1074,7 +1074,11 @@ export const SettingsPage: React.FC = () => {
                                             </span>
                                           ) : ['purchase_initiator', 'da_assigner', 'verifier_da', 'tech_evaluation'].includes(wf.user_type) ? (
                                             <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold uppercase tracking-wider">
-                                              Special: {wf.user_type}
+                                              {wf.user_type === 'purchase_initiator' ? 'Special: Purchase Initiator' :
+                                               wf.user_type === 'verifier_da' ? 'Special: Dealing Assistant' :
+                                               wf.user_type === 'da_assigner' ? 'Special: DA Assigner' :
+                                               wf.user_type === 'tech_evaluation' ? 'Special: Tech Evaluation' :
+                                               `Special: ${wf.user_type}`}
                                             </span>
                                           ) : (
                                             <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold uppercase tracking-wider">
@@ -1100,6 +1104,32 @@ export const SettingsPage: React.FC = () => {
                                           />
                                         </div>
                                         
+                                        {/* Committee size selector — only for tech_evaluation steps */}
+                                        {wf.user_type === 'tech_evaluation' && (
+                                          <div className="flex items-center gap-2 border-t border-slate-100 pt-2">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase">Required Committee Members:</span>
+                                            <select
+                                              aria-label="Required committee members"
+                                              value={wf.committee_size ?? ''}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateWfMutation.mutate({ id: wf.id, data: { committee_size: val ? Number(val) : null } });
+                                              }}
+                                              className="text-[11px] font-semibold bg-amber-50 border border-amber-300 rounded px-1.5 py-0.5 text-amber-800 cursor-pointer focus:outline-none focus:border-amber-500"
+                                            >
+                                              <option value="">Auto (all configured)</option>
+                                              <option value="1">1 — Technical Expert 1 (HOD Nominee) — Cat 1</option>
+                                              <option value="2">2 — Technical Expert 1 + 2 (HOD Nominees) — Cat 2</option>
+                                              <option value="3">3 — HOD Nominees + Director Nominee — Cat 3</option>
+                                            </select>
+                                            {wf.committee_size && (
+                                              <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
+                                                {wf.committee_size === 1 ? '1 HOD Expert' : wf.committee_size === 2 ? '2 HOD Experts' : '2 HOD + 1 Director'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+
                                         {!['purchase_initiator', 'da_assigner', 'verifier_da', 'tech_evaluation'].includes(wf.user_type) && (
                                           <div className="flex items-center gap-3">
                                             <div className="flex items-center gap-1">
