@@ -1100,6 +1100,10 @@ async def delete_budget_category(
         setting = Settings(key_name=key, value=",".join(existing))
         db.add(setting)
 
+    if type in ("source_of_fund", "expenditure"):
+        from sqlalchemy import delete
+        await db.execute(delete(SourceOfFund).where(SourceOfFund.name == value))
+
     # Remove from dean_cats metadata list if it exists there
     if type in ("source_of_fund", "expenditure"):
         if value in dean_cats.get("source_of_fund", []):

@@ -26,6 +26,12 @@ os.environ["DATABASE_URL"] = f"postgresql+asyncpg://nitinventory:nitinventory_se
 import app.core.database
 from app.core.database import Base
 
+@pytest.fixture(scope="session", autouse=True)
+def mock_email_service():
+    from unittest.mock import patch
+    with patch("app.services.email_service.EmailService._queue_email", return_value=None):
+        yield
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create a session-scoped event loop for tests."""
@@ -47,7 +53,7 @@ async def setup_test_database():
     await temp_engine.dispose()
 
     # Create test engine and sessionmaker inside the active event loop
-    test_engine = create_async_engine(os.environ["DATABASE_URL"], echo=True)
+    test_engine = create_async_engine(os.environ["DATABASE_URL"], echo=False)
     TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False, class_=AsyncSession)
     
     # Monkeypatch the database module

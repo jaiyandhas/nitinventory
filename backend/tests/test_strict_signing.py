@@ -53,7 +53,7 @@ async def test_strict_signing_and_nominee_locking(db_session):
     # Create PR
     pr = PurchaseRequest(
         amount=120000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=1,
         financial_year_id=1,

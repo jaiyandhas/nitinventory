@@ -112,6 +112,20 @@ async def test_administrative_approval_workflow(db_session):
         "remarks": "Recommended for purchase."
     }
     action_res = await action_aa(aa_id, hod_action_body, db_session, hod)
+    assert action_res["status"] == "Pending with Nominee 1"
+
+    # Nominee 1 (faculty) approves
+    action_res = await action_aa(aa_id, {"action": "Approve", "remarks": "Nominee 1 approved"}, db_session, faculty)
+    assert action_res["status"] == "Pending with Nominee 2"
+
+    # Nominee 2 (faculty) approves -> goes to Nominee 3
+    action_res = await action_aa(aa_id, {"action": "Approve", "remarks": "Nominee 2 approved"}, db_session, faculty)
+    assert action_res["status"] == "Pending with Nominee 3"
+
+    # Nominee 3 (director nominee) approves -> goes to ADPD
+    dir_nominee_res = await db_session.execute(select(User).where(User.id == faculty.department.director_faculty_id))
+    dir_nominee = dir_nominee_res.scalar_one()
+    action_res = await action_aa(aa_id, {"action": "Approve", "remarks": "Nominee 3 approved"}, db_session, dir_nominee)
     assert action_res["status"] == "Pending with ADPD"
 
     # 5. ADPD reviews and approves -> goes to Dean
@@ -348,6 +362,15 @@ async def test_administrative_approval_admin_endpoints(db_session):
     # 1. Reset workflows to default
     await reset_aa_workflows({"category_id": 1, "procurement_id": 1, "purchase_type": "department"}, db_session, admin_mock)
     
+    # Seed 3 custom steps to test with
+    from app.models.administrative_approval import AdministrativeApprovalWorkflow
+    db_session.add_all([
+        AdministrativeApprovalWorkflow(category_id=1, procurement_id=1, purchase_type="department", step_order=1, user_group="HOD", is_enabled=True),
+        AdministrativeApprovalWorkflow(category_id=1, procurement_id=1, purchase_type="department", step_order=2, user_group="ADPD", is_enabled=True),
+        AdministrativeApprovalWorkflow(category_id=1, procurement_id=1, purchase_type="department", step_order=3, user_group="Director", is_enabled=True),
+    ])
+    await db_session.flush()
+
     # 2. List workflows
     steps = await list_aa_workflows(db_session, admin_mock)
     my_steps = [s for s in steps if s["category_id"] == 1 and s["procurement_id"] == 1 and s["purchase_type"] == "department"]
@@ -485,7 +508,7 @@ async def test_duplicate_steps_and_nomineeless_routing(db_session):
         db_session.add(AdministrativeApprovalWorkflow(
             category_id=cat.id,
             procurement_id=proc.id,
-            purchase_type="department",
+            purchase_type="research",
             step_order=order,
             user_group=grp,
             is_enabled=True
@@ -533,6 +556,7 @@ async def test_duplicate_steps_and_nomineeless_routing(db_session):
         "generic_specification_declaration": True
     }
 
+    print("FACULTY DEPT EXPERTS:", faculty.department.expert1_id, faculty.department.expert2_id)
     create_res = await create_aa(body, db_session, faculty)
     assert create_res["message"] == "Administrative Approval request created successfully."
     aa_id = create_res["id"]
@@ -658,7 +682,7 @@ async def test_dynamic_workflow_realignment(db_session):
         step_obj = AdministrativeApprovalWorkflow(
             category_id=cat.id,
             procurement_id=proc.id,
-            purchase_type="department",
+            purchase_type="research",
             step_order=order,
             user_group=grp,
             is_enabled=True
@@ -832,7 +856,7 @@ async def test_workflow_realignment_insert_middle(db_session):
         step_obj = AdministrativeApprovalWorkflow(
             category_id=cat.id,
             procurement_id=proc.id,
-            purchase_type="department",
+            purchase_type="research",
             step_order=order,
             user_group=grp,
             is_enabled=True
@@ -916,7 +940,7 @@ async def test_workflow_realignment_insert_middle(db_session):
     ia_step = AdministrativeApprovalWorkflow(
         category_id=cat.id,
         procurement_id=proc.id,
-        purchase_type="department",
+        purchase_type="research",
         step_order=2,
         user_group="IA",
         is_enabled=True
@@ -999,7 +1023,7 @@ async def test_administrative_approval_source_of_fund_workflow_merging(db_sessio
     step1 = AdministrativeApprovalWorkflow(
         category_id=cat.id,
         procurement_id=proc.id,
-        purchase_type="department",
+        purchase_type="research",
         step_order=1,
         user_group="HOD",
         is_enabled=True,
@@ -1008,7 +1032,7 @@ async def test_administrative_approval_source_of_fund_workflow_merging(db_sessio
     step2 = AdministrativeApprovalWorkflow(
         category_id=cat.id,
         procurement_id=proc.id,
-        purchase_type="department",
+        purchase_type="research",
         step_order=2,
         user_group="ADPD",
         is_enabled=True,
@@ -1022,7 +1046,7 @@ async def test_administrative_approval_source_of_fund_workflow_merging(db_sessio
     step3 = AdministrativeApprovalWorkflow(
         category_id=None,
         procurement_id=None,
-        purchase_type="department",
+        purchase_type="research",
         step_order=3,
         user_group="Dean",
         is_enabled=True,

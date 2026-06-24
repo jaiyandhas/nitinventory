@@ -22,8 +22,6 @@ _DATA_RECORDING_STATUSES: frozenset = frozenset({
     "Rankings Set & Bid Selected",
     "Bidder Assessment Saved (Draft)",
     "Bidder Assessment Saved",
-    "PR Submitted",                          # recorded by initialize(); advance already handled
-    "Auto-advanced (PI is first assignee)",  # same — internal auto-advance marker
 })
 
 from app.models.purchase_request import (
@@ -165,10 +163,6 @@ class FlowEngineService:
         sorted_history = sorted(pr_history, key=lambda x: x.acted_at)
         for h in sorted_history:
             status_lower = h.status.lower() if h.status else ""
-            if "sent back" in status_lower or "returned" in status_lower:
-                approved_indices = set()
-                te_signed_user_ids = set()
-                continue
             # Phase transitions reset approved state — history from prior phases must not
             # pollute the current phase's step matching (e.g. indent PI auto-submit should
             # not count as the tendering PI step being completed).
@@ -188,7 +182,10 @@ class FlowEngineService:
                 continue
 
             # Record technical evaluation signatures.
-            is_te_signature = h_status_stripped.lower() in ("technical evaluation completed", "technical evaluation approved")
+            is_te_signature = (
+                h_status_stripped.lower() in ("technical evaluation completed", "technical evaluation approved")
+                and h.current_approver_id != pr.initiator_id
+            )
             if is_te_signature and h.current_approver_id:
                 te_signed_user_ids.add(h.current_approver_id)
                 # Check if this tech_evaluation step is now fully approved.
@@ -660,7 +657,17 @@ class FlowEngineService:
                 )
             committee_ids = await get_tech_committee_member_ids(self.db, pr, committee_size)
 
-            since = pr.te_initiated_at or pr.created_at or datetime.min
+            # Resolve the correct since-cutoff based on which phase this tech_evaluation step is in.
+            # For FS tech_eval steps, old TE-phase signatures must not count as approvals.
+            phase_res = await self.db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
+            step_phase = phase_res.scalar_one_or_none()
+            step_phase_name = step_phase.phase_name if step_phase else ""
+            if step_phase_name == "Technical Evaluation":
+                since = pr.te_initiated_at or pr.created_at or datetime.min
+            elif step_phase_name == "Financial Sanction":
+                since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+            else:
+                since = pr.created_at or datetime.min
             await self.db.refresh(pr, ["history"])
             approved_ids = {
                 h.current_approver_id for h in pr.history
@@ -670,9 +677,9 @@ class FlowEngineService:
             all_committee_signed = len(committee_ids) > 0 and set(committee_ids).issubset(approved_ids)
 
             if all_committee_signed:
-                if user.id != pr.initiator_id:
+                if user.id != pr.initiator_id and user.id not in committee_ids:
                     raise ValueError(
-                        "All committee members have submitted. Waiting for purchase initiator to confirm final vendor qualifications."
+                        "All committee members have submitted. Waiting for purchase initiator or committee members to advance."
                     )
                 return
 
@@ -817,8 +824,16 @@ class FlowEngineService:
 
         if is_tech_eval_step:
             await self.db.refresh(pr, ["history"])
-            # Check if this user has already logged an approval in the database for this step
-            since = pr.te_initiated_at or pr.created_at or datetime.min
+            # Determine the correct cutoff for this tech_evaluation step.
+            # In the TE phase, use te_initiated_at so TE signatures are counted.
+            # In any other phase (e.g. Financial Sanction), use that phase's start
+            # timestamp so OLD TE phase signatures are NOT counted as approvals.
+            if current_phase.phase_name == "Technical Evaluation":
+                since = pr.te_initiated_at or pr.created_at or datetime.min
+            elif current_phase.phase_name == "Financial Sanction":
+                since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+            else:
+                since = pr.created_at or datetime.min
             has_approval_log = any(
                 h.current_approver_id == acted_by.id
                 and h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
@@ -864,7 +879,10 @@ class FlowEngineService:
                 flow.step_order = next_step
                 pr.current_status = RequestStatus.IN_PROGRESS
                 if not is_tech_eval_step:
-                    await self._add_history(pr, acted_by, status or "Forwarded", remarks)
+                    default_status = "Forwarded"
+                    if current_phase.phase_name == "Technical Evaluation" and acted_by.id == pr.initiator_id:
+                        default_status = "Technical Evaluation Completed"
+                    await self._add_history(pr, acted_by, status or default_status, remarks)
 
                 # ── PARTIAL APPROVER AUTO-ADVANCE ──────────────────────────────
                 # If we just landed on a partial_approver step and the conditional
@@ -936,6 +954,10 @@ class FlowEngineService:
                         if next_phase.phase_name == "Technical Evaluation":
                             pr.te_initiated_at = datetime.utcnow()
                             await sync_tech_committee_to_pr(self.db, pr)
+                        # Record the start of Financial Sanction phase so TE signatures
+                        # are not re-used as FS tech_evaluation approvals.
+                        if next_phase.phase_name == "Financial Sanction":
+                            pr.fs_initiated_at = datetime.utcnow()
                         if not is_tech_eval_step:
                             await self._add_history(pr, acted_by, status or "Forwarded to next phase", remarks)
                 else:
@@ -1132,8 +1154,8 @@ class FlowEngineService:
 
         return True
 
-    async def send_back(self, pr: PurchaseRequest, acted_by: User, reason: str) -> None:
-        """Send the purchase request back to the immediately previous step in the current phase."""
+    async def send_back(self, pr: PurchaseRequest, acted_by: User, reason: str, to_step: Optional[int] = None) -> None:
+        """Send the purchase request back to the immediately previous step or a specific step in the current phase."""
         if pr.current_status == RequestStatus.BUDGET_FILE_ALLOCATION:
             raise ValueError("This request is currently paused waiting for Budget File Allocation.")
 
@@ -1144,19 +1166,21 @@ class FlowEngineService:
         await self.realign_pr_flow(pr)
         await self._validate_role(pr, acted_by, flow)
 
-        sof_id = await self.resolve_sof_id(pr, phase_id=flow.phase_id)
-        prev_step_res = await self.db.execute(
-            select(WorkFlowHierarchy).where(
-                and_(
-                    self._wf_filters(pr, flow.phase_id, sof_id=sof_id),
-                    WorkFlowHierarchy.step_order < flow.step_order,
-                )
-            ).order_by(WorkFlowHierarchy.step_order.desc()).limit(1)
-        )
-        prev_step_def = prev_step_res.scalar_one_or_none()
-        if not prev_step_def:
-            raise ValueError("There is no previous step in this phase to send back to.")
-        to_step = prev_step_def.step_order
+        if to_step is None:
+            sof_id = await self.resolve_sof_id(pr, phase_id=flow.phase_id)
+            prev_step_res = await self.db.execute(
+                select(WorkFlowHierarchy).where(
+                    and_(
+                        self._wf_filters(pr, flow.phase_id, sof_id=sof_id),
+                        WorkFlowHierarchy.step_order < flow.step_order,
+                    )
+                ).order_by(WorkFlowHierarchy.step_order.desc()).limit(1)
+            )
+            prev_step_def = prev_step_res.scalar_one_or_none()
+            if not prev_step_def:
+                raise ValueError("There is no previous step in this phase to send back to.")
+            to_step = prev_step_def.step_order
+
         pr.current_status = RequestStatus.SENT_BACK
         flow.step_order = to_step
         flow.rejected = False

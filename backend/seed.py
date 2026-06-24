@@ -992,7 +992,7 @@ async def seed():
         print("  Re-seeding all workflow steps to apply updates...")
         await db.execute(text("DELETE FROM workflow_hierarchies;"))
         seeded_count = 0
-        for ptype in ("department", "office"):
+        for ptype in ("research", "others"):
             for proc in procs:
                 proc_cats = categories.get(proc.id, categories)
                 for cat_key in ("cat1", "cat2", "cat3"):
@@ -1032,7 +1032,7 @@ async def seed():
         await db.execute(text("DELETE FROM administrative_approval_workflows;"))
         print("  Seeding default category-specific Administrative Approval workflow steps...")
         seeded_aa_count = 0
-        for ptype in ("department", "office"):
+        for ptype in ("research", "others"):
             for proc in procs:
                 proc_cats = categories.get(proc.id, categories)
                 for cat_key in ("cat1", "cat2", "cat3"):

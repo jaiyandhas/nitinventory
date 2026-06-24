@@ -28,7 +28,7 @@ async def test_cancel_tender_success(db_session):
     # Create active PR
     pr = PurchaseRequest(
         amount=100000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=1,
         financial_year_id=2,
@@ -87,7 +87,7 @@ async def test_cancel_po_success(db_session):
     # Create PO-issued PR
     pr = PurchaseRequest(
         amount=50000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=1,
         financial_year_id=2,
@@ -154,7 +154,7 @@ async def test_reinitiate_cancelled_pr(db_session):
     # Create cancelled PR
     pr = PurchaseRequest(
         amount=120000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=2,
         financial_year_id=2,
@@ -246,7 +246,7 @@ async def test_cancellation_permissions(db_session):
     # Create PR
     pr = PurchaseRequest(
         amount=10000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty_cse.id,
         category_id=1,
         financial_year_id=2,

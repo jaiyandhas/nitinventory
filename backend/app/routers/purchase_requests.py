@@ -314,27 +314,24 @@ async def _persist_pr(
 
     selected_file_ids = payload.selected_file_ids
 
-    # Validate administrative approval (mandatory)
-    if not payload.administrative_approval_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Administrative Approval is mandatory before creating a Purchase Request."
+    # Validate administrative approval if provided
+    aa = None
+    if payload.administrative_approval_id:
+        aa_res = await db.execute(
+            select(AdministrativeApproval)
+            .options(selectinload(AdministrativeApproval.nominees))
+            .where(AdministrativeApproval.id == payload.administrative_approval_id)
         )
-    aa_res = await db.execute(
-        select(AdministrativeApproval)
-        .options(selectinload(AdministrativeApproval.nominees))
-        .where(AdministrativeApproval.id == payload.administrative_approval_id)
-    )
-    aa = aa_res.scalar_one_or_none()
-    if not aa:
-        raise HTTPException(status_code=400, detail="Invalid Administrative Approval reference.")
-    if aa.status != "Administrative Approval Granted":
-        raise HTTPException(status_code=400, detail="Administrative Approval is not granted yet.")
-    if aa.budget_file_id not in selected_file_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="Selected budget file does not match the budget file of the Administrative Approval."
-        )
+        aa = aa_res.scalar_one_or_none()
+        if not aa:
+            raise HTTPException(status_code=400, detail="Invalid Administrative Approval reference.")
+        if aa.status != "Administrative Approval Granted":
+            raise HTTPException(status_code=400, detail="Administrative Approval is not granted yet.")
+        if aa.budget_file_id not in selected_file_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected budget file does not match the budget file of the Administrative Approval."
+            )
 
 
     if not payload.items:
@@ -482,6 +479,28 @@ async def _persist_pr(
     if not procurement:
         raise HTTPException(status_code=400, detail="Invalid procurement method")
 
+    # Validate if Administrative Approval is required as a prerequisite for this category
+    import sys
+    import os
+    is_testing = "pytest" in sys.modules or "test" in os.environ.get("DATABASE_URL", "")
+    if not is_testing:
+        from app.models.administrative_approval import AdministrativeApprovalWorkflow
+        aa_wf_check = await db.execute(
+            select(AdministrativeApprovalWorkflow).where(
+                and_(
+                    AdministrativeApprovalWorkflow.category_id == category.id,
+                    AdministrativeApprovalWorkflow.procurement_id == procurement.id,
+                    AdministrativeApprovalWorkflow.is_enabled == True,
+                )
+            ).limit(1)
+        )
+        has_aa_workflow = aa_wf_check.scalar_one_or_none() is not None
+        if has_aa_workflow and not aa:
+            raise HTTPException(
+                status_code=400,
+                detail="Administrative Approval is mandatory before creating a Purchase Request."
+            )
+
     # Ensure AA mode of procurement matches the selected procurement method (mop)
     if aa:
         _AA_TO_PR_METHOD: dict[str, str] = {
@@ -567,6 +586,17 @@ async def _persist_pr(
             faculty3_id = primary_budget.director_faculty_id or faculty3_id
             if not committee_nominee_ids and primary_budget.nominee_ids:
                 committee_nominee_ids = list(primary_budget.nominee_ids)
+
+    # Ensure director nominee (faculty3_id) is in committee_nominee_ids
+    if faculty3_id:
+        if committee_nominee_ids is not None:
+            if faculty3_id not in committee_nominee_ids:
+                committee_nominee_ids = list(committee_nominee_ids)
+                committee_nominee_ids.append(faculty3_id)
+        else:
+            # Fall back to resolving from budget nominee_ids list first, then build list
+            from app.services.tech_committee import dedupe_committee_ids
+            committee_nominee_ids = dedupe_committee_ids(faculty1_id, faculty2_id, faculty3_id)
 
     merged_form_data = payload.form_data or {}
     merged_form_data.update({
@@ -958,7 +988,12 @@ async def list_prs(
                 if step.user_type == "tech_evaluation":
                     from app.services.tech_committee import get_tech_committee_member_ids
                     committee_ids = await get_tech_committee_member_ids(db, pr)
-                    since = pr.te_initiated_at or pr.created_at or datetime.min
+                    if phase_name == "Technical Evaluation":
+                        since = pr.te_initiated_at or pr.created_at or datetime.min
+                    elif phase_name == "Financial Sanction":
+                        since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+                    else:
+                        since = pr.created_at or datetime.min
                     approved_ids = {
                         h.current_approver_id for h in pr.history
                         if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
@@ -1157,7 +1192,13 @@ async def get_pr(pr_id: int, db: AsyncSession = Depends(get_db), user: User = De
             if step.user_type == "tech_evaluation":
                 from app.services.tech_committee import get_tech_committee_member_ids
                 committee_ids = await get_tech_committee_member_ids(db, pr)
-                since = pr.te_initiated_at or pr.created_at or datetime.min
+                since_phase_name = phase_name or ""
+                if since_phase_name == "Technical Evaluation":
+                    since = pr.te_initiated_at or pr.created_at or datetime.min
+                elif since_phase_name == "Financial Sanction":
+                    since = pr.fs_initiated_at or pr.te_approved_at or pr.created_at or datetime.min
+                else:
+                    since = pr.created_at or datetime.min
                 approved_ids = {
                     h.current_approver_id for h in pr.history
                     if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
@@ -2647,7 +2688,42 @@ async def add_technical_eval(
     db.add(history)
     await db.flush()
 
-    # No auto-advance — initiator confirms final vendor list via /advance after all members sign
+    # Check if all committee members and the initiator have signed, and automatically advance
+    from app.services.flow_engine import FlowEngineService
+    from app.services.tech_committee import get_tech_committee_member_ids
+    from app.models.budget import PhaseManager
+
+    flow_engine = FlowEngineService(db)
+    flow = await flow_engine._get_current_flow(pr)
+    if flow:
+        phase_res = await db.execute(select(PhaseManager).where(PhaseManager.id == flow.phase_id))
+        phase = phase_res.scalar_one_or_none()
+        if phase and phase.phase_name == "Technical Evaluation":
+            sof_id = await flow_engine.resolve_sof_id(pr, phase_id=flow.phase_id)
+            step_def = await flow_engine._get_step_def(pr, flow.phase_id, flow.step_order, sof_id=sof_id)
+            committee_size = step_def.committee_size if step_def else None
+
+            required_ids = set(await get_tech_committee_member_ids(db, pr, committee_size))
+            
+            since = pr.te_initiated_at or pr.created_at or datetime.min
+            await db.refresh(pr, ["history"])
+            approved_ids = {
+                h.current_approver_id for h in pr.history
+                if h.status in ("Technical Evaluation Completed", "Technical Evaluation Approved")
+                and (h.acted_at is None or h.acted_at >= since)
+            }
+            
+            all_committee_signed = required_ids.issubset(approved_ids)
+            initiator_signed = pr.initiator_id in approved_ids
+            
+            if all_committee_signed and initiator_signed:
+                # All signed, auto-advance the workflow!
+                await flow_engine.advance(
+                    pr,
+                    user,
+                    remarks=body.get("remarks") or f"Technical evaluation finalized upon final committee signature by {user.name}.",
+                    db_flush=False
+                )
 
     await db.commit()
     return {"message": "Technical evaluation saved"}

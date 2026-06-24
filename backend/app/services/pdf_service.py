@@ -18,6 +18,7 @@ from app.models.purchase_request import (
     PurchaseRequest,
     PurchaseRequestItem,
     PurchaseRequestAssignment,
+    PurchaseRequestHistory,
     Document,
     PRReferral,
 )

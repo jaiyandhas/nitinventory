@@ -101,14 +101,18 @@ async def get_tech_committee_member_ids(
         2 → slots 1-2 (expert1, expert2)
         3 or None → all 3 slots
     """
+    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+
     if pr.committee_nominee_ids is not None:
         nominees = _parse_nominee_ids(pr.committee_nominee_ids)
         if nominees:
+            effective_size = committee_size or 3
+            if effective_size >= 3 and director_faculty_id and director_faculty_id not in nominees:
+                nominees = list(nominees)
+                nominees.append(director_faculty_id)
             if committee_size:
                 nominees = nominees[:committee_size]
             return dedupe_committee_ids(*nominees)
-
-    _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
 
     if committee_size == 1:
         slots = [expert1_id]
@@ -195,6 +199,21 @@ async def sync_tech_committee_to_pr(db: AsyncSession, pr: PurchaseRequest) -> bo
                 updated = True
 
     _, expert1_id, expert2_id, director_faculty_id = await resolve_tech_committee_ids(db, pr)
+
+    # Ensure director_faculty_id is included in committee_nominee_ids
+    if pr.committee_nominee_ids is not None:
+        nominees = _parse_nominee_ids(pr.committee_nominee_ids)
+        if director_faculty_id and director_faculty_id not in nominees:
+            nominees = list(nominees)
+            nominees.append(director_faculty_id)
+            pr.committee_nominee_ids = nominees
+            updated = True
+    else:
+        resolved_list = dedupe_committee_ids(expert1_id, expert2_id, director_faculty_id)
+        if resolved_list:
+            pr.committee_nominee_ids = resolved_list
+            updated = True
+
     if not pr.faculty1_id and expert1_id:
         pr.faculty1_id = expert1_id
         updated = True

@@ -19,7 +19,7 @@ async def test_workflow_flow_engine_lifecycle(db_session):
     # 1. Create Purchase Request
     pr = PurchaseRequest(
         amount=50000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=1,
         financial_year_id=1,
@@ -100,7 +100,7 @@ async def test_workflow_flow_engine_lifecycle(db_session):
     success = await flow_service.reject(pr, next_approver, reason="Budget limits exceeded")
     assert success is True
     await db_session.refresh(pr)
-    assert pr.current_status == RequestStatus.REJECTED
+    assert pr.current_status == RequestStatus.SENT_BACK
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_director_tender_approval_conditional_skipping(db_session):
 
     pr = PurchaseRequest(
         amount=250000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=2,
         financial_year_id=1,
@@ -226,16 +226,17 @@ async def test_technical_evaluation_committee_signatures(db_session):
     
     # 1. Create Purchase Request with assigned committee members
     pr = PurchaseRequest(
-        amount=250000.0,
-        purchase_type="department",
+        amount=1200000.0,
+        purchase_type="research",
         initiator_id=faculty.id,
-        category_id=2,  # Category 2 has TE step
+        category_id=3,  # Category 3 has TE step
         financial_year_id=1,
         procurement_id=1,
         current_status="draft",
         faculty1_id=faculty1.id,
         faculty2_id=faculty2.id,
         faculty3_id=vg.id,
+        te_initiated_at=datetime.utcnow(),
     )
     db_session.add(pr)
     await db_session.flush()
@@ -250,31 +251,31 @@ async def test_technical_evaluation_committee_signatures(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # First sign: Faculty 1
-    await flow_service.advance(pr, faculty1, remarks="Faculty 1 tech eval sign")
-    await db_session.refresh(flow)
-    await db_session.refresh(pr, ["history"])
-    assert flow.step_order == 1
-    
-    # Second sign: Faculty 2
-    await flow_service.advance(pr, faculty2, remarks="Faculty 2 tech eval sign")
-    await db_session.refresh(flow)
-    await db_session.refresh(pr, ["history"])
-    assert flow.step_order == 1
-    
-    # Third sign: VG (Director Nominee)
-    await flow_service.advance(pr, vg, remarks="VG tech eval sign")
-    await db_session.refresh(flow)
-    await db_session.refresh(pr, ["history"])
-    assert flow.step_order == 1
-    
-    # Fourth sign: Initiator (faculty) confirms and advances
+    # First sign: Initiator (faculty) submits bidder assessment and advances to step 2
     await flow_service.advance(pr, faculty, remarks="Initiator tech eval sign")
     await db_session.refresh(flow)
     await db_session.refresh(pr, ["history"])
-    
-    # Now all committee members and initiator have signed, and flow step order should have advanced to step 2 (HOD review)
     assert flow.step_order == 2
+    
+    # Second sign: Faculty 1
+    await flow_service.advance(pr, faculty1, remarks="Faculty 1 tech eval sign")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr, ["history"])
+    assert flow.step_order == 2
+    
+    # Third sign: Faculty 2
+    await flow_service.advance(pr, faculty2, remarks="Faculty 2 tech eval sign")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr, ["history"])
+    assert flow.step_order == 2
+    
+    # Fourth sign: VG (Director Nominee)
+    await flow_service.advance(pr, vg, remarks="VG tech eval sign")
+    await db_session.refresh(flow)
+    await db_session.refresh(pr, ["history"])
+    
+    # Now all committee members and initiator have signed, and flow step order should have advanced to step 3 (HOD review)
+    assert flow.step_order == 3
     
     # Check that initiator has a signature history log
     initiator_history = [h for h in pr.history if h.current_approver_id == faculty.id]
@@ -306,7 +307,7 @@ async def test_technical_evaluation_advance_after_prior_signature(db_session):
 
     pr = PurchaseRequest(
         amount=250000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=2,
         financial_year_id=1,
@@ -388,16 +389,17 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     
     # 1. Create Purchase Request
     pr = PurchaseRequest(
-        amount=250000.0,
-        purchase_type="department",
+        amount=1200000.0,
+        purchase_type="research",
         initiator_id=faculty.id,
-        category_id=2,
+        category_id=3,
         financial_year_id=1,
         procurement_id=1,
         current_status="draft",
         faculty1_id=faculty1.id,
         faculty2_id=faculty2.id,
         faculty3_id=vg.id,
+        te_initiated_at=datetime.utcnow(),
     )
     db_session.add(pr)
     await db_session.flush()
@@ -411,25 +413,25 @@ async def test_technical_evaluation_send_back_signature_reset(db_session):
     db_session.add(flow)
     await db_session.flush()
     
-    # Sign all in order to advance to step 2
+    # Sign all in order: PI first, then nominees
+    await flow_service.advance(pr, faculty, remarks="PI sign")
     await flow_service.advance(pr, faculty1, remarks="F1 sign")
     await flow_service.advance(pr, faculty2, remarks="F2 sign")
     await flow_service.advance(pr, vg, remarks="VG sign")
-    await flow_service.advance(pr, faculty, remarks="PI sign")
     await db_session.refresh(flow)
-    assert flow.step_order == 2
+    assert flow.step_order == 3
     
-    # Send back from step 2 (HOD review) to step 1 (Committee Evaluation)
-    await flow_service.send_back(pr, hod, to_step=1, reason="Need re-evaluation")
+    # Send back from step 3 (HOD review) to step 2 (Committee Evaluation)
+    await flow_service.send_back(pr, hod, to_step=2, reason="Need re-evaluation")
     await db_session.refresh(flow)
     await db_session.refresh(pr)
-    assert flow.step_order == 1
+    assert flow.step_order == 2
     assert pr.te_initiated_at is not None
     
     # Verify that signing out of order (e.g. Faculty 1 signing first) works (does NOT raise ValueError)
     await flow_service.advance(pr, faculty1, remarks="F1 signs first after reset")
     await db_session.refresh(flow)
-    assert flow.step_order == 1
+    assert flow.step_order == 2
     
     # Verify that trying to sign again raises ValueError
     with pytest.raises(ValueError, match="You have already signed"):
@@ -456,7 +458,7 @@ async def test_purchase_order_signature_validation(db_session):
     # Create Purchase Request
     pr = PurchaseRequest(
         amount=10000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=1,
         category_id=1,
         financial_year_id=1,
@@ -511,7 +513,7 @@ async def test_admin_approval_send_back_signature_voiding(db_session):
     # Create Purchase Request
     pr = PurchaseRequest(
         amount=250000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=2,
         financial_year_id=1,
@@ -527,14 +529,19 @@ async def test_admin_approval_send_back_signature_voiding(db_session):
     # 1. HOD Approves (Step 2 -> Step 3)
     pr = await flow_service.advance(pr, hod, remarks="HOD approved")
     
-    await db_session.refresh(pr, ["history", "flow"])
-    assert pr.flow.step_order == 3  # At Dean step
+    flow_res = await db_session.execute(select(PurchaseRequestFlow).where(PurchaseRequestFlow.purchase_request_id == pr.id))
+    flow = flow_res.scalar_one()
+
+    await db_session.refresh(pr, ["history"])
+    await db_session.refresh(flow)
+    assert flow.step_order == 3  # At Dean step
 
     # 2. Dean sends back to HOD (Step 2)
     await flow_service.send_back(pr, dean, to_step=2, reason="Need more specs")
-    await db_session.refresh(pr, ["history", "flow"])
+    await db_session.refresh(pr, ["history"])
+    await db_session.refresh(flow)
 
-    assert pr.flow.step_order == 2
+    assert flow.step_order == 2
     assert pr.current_status == RequestStatus.SENT_BACK
 
     # Verify that HOD's previous approval is marked as Voided

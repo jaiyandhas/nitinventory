@@ -40,7 +40,7 @@ async def test_multiple_superintendents_tendering_flow(db_session):
 
     pr = PurchaseRequest(
         amount=150000.0,
-        purchase_type="department",
+        purchase_type="research",
         initiator_id=faculty.id,
         category_id=2,  # Category 2 has tendering phase
         financial_year_id=1,
