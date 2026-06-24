@@ -9,6 +9,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from fastapi import BackgroundTasks
 
+# Statuses that represent data-recording actions (not step approvals).
+# These entries are written to history by the DA/PI during data-entry side-effects
+# (e.g. scheduling a tender, registering bidder data) but must NOT be counted as
+# step completions by realign_pr_flow, otherwise the flow jumps ahead before the
+# actor calls /advance.
+_DATA_RECORDING_STATUSES: frozenset = frozenset({
+    "Tender Scheduled",
+    "Tender Details Registered",
+    "Tender Details Saved",
+    "Financial Bids Submitted",
+    "Rankings Set & Bid Selected",
+    "Bidder Assessment Saved (Draft)",
+    "Bidder Assessment Saved",
+    "PR Submitted",                          # recorded by initialize(); advance already handled
+    "Auto-advanced (PI is first assignee)",  # same — internal auto-advance marker
+})
+
 from app.models.purchase_request import (
     PurchaseRequest, PurchaseRequestFlow, PurchaseRequestHistory,
     WorkFlowHierarchy, RequestStatus,
@@ -162,9 +179,16 @@ class FlowEngineService:
             if "rejected" in status_lower or "voided" in status_lower:
                 continue
 
+            # Skip data-recording entries — these are side-effect writes (e.g. DA schedules
+            # a tender, PI saves bidder assessment) that must NOT be treated as step approvals.
+            # If we matched them, the actor's role would falsely count as a completed step and
+            # push the flow pointer forward before /advance is called.
+            h_status_stripped = h.status.strip() if h.status else ""
+            if h_status_stripped in _DATA_RECORDING_STATUSES:
+                continue
+
             # Record technical evaluation signatures.
-            h_status = h.status.strip() if h.status else ""
-            is_te_signature = h_status.lower() in ("technical evaluation completed", "technical evaluation approved")
+            is_te_signature = h_status_stripped.lower() in ("technical evaluation completed", "technical evaluation approved")
             if is_te_signature and h.current_approver_id:
                 te_signed_user_ids.add(h.current_approver_id)
                 # Check if this tech_evaluation step is now fully approved.
