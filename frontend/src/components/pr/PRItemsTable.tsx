@@ -1,6 +1,7 @@
 import React from 'react';
 import { Award } from 'lucide-react';
 import { PurchaseRequest } from '../../types';
+import { RemarksCell } from '../common/RemarksCell';
 
 interface PRItemsTableProps {
   pr: PurchaseRequest;
@@ -101,7 +102,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                     {pr.commercial_evaluations.map(ce => (
                       <tr key={ce.id} className="border-b border-slate-50">
                         <td className="px-3 py-2 font-medium">{ce.vendor_name}</td>
-                        <td className="px-3 py-2 text-slate-500 italic">{ce.remarks || '-'}</td>
+                        <td className="px-3 py-2 w-[180px] max-w-[180px]"><RemarksCell text={ce.remarks} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -131,7 +132,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                             {te.is_qualified ? 'Yes' : 'No'}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-slate-500 italic">{te.remarks || '-'}</td>
+                        <td className="px-3 py-2 w-[180px] max-w-[180px]"><RemarksCell text={te.remarks} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -178,7 +179,7 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                               {fe.ranking}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-slate-500 italic">{fe.remarks || '-'}</td>
+                          <td className="px-3 py-2 w-[180px] max-w-[180px]"><RemarksCell text={fe.remarks} /></td>
                         </tr>
                       );
                     })}
@@ -221,8 +222,8 @@ export const PRItemsTable: React.FC<PRItemsTableProps> = ({ pr, formatCurrency }
                               {te.is_qualified && fe ? fe.ranking : '-'}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-slate-500 italic">
-                            {te.remarks || fe?.remarks || '-'}
+                          <td className="px-3 py-2 w-[180px] max-w-[180px]">
+                            <RemarksCell text={te.remarks || fe?.remarks} />
                           </td>
                         </tr>
                       );

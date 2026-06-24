@@ -79,14 +79,30 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             selectinload(BudgetMaster.allocated_initiator),
             selectinload(BudgetMaster.department).selectinload(Department.expert1),
             selectinload(BudgetMaster.department).selectinload(Department.expert2),
+            selectinload(BudgetMaster.department).selectinload(Department.director_faculty),
             selectinload(BudgetMaster.expert1),
             selectinload(BudgetMaster.expert2),
+            selectinload(BudgetMaster.director_faculty),
             selectinload(BudgetMaster.financial_year)
         )
         .where(and_(*filters))
     )
     result = await db.execute(query)
     entries = result.scalars().all()
+
+    # Fetch one HOD per department for committee display
+    dept_ids = list({b.department_id for b in entries if b.department_id})
+    hod_map: dict = {}
+    if dept_ids:
+        hod_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(and_(User.department_id.in_(dept_ids), RoleManager.group_key == "hod"))
+        )
+        for hod_user in hod_res.scalars().all():
+            if hod_user.department_id not in hod_map:
+                hod_map[hod_user.department_id] = hod_user.name
+
     return [
         {
             "id": b.id, "item_name": b.item_name, "category": b.category,
@@ -109,10 +125,13 @@ async def get_budget_files(db: AsyncSession = Depends(get_db), user: User = Depe
             "principal_investigator": b.principal_investigator,
             "project_due_date": b.project_due_date.isoformat() if b.project_due_date else None,
             "source_of_fund": b.source_of_fund,
+            "hod_name": hod_map.get(b.department_id),
             "expert1_id": b.expert1_id or (b.department.expert1_id if b.department else None),
             "expert1_name": b.expert1.name if b.expert1 else (b.department.expert1.name if b.department and b.department.expert1 else None),
             "expert2_id": b.expert2_id or (b.department.expert2_id if b.department else None),
             "expert2_name": b.expert2.name if b.expert2 else (b.department.expert2.name if b.department and b.department.expert2 else None),
+            "director_faculty_id": b.director_faculty_id or (b.department.director_faculty_id if b.department else None),
+            "director_faculty_name": b.director_faculty.name if b.director_faculty else (b.department.director_faculty.name if b.department and b.department.director_faculty else None),
             "department": b.department.name if b.department else None,
             "financial_year": b.financial_year.label if b.financial_year else None,
             "attachment_path": b.attachment_path,

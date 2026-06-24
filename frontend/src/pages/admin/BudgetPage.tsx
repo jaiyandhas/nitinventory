@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatFileNo } from '../../utils/format';
 import { toast } from 'react-hot-toast';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { RemarksCell } from '../../components/common/RemarksCell';
 
 export const BudgetPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -673,12 +674,8 @@ export const BudgetPage: React.FC = () => {
                           <div className="text-[10px] text-slate-500 font-mono">{formatCurrency(b.unit_cost)} &times; {b.quantity}</div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 max-w-[120px] truncate" title={b.remarks || ''}>
-                        {b.remarks ? (
-                          <span className="text-xs text-slate-600 italic">{b.remarks}</span>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
+                      <td className="px-3 py-3 w-[140px] max-w-[140px]">
+                        <RemarksCell text={b.remarks} title="Budget Remarks" />
                       </td>
                       {isWriteAllowed && (
                         <td className="px-3 py-3">

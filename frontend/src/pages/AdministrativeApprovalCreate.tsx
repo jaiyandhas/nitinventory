@@ -7,6 +7,35 @@ import { budgetApi, aaApi } from '../services/api';
 import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
 
+const numberToWordsINR = (num: number): string => {
+  const a = ['', 'one ', 'two ', 'three ', 'four ', 'five ', 'six ', 'seven ', 'eight ', 'nine ', 'ten ', 'eleven ', 'twelve ', 'thirteen ', 'fourteen ', 'fifteen ', 'sixteen ', 'seventeen ', 'eighteen ', 'nineteen '];
+  const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const numToWords = (n: number): string => {
+    if (n < 20) return a[n];
+    const d = n % 10;
+    return b[Math.floor(n / 10)] + (d ? '-' + a[d] : '');
+  };
+  const convert = (n: number): string => {
+    if (n === 0) return 'zero';
+    let s = '';
+    const cr = Math.floor(n / 10000000); n %= 10000000;
+    if (cr > 0) s += numToWords(cr) + ' crore ';
+    const lk = Math.floor(n / 100000); n %= 100000;
+    if (lk > 0) s += numToWords(lk) + ' lakh ';
+    const th = Math.floor(n / 1000); n %= 1000;
+    if (th > 0) s += numToWords(th) + ' thousand ';
+    const hu = Math.floor(n / 100); n %= 100;
+    if (hu > 0) s += numToWords(hu) + ' hundred ';
+    if (n > 0) { if (s) s += 'and '; s += numToWords(n) + ' '; }
+    return s.trim();
+  };
+  const intPart = Math.floor(num);
+  const dec = Math.round((num - intPart) * 100);
+  let result = convert(intPart) + ' rupees';
+  if (dec > 0) result += ' and ' + convert(dec) + ' paise';
+  return result.replace(/\s+/g, ' ').trim() + ' only';
+};
+
 export const AdministrativeApprovalCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -34,7 +63,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
   }
 
   const [itemsList, setItemsList] = useState<ItemDetail[]>([
-    { id: Date.now().toString(), description: '', qty: 1, unitCost: 0, gstRate: 18 }
+    { id: Date.now().toString(), description: '', qty: 1, unitCost: 0, gstRate: 0 }
   ]);
   const [modeOfProcurement, setModeOfProcurement] = useState('GeM');
   const [justification, setJustification] = useState('');
@@ -58,8 +87,8 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
   const [declEligibility, setDeclEligibility] = useState(false);
   const [declDemandDivision, setDeclDemandDivision] = useState(false);
 
-  // GEM sub-classification for special modes
-  const [gemSubCategory, setGemSubCategory] = useState<'GEM' | 'Not GEM'>('GEM');
+  // Sub-procurement method: applies to modes that can be done via GeM, outside GeM, or via CPPP
+  const [subProcurementMethod, setSubProcurementMethod] = useState<'gem' | 'outside_gem' | 'cppp'>('outside_gem');
 
   // Fetch PI budget allocations
   const { data: budgetFiles = [], isLoading: loadingBudgets } = useQuery({
@@ -80,7 +109,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
         description: selectedBudget.item_name || '',
         qty: selectedBudget.quantity || 1,
         unitCost: selectedBudget.unit_cost || 0,
-        gstRate: 18
+        gstRate: 0
       }]);
     }
   }, [selectedBudget]);
@@ -110,10 +139,23 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
     return calculatedValues.totalCost <= selectedBudget.available_amount;
   }, [selectedBudget, calculatedValues]);
 
-  const GEM_SUB_MODES = ['PAC', 'Limited Tender Enquiry', 'Nomination', 'Global Tender Enquiry'];
-  const needsGemSubCategory = GEM_SUB_MODES.includes(modeOfProcurement);
-  // Effectively not using GeM: mode is not 'GeM', and either it's not a special mode or user chose 'Not GEM'
-  const isEffectivelyNotGem = modeOfProcurement !== 'GeM' && (!needsGemSubCategory || gemSubCategory === 'Not GEM');
+  // Modes that need a sub-method question (GeM / Outside GeM / CPPP)
+  const SUB_METHOD_MODES = ['PAC', 'Limited Tender Enquiry', 'Nomination', 'Global Tender Enquiry', 'Direct Purchase (GFR 154)', 'Committee purchase (GFR 155)'];
+  const needsSubMethod = SUB_METHOD_MODES.includes(modeOfProcurement);
+  const isPureGem = modeOfProcurement === 'GeM';
+
+  // Document requirement flags derived from (mode × sub_method)
+  const showGemNonAvail = needsSubMethod
+    ? subProcurementMethod === 'outside_gem'
+    : !isPureGem; // CPPP standalone → true; GeM standalone → false
+
+  const showAuthorityApproval = needsSubMethod
+    ? (subProcurementMethod === 'cppp' ||
+       (subProcurementMethod === 'outside_gem' && ['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)', 'Global Tender Enquiry'].includes(modeOfProcurement)) ||
+       (subProcurementMethod === 'gem' && ['PAC', 'Nomination'].includes(modeOfProcurement)))
+    : ['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)'].includes(modeOfProcurement);
+
+  const showPacCerts = modeOfProcurement === 'PAC' && (!needsSubMethod || subProcurementMethod === 'outside_gem');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,16 +203,15 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
       toast.error('Basis of estimation file must be attached.');
       return;
     }
-    if (isEffectivelyNotGem && !gemNonAvailabilityFile) {
+    if (showGemNonAvail && !gemNonAvailabilityFile) {
       toast.error('GeM Non-Availability report is required for procurement outside GeM.');
       return;
     }
-    const needsAuthorityApproval = ['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)'].includes(modeOfProcurement);
-    if (needsAuthorityApproval && !authorityApprovalFile) {
-      toast.error('Basic approval from competent authority must be attached.');
+    if (showAuthorityApproval && !authorityApprovalFile) {
+      toast.error(subProcurementMethod === 'cppp' ? 'CPPP NIT document must be attached.' : 'Basic approval from competent authority must be attached.');
       return;
     }
-    if (modeOfProcurement === 'PAC') {
+    if (showPacCerts) {
       if (!pacDeptCertFile || !pacVendorCertFile) {
         toast.error('Both department and vendor PAC certificates must be attached.');
         return;
@@ -203,6 +244,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
         total_cost: calculatedValues.totalCost,
         gst_amount: calculatedValues.gstAmount,
         mode_of_procurement: modeOfProcurement,
+        sub_procurement_method: needsSubMethod ? subProcurementMethod : null,
         justification,
         item_category: itemCategory,
         stock_availability: stockAvailable,
@@ -420,6 +462,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                               min="1"
                               value={item.qty || ''}
                               onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, qty: Math.max(1, parseInt(e.target.value) || 0) } : i))}
+                              onWheel={(e) => (e.target as HTMLInputElement).blur()}
                               style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
                               required
                             />
@@ -429,9 +472,11 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                               type="number"
                               min="0"
                               step="0.01"
-                              value={item.unitCost || ''}
+                              value={item.unitCost === 0 ? '' : item.unitCost}
                               onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, unitCost: parseFloat(e.target.value) || 0 } : i))}
+                              onWheel={(e) => (e.target as HTMLInputElement).blur()}
                               style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
+                              placeholder="0.00"
                               required
                             />
                           </td>
@@ -441,9 +486,11 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                               min="0"
                               max="100"
                               step="0.1"
-                              value={item.gstRate || ''}
+                              value={item.gstRate === 0 ? '' : item.gstRate}
                               onChange={(e) => setItemsList(itemsList.map(i => i.id === item.id ? { ...i, gstRate: parseFloat(e.target.value) || 0 } : i))}
+                              onWheel={(e) => (e.target as HTMLInputElement).blur()}
                               style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: '12.5px', fontFamily: 'inherit' }}
+                              placeholder="0"
                               required
                             />
                           </td>
@@ -466,9 +513,10 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                     {formatCurrency(calculatedValues.totalCost).replace('₹', '')}
                   </span>
                 </div>
-                <div style={{ fontStyle: 'italic', fontSize: '11px', color: '#555' }}>
-                  Grand Total (in words): <span style={{ fontWeight: 'normal', borderBottom: '1px solid #ccc', paddingBottom: '2px', display: 'inline-block', minWidth: '300px', textAlign: 'left' }}>
-                    {/* Add words conversion logic later if needed, left blank as placeholder for now */}
+                <div style={{ fontStyle: 'italic', fontSize: '11px', color: '#555', textAlign: 'left' }}>
+                  <strong>Grand Total (in words):</strong>{' '}
+                  <span style={{ textTransform: 'capitalize' }}>
+                    {calculatedValues.totalCost > 0 ? numberToWordsINR(calculatedValues.totalCost) : '—'}
                   </span>
                 </div>
               </div>
@@ -583,7 +631,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Mode of Procurement <span className="text-rose-500">*</span></label>
                   <select
                     value={modeOfProcurement}
-                    onChange={(e) => { setModeOfProcurement(e.target.value); setGemSubCategory('GEM'); }}
+                    onChange={(e) => { setModeOfProcurement(e.target.value); setSubProcurementMethod('outside_gem'); }}
                     className="w-full border border-slate-300 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a3a6b] bg-white"
                     required
                   >
@@ -598,20 +646,20 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   </select>
                 </div>
 
-                {/* GEM / Not GEM sub-classification for special modes */}
-                {needsGemSubCategory && (
+                {/* Sub-procurement method: applies for PAC, LTE, Nomination, GTE, Direct Purchase, Committee */}
+                {needsSubMethod && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
                     <label className="block text-xs font-semibold text-slate-700">
-                      Will this {modeOfProcurement} procurement be done via GeM Portal or outside GeM? <span className="text-rose-500">*</span>
+                      Will this <span className="font-bold">{modeOfProcurement}</span> procurement be done via GeM Portal, outside GeM, or via CPPP? <span className="text-rose-500">*</span>
                     </label>
-                    <div className="flex gap-6">
+                    <div className="flex flex-wrap gap-6">
                       <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                         <input
                           type="radio"
-                          name="gemSubCategory"
-                          value="GEM"
-                          checked={gemSubCategory === 'GEM'}
-                          onChange={() => setGemSubCategory('GEM')}
+                          name="subProcurementMethod"
+                          value="gem"
+                          checked={subProcurementMethod === 'gem'}
+                          onChange={() => setSubProcurementMethod('gem')}
                           className="accent-[#1a3a6b]"
                         />
                         Via GeM Portal
@@ -619,23 +667,39 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                       <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                         <input
                           type="radio"
-                          name="gemSubCategory"
-                          value="Not GEM"
-                          checked={gemSubCategory === 'Not GEM'}
-                          onChange={() => setGemSubCategory('Not GEM')}
+                          name="subProcurementMethod"
+                          value="outside_gem"
+                          checked={subProcurementMethod === 'outside_gem'}
+                          onChange={() => setSubProcurementMethod('outside_gem')}
                           className="accent-[#1a3a6b]"
                         />
-                        Outside GeM (Not via GeM)
+                        Outside GeM
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="subProcurementMethod"
+                          value="cppp"
+                          checked={subProcurementMethod === 'cppp'}
+                          onChange={() => setSubProcurementMethod('cppp')}
+                          className="accent-[#1a3a6b]"
+                        />
+                        Via CPPP
                       </label>
                     </div>
-                    {gemSubCategory === 'GEM' && (
+                    {subProcurementMethod === 'gem' && (
                       <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
-                        Procurement will be processed through the Government e-Marketplace. Justify why {modeOfProcurement} is being used via GeM for this item.
+                        Procurement will be processed through the <strong>Government e-Marketplace (GeM)</strong>. Justify why {modeOfProcurement} via GeM is the appropriate method.
                       </p>
                     )}
-                    {gemSubCategory === 'Not GEM' && (
+                    {subProcurementMethod === 'outside_gem' && (
                       <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                        Procurement is outside GeM. A <strong>GeM Non-Availability Report</strong> is mandatory. Justify why GeM cannot be used and why {modeOfProcurement} is the chosen method.
+                        Procurement is <strong>outside GeM</strong>. A <strong>GeM Non-Availability Report</strong> is mandatory. Justify why GeM cannot be used and why {modeOfProcurement} is the chosen method.
+                      </p>
+                    )}
+                    {subProcurementMethod === 'cppp' && (
+                      <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 rounded px-3 py-2">
+                        Procurement will be processed through the <strong>Central Public Procurement Portal (CPPP)</strong>. Attach the CPPP NIT document.
                       </p>
                     )}
                   </div>
@@ -643,10 +707,12 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {needsGemSubCategory
-                      ? (gemSubCategory === 'GEM'
-                          ? `Justification for ${modeOfProcurement} via GeM`
-                          : `Justification for ${modeOfProcurement} outside GeM`)
+                    {needsSubMethod
+                      ? subProcurementMethod === 'gem'
+                        ? `Justification for ${modeOfProcurement} via GeM`
+                        : subProcurementMethod === 'cppp'
+                        ? `Justification for ${modeOfProcurement} via CPPP`
+                        : `Justification for ${modeOfProcurement} outside GeM`
                       : 'Justification for Purchase'
                     }
                     {' '}<span className="text-rose-500">*</span>
@@ -654,10 +720,12 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   <textarea
                     rows={3}
                     placeholder={
-                      needsGemSubCategory
-                        ? (gemSubCategory === 'GEM'
-                            ? `Explain why ${modeOfProcurement} via GeM is the appropriate procurement method for this item...`
-                            : `Explain why GeM is not applicable and why ${modeOfProcurement} outside GeM is being chosen. Include details about non-availability on GeM...`)
+                      needsSubMethod
+                        ? subProcurementMethod === 'gem'
+                          ? `Explain why ${modeOfProcurement} via GeM is the appropriate procurement method for this item...`
+                          : subProcurementMethod === 'cppp'
+                          ? `Explain why ${modeOfProcurement} via CPPP is the appropriate method and provide CPPP tender details...`
+                          : `Explain why GeM is not applicable and why ${modeOfProcurement} outside GeM is being chosen. Include details about non-availability on GeM...`
                         : 'Enter detailed reason and justification for selecting this item and procurement mode...'
                     }
                     value={justification}
@@ -690,8 +758,8 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   />
                 </div>
 
-                {/* GeM Non-Availability (Required for non-GeM; for special modes, only when 'Not GEM' chosen) */}
-                {isEffectivelyNotGem && (
+                {/* GeM Non-Availability (required when outside_gem sub-method, or non-GeM standalone modes) */}
+                {showGemNonAvail && (
                   <div className="border border-rose-100 rounded-lg p-3 bg-rose-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-slate-800">GeM Non-Availability Report <span className="text-rose-500">*</span></label>
@@ -702,17 +770,27 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                       accept=".pdf,.png,.jpg,.jpeg"
                       onChange={(e) => setGemNonAvailabilityFile(e.target.files?.[0] || null)}
                       className="text-xs text-slate-600"
-                      required={isEffectivelyNotGem}
+                      required={showGemNonAvail}
                     />
                   </div>
                 )}
 
-                {/* Competent Authority Approval (for PAC, Nomination, Committee, Direct Purchase) */}
-                {['PAC', 'Nomination', 'Committee purchase (GFR 155)', 'Direct Purchase (GFR 154)'].includes(modeOfProcurement) && (
+                {/* Competent Authority Approval / CPPP NIT Document */}
+                {showAuthorityApproval && (
                   <div className="border border-amber-100 rounded-lg p-3 bg-amber-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                      <label className="block text-sm font-semibold text-slate-800">Competent Authority Basic Approval <span className="text-rose-500">*</span></label>
-                      <p className="text-xs text-amber-800/90 font-medium">Mandatory. A separate basic approval from the competent authority has to be attached.</p>
+                      <label className="block text-sm font-semibold text-slate-800">
+                        {subProcurementMethod === 'cppp'
+                          ? 'CPPP NIT Document'
+                          : 'Competent Authority Basic Approval'
+                        } <span className="text-rose-500">*</span>
+                      </label>
+                      <p className="text-xs text-amber-800/90 font-medium">
+                        {subProcurementMethod === 'cppp'
+                          ? 'Mandatory. Attach the CPPP NIT (Notice Inviting Tender) document.'
+                          : 'Mandatory. A separate basic approval from the competent authority has to be attached.'
+                        }
+                      </p>
                     </div>
                     <input
                       type="file"
@@ -724,8 +802,8 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   </div>
                 )}
 
-                {/* PAC Certificates */}
-                {modeOfProcurement === 'PAC' && (
+                {/* PAC Certificates — only for PAC outside GeM */}
+                {showPacCerts && (
                   <div className="border border-indigo-100 rounded-lg p-4 bg-indigo-50/20 space-y-3">
                     <span className="block text-xs font-bold text-indigo-800 uppercase tracking-wider">PAC Compliance Certificates</span>
                     
@@ -739,7 +817,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(e) => setPacDeptCertFile(e.target.files?.[0] || null)}
                         className="text-xs text-slate-600"
-                        required={modeOfProcurement === 'PAC'}
+                        required={showPacCerts}
                       />
                     </div>
 
@@ -753,7 +831,7 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(e) => setPacVendorCertFile(e.target.files?.[0] || null)}
                         className="text-xs text-slate-600"
-                        required={modeOfProcurement === 'PAC'}
+                        required={showPacCerts}
                       />
                     </div>
                   </div>
@@ -784,12 +862,12 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                 <strong>Certified that:</strong>
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: declEligibility ? 'default' : 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
                   <input
                     type="checkbox"
                     checked={declEligibility}
-                    onChange={(e) => setDeclEligibility(e.target.checked)}
-                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: 'pointer' }}
+                    onChange={(e) => { if (e.target.checked) setDeclEligibility(true); }}
+                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: declEligibility ? 'default' : 'pointer' }}
                     required
                   />
                   <span>
@@ -797,12 +875,12 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
                   </span>
                 </label>
 
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: declDemandDivision ? 'default' : 'pointer', fontSize: '12.5px', color: '#000', lineHeight: '1.6' }}>
                   <input
                     type="checkbox"
                     checked={declDemandDivision}
-                    onChange={(e) => setDeclDemandDivision(e.target.checked)}
-                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: 'pointer' }}
+                    onChange={(e) => { if (e.target.checked) setDeclDemandDivision(true); }}
+                    style={{ marginTop: '3px', flexShrink: 0, width: '14px', height: '14px', cursor: declDemandDivision ? 'default' : 'pointer' }}
                     required
                   />
                   <span>
@@ -812,39 +890,88 @@ export const AdministrativeApprovalCreatePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Committee Note */}
-            <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
-              <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '10px', color: '#000' }}>
-                Note – Purchase Committee
-              </div>
-              <p style={{ fontSize: '12px', color: '#555', marginBottom: '8px', fontStyle: 'italic' }}>
-                The following committee may finalize the above purchase:
-              </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', color: '#000' }}>
-                <tbody>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', width: '30%', background: '#f7f7f7' }}>HOD</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>(As per department, nominated by Director)</td>
-                  </tr>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Purchase Indentor</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{user?.name || '—'}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Technical Expert 1 (Nominated by HOD)</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget?.expert1_name || '(To be nominated by HOD)'}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Technical Expert 2 (Nominated by HOD)</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{selectedBudget?.expert2_name || '(To be nominated by HOD)'}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold', background: '#f7f7f7' }}>Internal Auditor (IA)</td>
-                    <td style={{ border: '1px solid #000', padding: '4px 8px' }}>(As per institutional roster)</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {/* Committee Note – dynamic based on estimated total cost */}
+            {(() => {
+              const cost = calculatedValues.totalCost;
+              // Committee composition thresholds (as per NIT institutional norms):
+              // ≤ 2L       : HOD + PI
+              // 2L – 10L   : HOD + PI + Expert 1 + AR/DR
+              // 10L – 30L  : HOD + PI + Expert 1 + Expert 2 + AR/DR + IA
+              // > 30L      : HOD + PI + Expert 1 + Expert 2 + Director Nominee + AR/DR + IA
+              const L = 100000;
+              const show1Expert = cost > 2 * L;
+              const show2Expert = cost > 10 * L;
+              const showDirectorNominee = cost > 30 * L;
+              const showArDr = cost > 2 * L;
+              const showIA = cost > 10 * L;
+
+              const cellB = { border: '1px solid #000', padding: '4px 8px', fontWeight: 'bold' as const, width: '38%', background: '#f7f7f7' } as React.CSSProperties;
+              const cellV = { border: '1px solid #000', padding: '4px 8px' } as React.CSSProperties;
+
+              return (
+                <div style={{ background: '#fff', border: '1px solid #888', padding: '14px 16px', fontFamily: 'Times New Roman, Times, serif' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '10px', color: '#000' }}>
+                    Note – Purchase Committee
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#555', marginBottom: '8px', fontStyle: 'italic' }}>
+                    The following committee may finalize the above purchase
+                    {cost > 0 ? ` (estimated: ${formatCurrency(cost)})` : ''}:
+                  </p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', color: '#000' }}>
+                    <tbody>
+                      <tr>
+                        <td style={cellB}>HOD</td>
+                        <td style={cellV}>{selectedBudget?.hod_name || '(As per department, nominated by Director)'}</td>
+                      </tr>
+                      <tr>
+                        <td style={cellB}>Purchase Indentor</td>
+                        <td style={cellV}>{user?.name || '—'}</td>
+                      </tr>
+                      {show1Expert && (
+                        <tr>
+                          <td style={cellB}>Technical Expert 1 (Nominated by HOD)</td>
+                          <td style={cellV}>{selectedBudget?.expert1_name || '(To be nominated by HOD)'}</td>
+                        </tr>
+                      )}
+                      {show2Expert && (
+                        <tr>
+                          <td style={cellB}>Technical Expert 2 (Nominated by HOD)</td>
+                          <td style={cellV}>{selectedBudget?.expert2_name || '(To be nominated by HOD)'}</td>
+                        </tr>
+                      )}
+                      {showDirectorNominee && (
+                        <tr>
+                          <td style={cellB}>Director Nominee (Faculty)</td>
+                          <td style={cellV}>{selectedBudget?.director_faculty_name || '(To be nominated by Director)'}</td>
+                        </tr>
+                      )}
+                      {showArDr && (
+                        <tr>
+                          <td style={cellB}>AR/DR (Stores & Purchase)</td>
+                          <td style={cellV}>(As per institutional roster)</td>
+                        </tr>
+                      )}
+                      {showIA && (
+                        <tr>
+                          <td style={cellB}>Internal Auditor (IA)</td>
+                          <td style={cellV}>(As per institutional roster)</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {showDirectorNominee && (
+                    <p style={{ fontSize: '12px', color: '#000', marginTop: '10px', fontStyle: 'italic', borderTop: '1px solid #ccc', paddingTop: '8px', lineHeight: '1.6' }}>
+                      <strong>Note:</strong> The onus of freezing the specification / technical parameters and evaluation of technical parameters shall lie with the <strong>technical sub-committee (TSC)</strong>. PI shall be the convener for such meetings.
+                    </p>
+                  )}
+                  {cost === 0 && (
+                    <p style={{ fontSize: '11px', color: '#888', marginTop: '6px', fontStyle: 'italic' }}>
+                      Enter item costs above to see the applicable committee composition.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Submission Controls */}
             <div className="flex gap-4 items-center justify-end">

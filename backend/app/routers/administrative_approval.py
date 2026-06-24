@@ -350,6 +350,7 @@ async def create_aa(
     prev_file_no = body.get("prev_file_no")
     justification_procurement = body.get("justification_procurement")
     generic_specification_declaration = body.get("generic_specification_declaration", False)
+    sub_procurement_method = body.get("sub_procurement_method")  # 'gem', 'outside_gem', 'cppp', or None
     
     # Validation Rules
     if not budget_file_id:
@@ -474,7 +475,8 @@ async def create_aa(
         present_stock=present_stock,
         prev_file_no=prev_file_no,
         justification_procurement=justification_procurement,
-        generic_specification_declaration=generic_specification_declaration
+        generic_specification_declaration=generic_specification_declaration,
+        sub_procurement_method=sub_procurement_method,
     )
     db.add(aa)
     await db.flush()
@@ -665,6 +667,7 @@ async def list_aas(
           'pi_department_name': aa.pi.department.name if aa.pi.department else '-',
           'budget_file_id': aa.budget_file_id,
           'mode_of_procurement': aa.mode_of_procurement,
+          'sub_procurement_method': aa.sub_procurement_method,
           'item_description': aa.item_description,
           'justification': aa.justification,
           'gst_rate': aa.gst_rate,
@@ -714,17 +717,31 @@ async def get_aa_detail(
     await realign_aa_routing(db, aa)
     
     # 2. Re-fetch with all relationships loaded for response serialization
+    from app.models.budget import BudgetMaster as BM
     result = await db.execute(
         select(AdministrativeApproval)
         .options(
             selectinload(AdministrativeApproval.pi).selectinload(User.department),
             selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
+            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.director_faculty),
             selectinload(AdministrativeApproval.history).selectinload(AdministrativeApprovalHistory.approver).selectinload(User.department),
             selectinload(AdministrativeApproval.nominees).selectinload(AdministrativeApprovalNominee.nominee).selectinload(User.department),
         )
         .where(AdministrativeApproval.id == aa_id)
     )
     aa = result.scalar_one_or_none()
+
+    # Fetch HOD for this department for committee display
+    _hod_name = None
+    if aa and aa.pi and aa.pi.department_id:
+        hod_res = await db.execute(
+            select(User)
+            .join(RoleManager, User.role_id == RoleManager.id)
+            .where(and_(User.department_id == aa.pi.department_id, RoleManager.group_key == "hod"))
+            .limit(1)
+        )
+        hod_user = hod_res.scalars().first()
+        _hod_name = hod_user.name if hod_user else None
         
     await db.refresh(user, ["role"])
     group_key = user.role.group_key if user.role else None
@@ -814,6 +831,8 @@ async def get_aa_detail(
             "file_no": aa.budget_file.file_no if aa.budget_file else "-",
             "attachment_path": aa.budget_file.attachment_path,
             "attachment_url": f"/static/uploads/{aa.budget_file.attachment_path}" if aa.budget_file.attachment_path else None,
+            "hod_name": _hod_name,
+            "director_faculty_name": aa.budget_file.director_faculty.name if aa.budget_file.director_faculty else None,
         },
         
         # Section 2: Item Information
@@ -830,6 +849,7 @@ async def get_aa_detail(
         # Section 3: Procurement Information
         "procurement_info": {
             "mode_of_procurement": aa.mode_of_procurement,
+            "sub_procurement_method": aa.sub_procurement_method,
             "justification": aa.justification,
         },
         
@@ -942,6 +962,8 @@ async def action_aa(
             aa.gst_rate = float(body["gst_rate"])
         if "mode_of_procurement" in body:
             aa.mode_of_procurement = body["mode_of_procurement"]
+        if "sub_procurement_method" in body:
+            aa.sub_procurement_method = body["sub_procurement_method"]
         if "justification" in body:
             aa.justification = body["justification"]
             

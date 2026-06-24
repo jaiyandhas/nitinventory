@@ -42,6 +42,7 @@ class AdministrativeApproval(Base):
     authority_approval_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     pac_dept_cert_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     pac_vendor_cert_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    sub_procurement_method: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 'gem', 'outside_gem', 'cppp'
     generic_specification_declaration: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

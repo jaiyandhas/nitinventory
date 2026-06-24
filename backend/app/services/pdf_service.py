@@ -942,6 +942,33 @@ class PDFService:
 
         file_nos_str = aa.budget_file.file_no if (aa.budget_file and aa.budget_file.file_no) else "-"
 
+        # Sub-procurement method label
+        _sub_method_map = {'gem': 'Via GeM Portal', 'outside_gem': 'Outside GeM', 'cppp': 'Via CPPP'}
+        sub_method_label = _sub_method_map.get(aa.sub_procurement_method or '', '')
+
+        # Committee composition based on total cost thresholds
+        committee_members = []
+        committee_members.append({
+            'slot': 'Chairperson / HoD',
+            'name': hod_user.name if hod_user else '___________',
+        })
+        committee_members.append({
+            'slot': 'Purchase Indentor (PI)',
+            'name': aa.pi.name if aa.pi else '___________',
+        })
+        if calculated_grand_total > 200000:
+            expert1_name = (aa.budget_file.expert1.name if aa.budget_file and aa.budget_file.expert1 else '___________')
+            committee_members.append({'slot': 'Technical Expert 1 (HOD Nominee)', 'name': expert1_name})
+            committee_members.append({'slot': 'AR/DR (Stores & Purchase)', 'name': '(As per institutional roster)'})
+        if calculated_grand_total > 1000000:
+            expert2_name = (aa.budget_file.expert2.name if aa.budget_file and aa.budget_file.expert2 else '___________')
+            committee_members.append({'slot': 'Technical Expert 2 (HOD Nominee)', 'name': expert2_name})
+            committee_members.append({'slot': 'Internal Auditor (IA)', 'name': '(As per institutional roster)'})
+        if calculated_grand_total > 3000000:
+            dir_fac_name = (aa.budget_file.director_faculty.name if aa.budget_file and aa.budget_file.director_faculty else '___________')
+            committee_members.append({'slot': 'Director Nominee (Faculty)', 'name': dir_fac_name})
+        show_tsc_note = calculated_grand_total > 3000000
+
         nominees_serialized = []
         for nom in sorted(aa.nominees, key=lambda x: x.step_order):
             nom_sig = get_valid_signature_url(nom.nominee.signature_path) if (nom.nominee and nom.nominee.signature_path and nom.status == "Approved") else None
@@ -1000,6 +1027,9 @@ class PDFService:
             "sanction_authority_sig": sanction_authority_sig,
             "sanction_authority_date_str": sanction_authority_date_str,
             "nominees": nominees_serialized,
+            "sub_method_label": sub_method_label,
+            "committee_members": committee_members,
+            "show_tsc_note": show_tsc_note,
         })
 
         filename = f"administrative_approval_{aa.id}.pdf"

@@ -17,6 +17,7 @@ import { PRActionPanel } from '../components/pr/PRActionPanel';
 import { PRSummaryTable } from '../components/pr/detail/PRSummaryTable';
 import { CollapsibleIndentPanel } from '../components/pr/detail/CollapsibleIndentPanel';
 import { resolveTechCommitteeIds } from '../utils/techCommittee';
+import { RemarksCell } from '../components/common/RemarksCell';
 
 const STAGES = [
   { key: 'request', label: 'Request', desc: 'Initial Indent' },
@@ -817,7 +818,7 @@ const activeStageObj = STAGES.find(s => s.key === selectedStageKey);
                                   <tr key={ve.id} className="border-b border-slate-100">
                                     <td className="px-3 py-2 font-semibold text-slate-800">{ve.vendor_name}</td>
                                     <td className="px-3 py-2 text-slate-500">{ve.vendor_email || '-'}</td>
-                                    <td className="px-3 py-2 text-slate-600">{ve.remarks || 'Standard'}</td>
+                                    <td className="px-3 py-2 w-[160px] max-w-[160px]"><RemarksCell text={ve.remarks} emptyLabel="Standard" /></td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -866,7 +867,7 @@ const activeStageObj = STAGES.find(s => s.key === selectedStageKey);
                                         {te.is_qualified ? 'Qualified' : 'Disqualified'}
                                       </span>
                                     </td>
-                                    <td className="px-3 py-2 text-slate-500 italic">{te.remarks || '-'}</td>
+                                    <td className="px-3 py-2 w-[160px] max-w-[160px]"><RemarksCell text={te.remarks} /></td>
                                   </tr>
                                 ))}
                               </tbody>

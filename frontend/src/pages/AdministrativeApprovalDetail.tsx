@@ -8,6 +8,7 @@ import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
 import { AASummaryTable } from '../components/aa/detail/AASummaryTable';
 import { SearchableSelect } from '../components/common/SearchableSelect';
+import { RemarksCell } from '../components/common/RemarksCell';
 
 export const AdministrativeApprovalDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -456,7 +457,7 @@ export const AdministrativeApprovalDetailPage: React.FC = () => {
                             'bg-slate-100 text-slate-700'
                           }`}>{h.status}</span>
                         </td>
-                        <td className="px-3 py-2 border border-slate-200 text-slate-600 max-w-[220px] break-words">{h.remarks}</td>
+                        <td className="px-3 py-2 border border-slate-200 w-[200px] max-w-[200px]"><RemarksCell text={h.remarks} /></td>
                         <td className="px-3 py-2 border border-slate-200 text-slate-500 whitespace-nowrap">
                           {h.acted_at
                             ? new Date(h.acted_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })

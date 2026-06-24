@@ -79,6 +79,7 @@ async def create_tables():
         await conn.execute(text("ALTER TABLE budget_master ADD COLUMN IF NOT EXISTS project_due_date DATE;"))
         await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;"))
         await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(512);"))
+        await conn.execute(text("ALTER TABLE administrative_approvals ADD COLUMN IF NOT EXISTS sub_procurement_method VARCHAR(20);"))
 
         # committee_size on workflow steps: controls how many members must sign at tech_evaluation
         await conn.execute(text("ALTER TABLE workflow_hierarchies ADD COLUMN IF NOT EXISTS committee_size INTEGER;"))

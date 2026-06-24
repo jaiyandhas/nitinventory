@@ -245,6 +245,7 @@ export const aaApi = {
     total_cost?: number;
     gst_amount?: number;
     mode_of_procurement: string;
+    sub_procurement_method?: string | null;
     justification: string;
     item_category: string;
     stock_availability: string;

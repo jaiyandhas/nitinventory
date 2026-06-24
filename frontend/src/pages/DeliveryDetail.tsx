@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, CheckCircle, AlertTriangle, FileText, Package, Upload, Clock } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
+import { RemarksCell } from '../components/common/RemarksCell';
 
 export const DeliveryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -472,7 +473,7 @@ export const DeliveryDetailPage: React.FC = () => {
                     <td className="p-2 border-r border-black text-center font-bold text-green-800">{item.stores_log?.quantity ?? '-'}</td>
                     <td className="p-2 border-r border-black text-center capitalize">{item.stores_log?.condition ?? item.dept_log?.condition ?? '-'}</td>
                     <td className="p-2 border-r border-black">{location}</td>
-                    <td className="p-2 text-[10px]">{serialsAndRemarks}</td>
+                    <td className="p-2 w-[160px] max-w-[160px]"><RemarksCell text={serialsAndRemarks !== 'N/A' ? serialsAndRemarks : ''} title="Inspection Remarks / Serial Numbers" /></td>
                   </tr>
                 );
               })}

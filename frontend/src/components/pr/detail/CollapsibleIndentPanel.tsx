@@ -3,6 +3,7 @@ import { FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { PurchaseRequest } from '../../../types';
 import { PRSummaryTable } from './PRSummaryTable';
 import { formatCurrency } from '../../../utils/format';
+import { RemarksCell } from '../../common/RemarksCell';
 
 interface Props {
   pr: PurchaseRequest;
@@ -155,8 +156,8 @@ export const CollapsibleIndentPanel: React.FC<Props> = ({ pr }) => {
                               <span className="text-[10px] text-gray-400 italic">—</span>
                             )}
                           </td>
-                          <td className="border border-gray-300 px-3 py-2 align-top text-gray-600 italic text-[10px]">
-                            {h.remarks || '—'}
+                          <td className="border border-gray-300 px-3 py-2 align-top w-[180px] max-w-[180px]">
+                            <RemarksCell text={h.remarks || ''} />
                           </td>
                         </tr>
                       );
