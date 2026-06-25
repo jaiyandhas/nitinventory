@@ -15,7 +15,7 @@ export const DeliveryDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isHod = user?.role?.group_key === 'hod';
-  const isStores = user?.role?.group_key === 'verifier_sp';
+  const isStores = user?.role?.group_key === 'verifier_sp' || user?.role?.group_key === 'verifier_da';
   const isApex = user?.role?.group_key === 'apex_approver';
   const isAdmin = user?.role?.group_key === 'admin';
 

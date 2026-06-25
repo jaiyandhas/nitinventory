@@ -24,7 +24,7 @@ async def list_deliveries(db: AsyncSession = Depends(get_db), user: User = Depen
         query = query.join(Delivery.purchase_request).where(PurchaseRequest.initiator_id == user.id)
     elif user.role.group_key == "hod":
         query = query.where(Delivery.department_id == user.department_id, Delivery.status != DeliveryStatus.PENDING)
-    elif user.role.group_key == "verifier_sp":
+    elif user.role.group_key in ("verifier_sp", "verifier_da"):
         query = query.where(Delivery.status != DeliveryStatus.PENDING)
         
     result = await db.execute(query)
@@ -77,7 +77,7 @@ async def get_delivery(delivery_id: int, db: AsyncSession = Depends(get_db), use
             raise HTTPException(status_code=403, detail="Access denied")
         if delivery.status == DeliveryStatus.PENDING:
             raise HTTPException(status_code=403, detail="Access denied. Delivery is pending initiator confirmation.")
-    elif user.role.group_key == "verifier_sp":
+    elif user.role.group_key in ("verifier_sp", "verifier_da"):
         if delivery.status == DeliveryStatus.PENDING:
             raise HTTPException(status_code=403, detail="Access denied. Delivery is pending initiator confirmation.")
     
@@ -210,7 +210,7 @@ async def log_stores_receipt(
     delivery_id: int, item_id: int, body: dict,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles("verifier_sp")),
+    user: User = Depends(require_roles("verifier_sp", "verifier_da")),
 ):
     """Stores logs receipt. Editable until approved."""
     # Fetch delivery to verify status
