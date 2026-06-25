@@ -11,9 +11,23 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User, RoleManager, Department
 from app.models.budget import BudgetMaster, FinancialYear
-from app.models.administrative_approval import AdministrativeApproval, AdministrativeApprovalHistory
+from app.models.administrative_approval import AdministrativeApproval, AdministrativeApprovalHistory, AdministrativeApprovalNominee
 
 router = APIRouter(prefix="/api/administrative-approvals", tags=["administrative-approvals"])
+
+
+def _resolve_pending_with(aa: AdministrativeApproval) -> str:
+    """Resolve 'Nominee X' to the actual person's name for display."""
+    pending = aa.pending_with or '-'
+    if pending.startswith("Nominee "):
+        try:
+            step_order = int(pending.split(" ", 1)[1])
+            nom = next((n for n in (aa.nominees or []) if n.step_order == step_order), None)
+            if nom and nom.nominee:
+                return nom.nominee.name
+        except (ValueError, IndexError):
+            pass
+    return pending
 
 
 async def send_notification(db: AsyncSession, user_id: int, title: str, message: str, link: Optional[str] = None):
@@ -114,10 +128,8 @@ async def resolve_aa_pending_step(db: AsyncSession, aa: AdministrativeApproval, 
 
 
 async def realign_aa_routing(db: AsyncSession, aa: AdministrativeApproval) -> None:
-    # Skip finalized stages, nominee steps or if returned to PI
+    # Skip finalized stages or if returned to PI
     if not aa.status or aa.status in ("Administrative Approval Granted", "Rejected") or aa.status == "Returned to PI":
-        return
-    if aa.pending_with and aa.pending_with.lower().startswith("nominee"):
         return
         
     # Lazy relationship loading checks
@@ -571,10 +583,10 @@ async def list_aas(
         .options(
             selectinload(AdministrativeApproval.pi).selectinload(User.department),
             selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
-            selectinload(AdministrativeApproval.nominees)
+            selectinload(AdministrativeApproval.nominees).selectinload(AdministrativeApprovalNominee.nominee)
         )
     )
-    
+
     # Scope requests based on role
     if group_key == "faculty":
         from sqlalchemy import exists
@@ -665,7 +677,7 @@ async def list_aas(
           'item_name': aa.budget_file.item_name,
           'total_cost': aa.total_cost,
           'status': aa.status,
-          'pending_with': aa.pending_with or '-',
+          'pending_with': _resolve_pending_with(aa),
           'submitted_date': (
               aa.created_at.isoformat() + 'Z' if aa.created_at else None
           ),
@@ -699,6 +711,7 @@ async def list_aas(
           'nominees': [{
               'id': nom.id,
               'nominee_id': nom.nominee_id,
+              'nominee_name': nom.nominee.name if nom.nominee else None,
               'step_order': nom.step_order,
               'status': nom.status
           } for nom in aa.nominees] if aa.nominees else [],
@@ -797,7 +810,7 @@ async def get_aa_detail(
         "id": aa.id,
         "aa_number": aa.aa_number or "-",
         "status": aa.status,
-        "pending_with": aa.pending_with or "-",
+        "pending_with": _resolve_pending_with(aa),
         "pi_id": aa.pi_id,
         "created_at": aa.created_at.isoformat() + "Z" if aa.created_at else None,
         "attachment_path": aa.attachment_path,
@@ -1332,74 +1345,48 @@ async def action_aa(
                         f"/administrative-approvals/{aa.id}"
                     )
                 
-                # HOD approval: if nominees exist, route to Nominee 1 first.
-                # Only after ALL nominees approve does the flow continue to the next standard step.
-                await db.flush()  # Ensure nominee rows are visible for the query below
-                nom_res2 = await db.execute(
-                    select(AdministrativeApprovalNominee)
-                    .where(AdministrativeApprovalNominee.approval_id == aa.id)
-                    .order_by(AdministrativeApprovalNominee.step_order)
+                # Always advance to the next configured workflow step (HOD → ADPD → Dean → Director…)
+                simulated_history = list(aa_history)
+                new_hist_entry = AdministrativeApprovalHistory(
+                    approval_id=aa.id,
+                    approver_role=approver_role,
+                    approver_id=user.id,
+                    status="Approved",
+                    remarks=remarks,
+                    acted_at=datetime.now()
                 )
-                final_noms = nom_res2.scalars().all()
-
-                if final_noms:
-                    # Activate the first nominee (status="Pending" is the sentinel the approve
-                    # handler searches for).  All others stay "Notified" until their turn.
-                    first_nom = final_noms[0]
-                    first_nom.status = "Pending"
-                    aa.status = "Pending with Nominee 1"
-                    aa.pending_with = "Nominee 1"
+                simulated_history.append(new_hist_entry)
+                next_step_data = await resolve_aa_pending_step(db, aa, steps, simulated_history)
+                if next_step_data:
+                    next_step = next_step_data["step"]
+                    next_role = next_step.user_group
+                    aa.status = f"Pending with {next_role}"
+                    aa.pending_with = next_role
                     hist_status = "Approved"
-                    await send_notification(
+                    await notify_group(
                         db,
-                        first_nom.nominee_id,
-                        "Administrative Approval - Nominee Evaluation",
-                        f"Administrative Approval request REQ-{aa.id} has been forwarded to you for nominee evaluation by the HOD.",
+                        next_role,
+                        aa.pi.department_id,
+                        "Administrative Approval Request Awaiting Action",
+                        f"Administrative Approval request REQ-{aa.id} is pending your action.",
                         f"/administrative-approvals/{aa.id}"
                     )
                 else:
-                    # No nominees configured — fall through to standard next step
-                    simulated_history = list(aa_history)
-                    new_hist_entry = AdministrativeApprovalHistory(
-                        approval_id=aa.id,
-                        approver_role=approver_role,
-                        approver_id=user.id,
-                        status="Approved",
-                        remarks=remarks,
-                        acted_at=datetime.now()
+                    aa.status = "Administrative Approval Granted"
+                    aa.pending_with = None
+                    aa.approved_at = datetime.now()
+                    dept_code = aa.pi.department.short_code if aa.pi.department else "GEN"
+                    fy_label = aa.budget_file.financial_year.label
+                    aa.aa_number = f"AA/{fy_label}/{dept_code}/{aa.id:03d}"
+                    hist_status = "Approved"
+                    aa.budget_file.committed_amount += aa.total_cost
+                    await send_notification(
+                        db,
+                        aa.pi_id,
+                        "Administrative Approval Granted",
+                        f"Administrative Approval has been GRANTED for request {aa.aa_number}.",
+                        f"/administrative-approvals/{aa.id}"
                     )
-                    simulated_history.append(new_hist_entry)
-                    next_step_data = await resolve_aa_pending_step(db, aa, steps, simulated_history)
-                    if next_step_data:
-                        next_step = next_step_data["step"]
-                        next_role = next_step.user_group
-                        aa.status = f"Pending with {next_role}"
-                        aa.pending_with = next_role
-                        hist_status = "Approved"
-                        await notify_group(
-                            db,
-                            next_role,
-                            aa.pi.department_id,
-                            "Administrative Approval Request Awaiting Action",
-                            f"Administrative Approval request REQ-{aa.id} is pending your action.",
-                            f"/administrative-approvals/{aa.id}"
-                        )
-                    else:
-                        aa.status = "Administrative Approval Granted"
-                        aa.pending_with = None
-                        aa.approved_at = datetime.now()
-                        dept_code = aa.pi.department.short_code if aa.pi.department else "GEN"
-                        fy_label = aa.budget_file.financial_year.label
-                        aa.aa_number = f"AA/{fy_label}/{dept_code}/{aa.id:03d}"
-                        hist_status = "Approved"
-                        aa.budget_file.committed_amount += aa.total_cost
-                        await send_notification(
-                            db,
-                            aa.pi_id,
-                            "Administrative Approval Granted",
-                            f"Administrative Approval has been GRANTED for request {aa.aa_number}.",
-                            f"/administrative-approvals/{aa.id}"
-                        )
             else:
                 # Resolve next standard step using resolve_aa_pending_step with simulated history
                 simulated_history = list(aa_history)
