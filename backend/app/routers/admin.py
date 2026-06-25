@@ -2700,13 +2700,14 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
         # Re-seed global defaults: NULL/NULL/NULL catch-all steps
         roles_res = await db.execute(select(RoleManager))
         roles = {r.value: r for r in roles_res.scalars()}
-        dean_role = roles.get("dean_pd") or roles.get("dean")
         for step_order, group, role_key in [
             (1, "HOD", "hod"),
             (2, "ADPD", "adpd"),
-            (3, "Dean", None),
+            (3, "Dean", "dean_pd"),
+            (4, "IA", "auditor"),
+            (5, "Director", "director"),
         ]:
-            role = roles.get(role_key) if role_key else dean_role
+            role = roles.get(role_key)
             db.add(AdministrativeApprovalWorkflow(
                 category_id=None,
                 procurement_id=None,
@@ -2717,7 +2718,7 @@ async def reset_aa_workflows(body: dict, db: AsyncSession = Depends(get_db), _=A
                 source_of_fund_id=None,
             ))
         await db.commit()
-        return {"message": "Global defaults reset to HOD → ADPD → Dean"}
+        return {"message": "Global defaults reset to HOD → ADPD → Dean → IA → Director"}
 
     # Specific combination: just delete the override — global defaults now apply
     await db.commit()

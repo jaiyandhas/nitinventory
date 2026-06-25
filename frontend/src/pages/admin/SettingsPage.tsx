@@ -104,7 +104,7 @@ export const SettingsPage: React.FC = () => {
     return (
       w.category_id === selectedCat &&
       w.procurement_id === selectedProc &&
-      w.purchase_type === selectedPurchaseType &&
+      w.purchase_type === 'research' &&
       w.source_of_fund_id === selectedSofId
     );
   }).sort((a: any, b: any) => a.step_order - b.step_order);
@@ -505,7 +505,7 @@ export const SettingsPage: React.FC = () => {
     const step = filteredAaWfs.find((w: any) => w.id === stepId);
     if (!step) return;
 
-    const sortedSteps = [...filteredAaWfs].sort((a: any, b: any) => a.step_order - b.step_order);
+    const sortedSteps = filteredAaWfs.map((w: any) => ({ ...w })).sort((a: any, b: any) => a.step_order - b.step_order);
     const index = sortedSteps.findIndex((w: any) => w.id === stepId);
     if (index === -1) return;
 
@@ -593,18 +593,17 @@ export const SettingsPage: React.FC = () => {
 
   const handleAaWfModalSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
 
     let roleId: number | null = null;
     let userGroup = '';
     if (aaWfModalAssigneeType === 'role') {
-      roleId = Number(formData.get('role_id'));
+      roleId = aaWfModalRoleId;
       const matchingRole = roles.find((r: any) => r.id === roleId);
       userGroup = matchingRole ? matchingRole.name : 'Role';
     } else {
-      userGroup = String(formData.get('user_group') || 'HOD');
+      userGroup = aaWfModalGroup || 'HOD';
     }
-    const skipCondition = String(formData.get('skip_condition') || '').trim() || null;
+    const skipCondition = aaWfModalSkipCondition.trim() || null;
 
     if (editingAaWf) {
       updateAaWfMutation.mutate({
@@ -612,6 +611,10 @@ export const SettingsPage: React.FC = () => {
         data: { role_id: roleId, user_group: userGroup, skip_condition: skipCondition }
       });
     } else {
+      if (!aaViewGlobal && (!selectedCat || !selectedProc)) {
+        toast.error('Please select a procurement method and category first');
+        return;
+      }
       const nextOrder = filteredAaWfs.length > 0 ? Math.max(...filteredAaWfs.map((w: any) => w.step_order)) + 1 : 1;
       createAaWfMutation.mutate({
         user_group: userGroup,
@@ -620,7 +623,7 @@ export const SettingsPage: React.FC = () => {
         skip_condition: skipCondition,
         category_id: aaViewGlobal ? null : selectedCat,
         procurement_id: aaViewGlobal ? null : selectedProc,
-        purchase_type: aaViewGlobal ? null : selectedPurchaseType,
+        purchase_type: aaViewGlobal ? null : 'research',
         source_of_fund_id: aaViewGlobal ? null : selectedSofId
       });
     }
@@ -882,6 +885,12 @@ export const SettingsPage: React.FC = () => {
                             ))}
                           </optgroup>
                           <optgroup label="User Groups">
+                            <option value="group:HOD">HOD</option>
+                            <option value="group:ADPD">ADPD</option>
+                            <option value="group:Dean">Dean</option>
+                            <option value="group:IA">IA (Internal Auditor)</option>
+                            <option value="group:Director">Director</option>
+                            <option value="group:PI">PI</option>
                             <option value="group:faculty">Faculty Group</option>
                             <option value="group:hod">HOD Group</option>
                             <option value="group:verifier_da">Dealing Assistant Group</option>
@@ -889,11 +898,6 @@ export const SettingsPage: React.FC = () => {
                             <option value="group:verifier_general">Associate Dean Group</option>
                             <option value="group:dean_approver">Dean Approver Group</option>
                             <option value="group:apex_approver">Apex Approver Group</option>
-                            <option value="group:PI">PI</option>
-                            <option value="group:Dean">Dean</option>
-                            <option value="group:Director">Director</option>
-                            <option value="group:HOD">HOD</option>
-                            <option value="group:ADPD">ADPD</option>
                           </optgroup>
                         </select>
                         <p className="text-xs text-slate-500 mt-1">
@@ -2187,6 +2191,7 @@ export const SettingsPage: React.FC = () => {
                       <option value="HOD">HOD</option>
                       <option value="ADPD">ADPD</option>
                       <option value="Dean">Dean</option>
+                      <option value="IA">IA (Internal Auditor)</option>
                       <option value="Director">Director</option>
                       <option value="faculty">Faculty Group</option>
                       <option value="hod">HOD Group</option>

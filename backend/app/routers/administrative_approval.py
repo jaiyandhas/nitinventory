@@ -413,15 +413,7 @@ async def create_aa(
     if budget_file.file_no.upper().startswith("TEMP"):
         raise HTTPException(status_code=400, detail="Budget allocation is temporary and must be finalized by Dean Budget.")
         
-    # Precondition 2 check: HOD Nominee selection must be completed (with department fallback).
-    expert1 = budget_file.expert1_id or (budget_file.department.expert1_id if budget_file.department else None)
-    expert2 = budget_file.expert2_id or (budget_file.department.expert2_id if budget_file.department else None)
-    has_nominees = budget_file.nominee_ids and len(budget_file.nominee_ids) > 0
-    if not expert1 and not expert2 and not has_nominees:
-        raise HTTPException(
-            status_code=400,
-            detail="HOD Nominee selection is not completed for this budget. Please contact HOD to configure nominees."
-        )
+    # Nominees are optional — HOD can assign them during approval if needed.
         
     # System Calculations
     total_cost = body.get("total_cost")
@@ -480,31 +472,6 @@ async def create_aa(
     )
     db.add(aa)
     await db.flush()
-
-    # Pre-populate nominees from budget allocation
-    # Priority: nominee_ids list → expert1/expert2 fallback.
-    # director_faculty_id is always appended last (Director's nominee on the committee).
-    nominee_ids = list(budget_file.nominee_ids or [])
-    if not nominee_ids:
-        # Fallback to expert1_id, expert2_id for compatibility
-        if budget_file.expert1_id:
-            nominee_ids.append(budget_file.expert1_id)
-        if budget_file.expert2_id:
-            nominee_ids.append(budget_file.expert2_id)
-
-    # Always include director_faculty if configured and not already in the list
-    if budget_file.director_faculty_id and budget_file.director_faculty_id not in nominee_ids:
-        nominee_ids.append(budget_file.director_faculty_id)
-
-    from app.models.administrative_approval import AdministrativeApprovalNominee
-    for order, nid in enumerate(nominee_ids, start=1):
-        nom = AdministrativeApprovalNominee(
-            approval_id=aa.id,
-            nominee_id=nid,
-            step_order=order,
-            status="Notified"   # Activated to "Pending" when HOD routes the flow to Nominee 1
-        )
-        db.add(nom)
 
     # Determine first step based on skip condition
     next_step_data = await resolve_next_step(db, aa, steps, -1)

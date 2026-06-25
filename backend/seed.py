@@ -355,7 +355,7 @@ async def seed():
         if has_users and not RESET_DEMO_DATA:
             aa_wf_check = await db.execute(select(AdministrativeApprovalWorkflow).limit(1))
             if aa_wf_check.scalar_one_or_none() is None:
-                print("  Seeding default category-specific Administrative Approval workflow steps...")
+                print("  Seeding default Administrative Approval workflow steps...")
                 roles_res = await db.execute(select(RoleManager))
                 roles = {r.value: r for r in roles_res.scalars()}
                 proc_res = await db.execute(select(ProcurementManager))
@@ -363,43 +363,37 @@ async def seed():
                 cat_res = await db.execute(select(PurchaseCategory))
                 cats = cat_res.scalars().all()
                 seeded_aa_count = 0
-                for ptype in ("research", "others"):
-                    for proc in procs:
-                        for cat in cats:
-                            if cat.procurement_id != proc.id:
-                                continue
-                            default_aa_steps = [
-                                AdministrativeApprovalWorkflow(
-                                    category_id=cat.id,
-                                    procurement_id=proc.id,
-                                    purchase_type=ptype,
-                                    step_order=1,
-                                    user_group="HOD",
-                                    role_id=roles["hod"].id
-                                ),
-                                AdministrativeApprovalWorkflow(
-                                    category_id=cat.id,
-                                    procurement_id=proc.id,
-                                    purchase_type=ptype,
-                                    step_order=2,
-                                    user_group="ADPD",
-                                    role_id=roles["adpd"].id
-                                ),
-                                AdministrativeApprovalWorkflow(
-                                    category_id=cat.id,
-                                    procurement_id=proc.id,
-                                    purchase_type=ptype,
-                                    step_order=3,
-                                    user_group="Director",
-                                    role_id=roles["director"].id
-                                ),
-                            ]
-                            for s in default_aa_steps:
-                                db.add(s)
-                            seeded_aa_count += len(default_aa_steps)
+                # Global default catch-all steps (null/null/null)
+                for step_order, group, role_key in [
+                    (1, "HOD", "hod"), (2, "ADPD", "adpd"), (3, "Dean", "dean_pd"),
+                    (4, "IA", "ia"), (5, "Director", "director"),
+                ]:
+                    role = roles.get(role_key)
+                    db.add(AdministrativeApprovalWorkflow(
+                        category_id=None, procurement_id=None, purchase_type=None,
+                        step_order=step_order, user_group=group,
+                        role_id=role.id if role else None
+                    ))
+                    seeded_aa_count += 1
+                # Category-specific research steps (used by AA engine; others rows ignored)
+                for proc in procs:
+                    for cat in cats:
+                        if cat.procurement_id != proc.id:
+                            continue
+                        for step_order, group, role_key in [
+                            (1, "HOD", "hod"), (2, "ADPD", "adpd"), (3, "Dean", "dean_pd"),
+                            (4, "IA", "ia"), (5, "Director", "director"),
+                        ]:
+                            role = roles.get(role_key)
+                            db.add(AdministrativeApprovalWorkflow(
+                                category_id=cat.id, procurement_id=proc.id,
+                                purchase_type="research", step_order=step_order,
+                                user_group=group, role_id=role.id if role else None
+                            ))
+                            seeded_aa_count += 1
                 if seeded_aa_count:
                     await db.commit()
-                    print(f"  Seeded {seeded_aa_count} default category-specific Administrative Approval workflow steps in already populated DB.")
+                    print(f"  Seeded {seeded_aa_count} default Administrative Approval workflow steps in already populated DB.")
             print("✓ Database is already populated. Skipping seeding to preserve user data.")
             return
 
@@ -1030,60 +1024,36 @@ async def seed():
 
         # 8.5. Seed Administrative Approval Workflow
         await db.execute(text("DELETE FROM administrative_approval_workflows;"))
-        print("  Seeding default category-specific Administrative Approval workflow steps...")
+        print("  Seeding default Administrative Approval workflow steps...")
         seeded_aa_count = 0
-        for ptype in ("research", "others"):
-            for proc in procs:
-                proc_cats = categories.get(proc.id, categories)
-                for cat_key in ("cat1", "cat2", "cat3"):
-                    cat = proc_cats.get(cat_key) if isinstance(proc_cats, dict) else None
-                    if not cat:
-                        continue
-                    default_aa_steps = [
-                        AdministrativeApprovalWorkflow(
-                            category_id=cat.id,
-                            procurement_id=proc.id,
-                            purchase_type=ptype,
-                            step_order=1,
-                            user_group="HOD",
-                            role_id=roles["hod"].id
-                        ),
-                        AdministrativeApprovalWorkflow(
-                            category_id=cat.id,
-                            procurement_id=proc.id,
-                            purchase_type=ptype,
-                            step_order=2,
-                            user_group="ADPD",
-                            role_id=roles["adpd"].id
-                        ),
-                        AdministrativeApprovalWorkflow(
-                            category_id=cat.id,
-                            procurement_id=proc.id,
-                            purchase_type=ptype,
-                            step_order=3,
-                            user_group="Dean",
-                            role_id=roles["dean_pd"].id
-                        ),
-                        AdministrativeApprovalWorkflow(
-                            category_id=cat.id,
-                            procurement_id=proc.id,
-                            purchase_type=ptype,
-                            step_order=4,
-                            user_group="IA",
-                            role_id=roles["ia"].id
-                        ),
-                        AdministrativeApprovalWorkflow(
-                            category_id=cat.id,
-                            procurement_id=proc.id,
-                            purchase_type=ptype,
-                            step_order=5,
-                            user_group="Director",
-                            role_id=roles["director"].id
-                        ),
-                    ]
-                    for s in default_aa_steps:
-                        db.add(s)
-                    seeded_aa_count += len(default_aa_steps)
+        aa_step_defs = [
+            (1, "HOD", "hod"), (2, "ADPD", "adpd"), (3, "Dean", "dean_pd"),
+            (4, "IA", "ia"), (5, "Director", "director"),
+        ]
+        # Global catch-all defaults (null/null/null) — used when no category-specific override exists
+        for step_order, group, role_key in aa_step_defs:
+            role = roles.get(role_key)
+            db.add(AdministrativeApprovalWorkflow(
+                category_id=None, procurement_id=None, purchase_type=None,
+                step_order=step_order, user_group=group,
+                role_id=role.id if role else None
+            ))
+            seeded_aa_count += 1
+        # Category-specific research steps (AA engine matches 'research' or null; 'others' rows unused)
+        for proc in procs:
+            proc_cats = categories.get(proc.id, categories)
+            for cat_key in ("cat1", "cat2", "cat3"):
+                cat = proc_cats.get(cat_key) if isinstance(proc_cats, dict) else None
+                if not cat:
+                    continue
+                for step_order, group, role_key in aa_step_defs:
+                    role = roles.get(role_key)
+                    db.add(AdministrativeApprovalWorkflow(
+                        category_id=cat.id, procurement_id=proc.id,
+                        purchase_type="research", step_order=step_order,
+                        user_group=group, role_id=role.id if role else None
+                    ))
+                    seeded_aa_count += 1
         if seeded_aa_count:
             await db.flush()
             print(f"  Seeded {seeded_aa_count} default Administrative Approval workflow steps.")
