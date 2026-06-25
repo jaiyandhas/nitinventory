@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { LoginPage } from './pages/Login';
@@ -25,6 +25,13 @@ import { AdministrativeApprovalDetailPage } from './pages/AdministrativeApproval
 
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Forces a full remount whenever the :id URL param changes so local state
+// (selected tabs, form fields, etc.) never bleeds between records.
+const WithIdKey: React.FC<{ component: React.ComponentType }> = ({ component: Component }) => {
+  const { id } = useParams<{ id: string }>();
+  return <Component key={id} />;
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: string[]; prRestricted?: boolean }> = ({ children, roles, prRestricted }) => {
   const { user, loading } = useAuth();
@@ -61,11 +68,11 @@ const App: React.FC = () => {
         <Route path="/pr" element={<ProtectedRoute prRestricted><PRListPage /></ProtectedRoute>} />
         <Route path="/forms" element={<ProtectedRoute><FormsDashboardPage /></ProtectedRoute>} />
         <Route path="/pr/create" element={<ProtectedRoute roles={['faculty']}><NewPRPage /></ProtectedRoute>} />
-        <Route path="/pr/:id" element={<ProtectedRoute prRestricted><PRDetailPage /></ProtectedRoute>} />
+        <Route path="/pr/:id" element={<ProtectedRoute prRestricted><WithIdKey component={PRDetailPage} /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/administrative-approvals" element={<ProtectedRoute><AdministrativeApprovalsListPage /></ProtectedRoute>} />
         <Route path="/administrative-approvals/create" element={<ProtectedRoute roles={['faculty']}><AdministrativeApprovalCreatePage /></ProtectedRoute>} />
-        <Route path="/administrative-approvals/:id" element={<ProtectedRoute><AdministrativeApprovalDetailPage /></ProtectedRoute>} />
+        <Route path="/administrative-approvals/:id" element={<ProtectedRoute><WithIdKey component={AdministrativeApprovalDetailPage} /></ProtectedRoute>} />
 
 
         <Route path="/budget" element={<ProtectedRoute roles={['faculty', 'hod', 'admin', 'dean_approver', 'apex_approver']}><BudgetPage /></ProtectedRoute>} />
@@ -81,7 +88,7 @@ const App: React.FC = () => {
 
         {/* Inventory */}
         <Route path="/inventory/deliveries" element={<ProtectedRoute roles={['faculty', 'hod', 'verifier_sp', 'admin']}><DeliveriesPage /></ProtectedRoute>} />
-        <Route path="/inventory/deliveries/:id" element={<ProtectedRoute roles={['faculty', 'hod', 'verifier_sp', 'admin']}><DeliveryDetailPage /></ProtectedRoute>} />
+        <Route path="/inventory/deliveries/:id" element={<ProtectedRoute roles={['faculty', 'hod', 'verifier_sp', 'verifier_da', 'admin']}><WithIdKey component={DeliveryDetailPage} /></ProtectedRoute>} />
         <Route path="/inventory/discrepancies" element={<ProtectedRoute roles={['admin', 'verifier_sp', 'apex_approver']}><DiscrepanciesPage /></ProtectedRoute>} />
 
         {/* Redirects */}

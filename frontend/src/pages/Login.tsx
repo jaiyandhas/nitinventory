@@ -67,7 +67,7 @@ export const LoginPage: React.FC = () => {
             Sign in to your account
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
             <div>
               <label className="glass-login-label">Email Address</label>
               <input
@@ -77,6 +77,7 @@ export const LoginPage: React.FC = () => {
                 placeholder="your.email@nitt.edu"
                 className="glass-login-input"
                 required
+                autoComplete="off"
                 autoFocus
               />
             </div>
@@ -91,6 +92,7 @@ export const LoginPage: React.FC = () => {
                   placeholder="••••••••"
                   className="glass-login-input pr-10"
                   required
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
