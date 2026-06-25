@@ -1138,9 +1138,7 @@ async def seed():
         sf_res = await db.execute(select(Settings).where(Settings.key_name == "budget_source_of_fund_categories"))
         sf_obj = sf_res.scalar_one_or_none()
         default_sf = "CAPEX (OH-35),REVEX (OH-31),HOSTEL,NIMCET,ID,PMRF,SEED-GRANT,HEFA,STUDENT-WELFARE,R&C"
-        if sf_obj:
-            sf_obj.value = default_sf
-        else:
+        if not sf_obj:
             db.add(Settings(key_name="budget_source_of_fund_categories", value=default_sf))
         await db.flush()
 
