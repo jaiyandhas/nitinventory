@@ -131,13 +131,18 @@ async def realign_aa_routing(db: AsyncSession, aa: AdministrativeApproval) -> No
     # Skip finalized stages or if returned to PI
     if not aa.status or aa.status in ("Administrative Approval Granted", "Rejected") or aa.status == "Returned to PI":
         return
-        
-    # Lazy relationship loading checks
-    await db.refresh(aa, ["budget_file", "pi"])
-    if aa.budget_file:
-        await db.refresh(aa.budget_file, ["financial_year"])
-    if aa.pi:
-        await db.refresh(aa.pi, ["department"])
+
+    # Eager-load all relationships needed below.  db.refresh() with relationship
+    # attribute names is not supported in async SQLAlchemy (raises MissingGreenlet).
+    # Querying by id ensures the identity map populates these attrs on the *same* aa object.
+    await db.execute(
+        select(AdministrativeApproval)
+        .options(
+            selectinload(AdministrativeApproval.pi).selectinload(User.department),
+            selectinload(AdministrativeApproval.budget_file).selectinload(BudgetMaster.financial_year),
+        )
+        .where(AdministrativeApproval.id == aa.id)
+    )
 
     source_of_fund_id = None
     if aa.budget_file and aa.budget_file.source_of_fund:
@@ -661,8 +666,11 @@ async def list_aas(
     aas = result.scalars().all()
     
     for aa in aas:
-        await realign_aa_routing(db, aa)
-    
+        try:
+            await realign_aa_routing(db, aa)
+        except Exception:
+            pass  # never let one AA's realign failure break the entire list
+
     serialized = []
     for aa in aas:
       serialized.append({
