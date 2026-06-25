@@ -513,7 +513,6 @@ async def create_aa(
     if budget_file.director_faculty_id and budget_file.director_faculty_id not in nominee_ids:
         nominee_ids.append(budget_file.director_faculty_id)
 
-    from app.models.administrative_approval import AdministrativeApprovalNominee
     for order, nid in enumerate(nominee_ids, start=1):
         nom = AdministrativeApprovalNominee(
             approval_id=aa.id,
@@ -595,7 +594,6 @@ async def list_aas(
     # Scope requests based on role
     if group_key == "faculty":
         from sqlalchemy import exists
-        from app.models.administrative_approval import AdministrativeApprovalNominee
         nom_exists = exists().where(
             and_(
                 AdministrativeApprovalNominee.approval_id == AdministrativeApproval.id,
@@ -610,7 +608,6 @@ async def list_aas(
         )
     elif group_key == "hod":
         from sqlalchemy import exists
-        from app.models.administrative_approval import AdministrativeApprovalNominee
         nom_exists = exists().where(
             and_(
                 AdministrativeApprovalNominee.approval_id == AdministrativeApproval.id,
@@ -734,7 +731,6 @@ async def get_aa_detail(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    from app.models.administrative_approval import AdministrativeApprovalNominee
     # 1. Fetch simple reference and heal routing dynamically
     result = await db.execute(select(AdministrativeApproval).where(AdministrativeApproval.id == aa_id))
     aa = result.scalar_one_or_none()
@@ -1063,8 +1059,6 @@ async def action_aa(
         approver_role = "PI"
         
     elif aa.pending_with and aa.pending_with.startswith("Nominee"):
-        from app.models.administrative_approval import AdministrativeApprovalNominee
-        
         # Load nominees ordered by step
         nom_res = await db.execute(
             select(AdministrativeApprovalNominee)
@@ -1304,7 +1298,6 @@ async def action_aa(
                 nominee_ids = body.get("nominee_ids", [])
                 if nominee_ids:
                     from app.models.user import User as UserModel
-                    from app.models.administrative_approval import AdministrativeApprovalNominee
                     from sqlalchemy import delete
                     
                     nom_users_res = await db.execute(
@@ -1332,7 +1325,6 @@ async def action_aa(
                         db.add(nom)
                 
                 # Retrieve configured nominees
-                from app.models.administrative_approval import AdministrativeApprovalNominee
                 nom_res = await db.execute(
                     select(AdministrativeApprovalNominee).where(AdministrativeApprovalNominee.approval_id == aa.id).order_by(AdministrativeApprovalNominee.step_order)
                 )
@@ -1478,7 +1470,6 @@ async def action_aa(
                     hist_status = "Returned"
                     
                     # Reset nominee statuses
-                    from app.models.administrative_approval import AdministrativeApprovalNominee
                     await db.execute(
                         update(AdministrativeApprovalNominee)
                         .where(and_(AdministrativeApprovalNominee.approval_id == aa.id, AdministrativeApprovalNominee.step_order >= nom_order))
